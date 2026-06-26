@@ -5,12 +5,17 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
+  CheckoutPanel,
   CheckoutPayloadView,
   PricingClient,
   pricingCheckoutIntroCopy,
   pricingCheckoutLabels,
   type BillingProduct,
 } from "./pricing-client";
+import type {
+  AccountBillingOrderRecord,
+  BillingPaymentProvider,
+} from "../../components/account-session";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/pricing",
@@ -93,6 +98,77 @@ const products: readonly BillingProduct[] = [
   },
 ];
 
+type ClickableElement = React.ReactElement<{
+  readonly children?: React.ReactNode;
+  readonly disabled?: boolean;
+  readonly onClick?: () => void;
+}>;
+
+function createOrderRecord(
+  overrides: Partial<AccountBillingOrderRecord> = {},
+): AccountBillingOrderRecord {
+  return {
+    orderNo: "P202606260001",
+    provider: "alipay",
+    amountCents: 2100,
+    currency: "CNY",
+    productCode: "monthly_full",
+    status: "pending",
+    paidAt: null,
+    expiresAt: "2026-06-26T12:00:00.000Z",
+    providerTradeNo: null,
+    entitlementGrantedAt: null,
+    createdAt: "2026-06-26T08:00:00.000Z",
+    updatedAt: "2026-06-26T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function nodeText(value: React.ReactNode): string {
+  if (value === null || value === undefined || typeof value === "boolean") {
+    return "";
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => nodeText(item)).join("");
+  }
+  if (React.isValidElement<{ readonly children?: React.ReactNode }>(value)) {
+    return nodeText(value.props.children);
+  }
+  return "";
+}
+
+function collectClickableElements(
+  value: React.ReactNode,
+  result: ClickableElement[] = [],
+): ClickableElement[] {
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectClickableElements(item, result));
+    return result;
+  }
+  if (React.isValidElement<{ readonly children?: React.ReactNode; readonly onClick?: () => void }>(
+    value,
+  )) {
+    if (typeof value.props.onClick === "function") {
+      result.push(value as ClickableElement);
+    }
+    collectClickableElements(value.props.children, result);
+  }
+  return result;
+}
+
+function findClickableByText(value: React.ReactNode, text: string): ClickableElement {
+  const element = collectClickableElements(value).find((item) =>
+    nodeText(item.props.children).includes(text),
+  );
+  if (!element) {
+    throw new Error(`Expected clickable element containing ${text}`);
+  }
+  return element;
+}
+
 describe("pricing checkout client", () => {
   it("renders Alipay form_post checkout as a POST form with hidden fields", () => {
     const html = renderToStaticMarkup(
@@ -122,9 +198,110 @@ describe("pricing checkout client", () => {
     expect(html).toContain('value="alipay.trade.page.pay"');
     expect(html).toContain('name="sign_type"');
     expect(html).toContain("前往支付宝支付");
+    expect(html).toContain("支付页面已生成，请继续完成支付。");
     expect(pricingClientSource).toContain('checkout.kind === "form_post"');
     expect(pricingClientSource).toContain('type="hidden" name={name} value={value}');
     expect(pricingClientSource).not.toContain("dangerouslySetInnerHTML");
+  });
+
+  it("renders WeChat QR checkout as a payment action area", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CheckoutPayloadView, {
+        checkout: {
+          kind: "qr_code",
+          codeUrl: "weixin://wxpay/bizpayurl?pr=abc",
+          message: "请使用微信扫码完成支付。",
+        },
+      }),
+    );
+
+    expect(html).toContain("扫码支付");
+    expect(html).toContain("weixin://wxpay/bizpayurl?pr=abc");
+    expect(html).toContain("请使用微信扫码完成支付。");
+  });
+
+  it("renders checkout panel with provider payment buttons and no public order creation wording", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CheckoutPanel, {
+        selectedProduct: products[1] ?? null,
+        order: null,
+        checkout: null,
+        submittingProvider: null,
+        onProviderPayment: () => undefined,
+      }),
+    );
+
+    expect(html).toContain("选择支付方式");
+    expect(html).toContain(pricingCheckoutIntroCopy);
+    expect(html).toContain("月卡");
+    expect(html).toContain("¥21.00");
+    expect(html).toContain("30 天");
+    expect(html).toContain("支付宝支付");
+    expect(html).toContain("微信支付");
+    expect(html).not.toContain("创建订单");
+    expect(html).not.toContain("确认订单");
+    expect(html).not.toContain("订单号");
+    expect(html).not.toContain("订单状态");
+  });
+
+  it("wires provider payment buttons to the selected payment provider", () => {
+    const providers: BillingPaymentProvider[] = [];
+    const panel = CheckoutPanel({
+      selectedProduct: products[1] ?? null,
+      order: null,
+      checkout: null,
+      submittingProvider: null,
+      onProviderPayment: (provider) => providers.push(provider),
+    });
+
+    findClickableByText(panel, "支付宝支付").props.onClick?.();
+    findClickableByText(panel, "微信支付").props.onClick?.();
+
+    expect(providers).toEqual(["alipay", "wechat_pay"]);
+    expect(pricingClientSource).toContain(
+      "createBillingOrder({ productCode, provider: nextProvider })",
+    );
+    expect(pricingClientSource).toContain(
+      "onProviderPayment={(nextProvider) => void handleCreateOrder(nextProvider)}",
+    );
+  });
+
+  it("disables both payment buttons while one provider is submitting", () => {
+    const panel = CheckoutPanel({
+      selectedProduct: products[1] ?? null,
+      order: null,
+      checkout: null,
+      submittingProvider: "alipay",
+      onProviderPayment: () => undefined,
+    });
+    const buttons = collectClickableElements(panel);
+
+    expect(buttons).toHaveLength(2);
+    expect(buttons.every((button) => button.props.disabled === true)).toBe(true);
+    expect(nodeText(buttons[0]?.props.children)).toBe("正在唤起支付...");
+    expect(nodeText(buttons[1]?.props.children)).toBe("微信支付");
+    expect(pricingClientSource).toContain("const [submittingProvider, setSubmittingProvider]");
+  });
+
+  it("keeps paid status copy public-facing and hides order identifiers", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CheckoutPanel, {
+        selectedProduct: products[1] ?? null,
+        order: createOrderRecord({
+          status: "paid",
+          paidAt: "2026-06-26T08:01:00.000Z",
+          entitlementGrantedAt: "2026-06-26T08:01:01.000Z",
+        }),
+        checkout: null,
+        submittingProvider: null,
+        onProviderPayment: () => undefined,
+      }),
+    );
+
+    expect(html).toContain("支付成功，会员权益已生效。");
+    expect(html).toContain("已支付");
+    expect(html).not.toContain("订单号");
+    expect(html).not.toContain("P202606260001");
   });
 
   it("renders paid plans without default checkout, stale copy, or free purchase cards", () => {
@@ -136,11 +313,12 @@ describe("pricing checkout client", () => {
       "月卡",
       "季卡",
       "年卡",
-      "确认订单",
+      "选择支付方式",
+      "支付宝支付",
       "微信支付",
-      "支付宝",
-      "创建订单",
-      "订单状态",
+      "扫码支付",
+      "前往支付宝支付",
+      "支付成功，会员权益已生效。",
     ]);
     expect(html).toContain("定价方案");
     expect(html).toContain("新用户注册即送 7 天完整权限");
@@ -169,9 +347,10 @@ describe("pricing checkout client", () => {
     expect(html).not.toContain(staleGptCopy);
     expect(html).not.toContain(staleOpenAiCopy);
     expect(html).not.toContain("确认订单");
+    expect(html).not.toContain("选择支付方式");
     expect(html).not.toContain("支付方式");
     expect(html).not.toContain("微信支付");
-    expect(html).not.toContain("支付宝");
+    expect(html).not.toContain("支付宝支付");
     expect(html).not.toContain("创建订单");
     expect(html).not.toContain(pricingCheckoutIntroCopy);
     expect(html).not.toContain(oldInternalCheckoutCopy);
@@ -203,9 +382,10 @@ describe("pricing checkout client", () => {
     expect(pricingClientSource).toContain("setCheckoutStarted(true)");
     expect(pricingClientSource).toContain("clearOrderState()");
     expect(pricingClientSource).toMatch(
-      /function handleStartCheckout\(productCode: string\) \{[\s\S]*const changed = productCode !== selectedProductCode;[\s\S]*setSelectedProductCode\(productCode\);[\s\S]*if \(changed\) \{\s*clearOrderState\(\);\s*\}\s*setCheckoutStarted\(true\);/,
+      /function handleStartCheckout\(productCode: string\) \{[\s\S]*setSelectedProductCode\(productCode\);[\s\S]*checkoutRequestIdRef\.current \+= 1;[\s\S]*setSubmittingProvider\(null\);[\s\S]*clearOrderState\(\);[\s\S]*setCheckoutStarted\(true\);/,
     );
     expect(pricingClientSource).toContain("selectedProduct={selectedProduct}");
+    expect(pricingClientSource).not.toContain("创建订单");
 
     for (const forbidden of [
       "providerPayload",
@@ -231,15 +411,21 @@ describe("pricing checkout client", () => {
     expect(html.match(/立即购买/g) ?? []).toHaveLength(3);
     expect(html).not.toContain("border-primary shadow-soft");
     expect(html).not.toContain("确认订单");
+    expect(html).not.toContain("选择支付方式");
     expect(html).not.toContain("支付方式");
     expect(html).not.toContain("微信支付");
     expect(html).not.toContain('href="/login?returnTo=%2Fpricing"');
     expect(pricingClientSource).toContain(pricingCheckoutIntroCopy);
     expect(pricingClientSource).not.toContain(oldInternalCheckoutCopy);
     expect(pricingClientSource).not.toContain(oldInternalGrantTypeCopy);
-    expect(pricingClientSource).toContain("createBillingOrder({ productCode, provider })");
+    expect(pricingClientSource).toContain(
+      "createBillingOrder({ productCode, provider: nextProvider })",
+    );
     expect(pricingClientSource).toContain("<CheckoutPanel");
-    expect(pricingClientSource).toContain("onCreateOrder={() => void handleCreateOrder()}");
+    expect(pricingClientSource).toContain("submittingProvider={submittingProvider}");
+    expect(pricingClientSource).toContain(
+      "onProviderPayment={(nextProvider) => void handleCreateOrder(nextProvider)}",
+    );
     expect(pricingClientSource).toContain(
       'className="w-full" disabled={submitting} onClick={onStartCheckout}',
     );
@@ -248,5 +434,10 @@ describe("pricing checkout client", () => {
     expect(pricingClientSource).not.toContain("grantType:");
     expect(pricingClientSource).not.toContain("hasFullAccess:");
     expect(pricingClientSource).not.toContain("entitlement type");
+    expect(pricingClientSource).toMatch(
+      /if \(checkoutSubmissionRef\.current\) \{\s*return;\s*\}/,
+    );
+    expect(pricingClientSource).toContain("checkoutSubmissionRef.current = true");
+    expect(pricingClientSource).toContain("checkoutSubmissionRef.current = false");
   });
 });
