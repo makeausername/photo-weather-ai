@@ -12,11 +12,7 @@ export type ForecastTerrainElevationBandKey =
   | "high"
   | "very_high";
 
-export type ForecastTerrainReliefSupportLevel =
-  | "missing"
-  | "weak"
-  | "moderate"
-  | "strong";
+export type ForecastTerrainReliefSupportLevel = "missing" | "weak" | "moderate" | "strong";
 
 export type ForecastTerrainDisplayModel = {
   readonly sourceBadgeLabelZh: string;
@@ -124,7 +120,11 @@ export function buildTerrainDisplayModel(
     demStatus,
   });
   const dataBoundary = {
-    labelZh: dataBoundaryLabel({ isMock: result.terrainAnalysis.isMock, relief, directionalHorizon }),
+    labelZh: dataBoundaryLabel({
+      isMock: result.terrainAnalysis.isMock,
+      relief,
+      directionalHorizon,
+    }),
     detail: uncertaintyBoundaryZh,
   };
   const publicSummaryZh = [
@@ -157,8 +157,19 @@ export function terrainDisplayTextWithoutRawLabels(text: string): string {
     .replace(/\bclearance\b/gi, "地形净空角")
     .replace(/target altitude/gi, "目标高度角")
     .replace(/terrain horizon altitude/gi, "地形地平线高度角")
-    .replace(/DEM coverage missing/g, "DEM 覆盖缺失")
-    .replace(/checksum/gi, "校验码")
+    .replace(/horizonAltitudeDegrees/g, "地形地平线高度角")
+    .replace(/obstructionClearanceDegrees/g, "地形净空角")
+    .replace(/datasetYear/g, "数据年份")
+    .replace(/DEM coverage missing/g, "方向地形覆盖缺失")
+    .replace(/Copernicus(?:_[A-Z0-9]+)*|GLO-\d+|VRT/gi, "方向地形数据")
+    .replace(/\bDEM\b/gi, "方向地形")
+    .replace(/\braster\b/gi, "方向地形数据")
+    .replace(/\btile(?:s)?\b/gi, "覆盖单元")
+    .replace(/瓦片/g, "覆盖单元")
+    .replace(/checksum/gi, "源数据细节")
+    .replace(/校验码/g, "源数据细节")
+    .replace(/\/[A-Za-z0-9._/-]*terrain-dem[A-Za-z0-9._/-]*/gi, "方向地形数据路径")
+    .replace(/[A-Za-z0-9_]*DEM[A-Za-z0-9_.-]*/gi, "方向地形数据")
     .replace(/\bfallback\b/gi, "保守参考");
 }
 
@@ -312,7 +323,7 @@ function buildDemStatus(
   if (directionalHorizon.available && directionalHorizon.demBacked) {
     return {
       availableForDirectionalHorizon: true,
-      labelZh: "DEM 地形遮挡已可用",
+      labelZh: "方向地形遮挡已可用",
       detail: `${directionalHorizon.sourceLabelZh}已返回${directionalHorizon.targetLabelZh}地形地平线和地形净空角。`,
     };
   }
@@ -327,8 +338,8 @@ function buildDemStatus(
   ) {
     return {
       availableForDirectionalHorizon: false,
-      labelZh: "DEM 地形遮挡暂不可用",
-      detail: "DEM 未覆盖或无法读取当前目标方向；系统不会把地形标记为无遮挡。",
+      labelZh: "方向地形遮挡暂不可用",
+      detail: "方向地形数据未覆盖或无法读取当前目标方向；系统不会把地形标记为无遮挡。",
     };
   }
 
@@ -343,8 +354,8 @@ function buildDemStatus(
   if (result.terrainAnalysis.dataSource === "dem") {
     return {
       availableForDirectionalHorizon: false,
-      labelZh: "DEM 数据已接入，方向遮挡待返回",
-      detail: "地形来源为 DEM，但当前结果未提供可公开判定的目标方向地形地平线。",
+      labelZh: "方向地形数据已接入，遮挡待返回",
+      detail: "地形数据已接入，但当前结果未提供可公开判定的目标方向地形地平线。",
     };
   }
 
@@ -352,13 +363,13 @@ function buildDemStatus(
     return {
       availableForDirectionalHorizon: false,
       labelZh: "方向地形地平线已返回",
-      detail: `${directionalHorizon.sourceLabelZh}已返回目标方向遮挡；未标记为 DEM 来源。`,
+      detail: `${directionalHorizon.sourceLabelZh}已返回目标方向遮挡。`,
     };
   }
 
   return {
     availableForDirectionalHorizon: false,
-    labelZh: "DEM 方向遮挡未返回",
+    labelZh: "方向地形遮挡未返回",
     detail: "当前结果缺少可公开判定的目标方向地形地平线，不按无遮挡处理。",
   };
 }
@@ -374,7 +385,7 @@ function buildUncertaintyBoundary(input: {
     return input.honestyNoteZh;
   }
   if (input.demStatus.availableForDirectionalHorizon && !input.reliefAvailable) {
-    return "DEM 地形遮挡已可用，但周边高差统计暂未返回；当前可判断目标方向遮挡，云海地形高差仍需结合现场云雾高度复核。";
+    return "方向地形遮挡已可用，但周边高差统计暂未返回；当前可判断目标方向遮挡，云海地形高差仍需结合现场云雾高度复核。";
   }
   if (input.directionalHorizon.available && !input.reliefAvailable) {
     return "目标方向地形地平线已返回，但周边高差统计暂未返回；不会用地形净空角反推周边高差。";
@@ -415,7 +426,7 @@ function buildCloudSeaMorphology(input: {
       ? "当前仅按低置信度处理体感、低云和白墙风险"
       : `当前可按${input.elevationBand.labelZh}机位处理体感、低云和白墙风险`;
   const demBoundary = input.demStatus.availableForDirectionalHorizon
-    ? "DEM 方向遮挡数据已可用；周边高差统计仍未返回。"
+    ? "方向地形遮挡数据已可用；周边高差统计仍未返回。"
     : "周边高差统计仍未返回。";
   const detail = `地形参考：${elevationText}；高差缺测，周边5公里高差统计暂未返回。${elevationHandling}，但云海地形高差不能按已确认处理，需结合现场云雾高度复核。${demBoundary}`;
 
@@ -581,7 +592,7 @@ function terrainHorizonSourceLabel(assessment: TerrainHorizonAssessment): string
     return terrainDisplayTextWithoutRawLabels(assessment.dataSourceLabelZh);
   }
   if (terrainHorizonAssessmentIsDemBacked(assessment)) {
-    return "本地 DEM 地形剖面";
+    return "方向地形剖面";
   }
   if (assessment.dataSource === "manual_profile") {
     return "人工地形剖面";
@@ -612,7 +623,7 @@ function directionalHorizonDetail(input: {
       input.assessment.unavailableReason,
     )}；当前不按无遮挡处理。`;
   }
-  const source = input.demBacked ? "DEM 方向剖面" : "方向剖面";
+  const source = input.demBacked ? "方向地形剖面" : "方向剖面";
   return `${source}显示${input.targetLabelZh}地形地平线 ${input.horizonAltitudeLabel}，地形净空角 ${input.clearanceLabel}，结论为${input.statusLabelZh}。`;
 }
 
@@ -655,15 +666,15 @@ function terrainUnavailableReasonLabel(
 ): string {
   switch (reason) {
     case "terrain_dem_out_of_bounds":
-      return "坐标超出 DEM 范围";
+      return "坐标超出方向地形覆盖范围";
     case "terrain_dem_missing":
-      return "DEM 数据缺失";
+      return "方向地形数据缺失";
     case "terrain_dem_no_data":
-      return "DEM 像元无有效海拔";
+      return "方向地形样本无有效海拔";
     case "terrain_dem_metadata_missing":
-      return "DEM 元数据缺失";
+      return "方向地形元数据缺失";
     case "terrain_dem_unreadable":
-      return "DEM 无法读取";
+      return "方向地形数据无法读取";
     case "missing_directional_profile":
       return "缺少目标方向地形剖面";
     case "missing_target_geometry":

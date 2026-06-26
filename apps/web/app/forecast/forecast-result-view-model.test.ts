@@ -7285,7 +7285,7 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(viewModel.terrainHorizon.obstructionLevel).toBe("clear");
-    expect(viewModel.terrainHorizon.dataSourceLabelZh).toBe("本地 DEM 地形剖面");
+    expect(viewModel.terrainHorizon.dataSourceLabelZh).toBe("方向地形剖面");
     expect(viewModel.terrainHorizon.targetAzimuthDisplay).toBe("180°");
     expect(viewModel.terrainHorizon.targetAltitudeDisplay).toBe("24°");
     expect(selectedNight?.terrainHorizon.obstructionLevel).toBe(
@@ -7295,7 +7295,7 @@ describe("forecast result target-aware view model", () => {
     expect(
       viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "地形遮挡状态")
         ?.value,
-    ).toBe("无遮挡");
+    ).toBe("地形遮挡需复核");
     expect(viewModel.publicDisplay.factorChips).toContainEqual(
       expect.objectContaining({
         key: "terrain-horizon",
@@ -7310,7 +7310,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain('data-astro-why-factor="terrain-horizon"');
   });
 
-  it("keeps DEM terrain details in professional data without leaking raw raster paths", () => {
+  it("keeps directional terrain details public-safe without leaking source internals", () => {
     const result = resultWithAstroTerrainHorizon(terrainHorizonDemForTest);
     const viewModel = buildAstroForecastViewModel(result);
     const html = renderToStaticMarkup(
@@ -7320,13 +7320,14 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    const publicTerrainText = JSON.stringify(viewModel.terrainHorizon);
 
-    expect(viewModel.terrainHorizon.dataSourceLabelZh).toBe("本地 DEM 地形剖面");
+    expect(viewModel.terrainHorizon.dataSourceLabelZh).toBe("方向地形剖面");
     expect(
-      viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "DEM 数据集"),
+      viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "地形数据范围"),
     ).toMatchObject({
-      value: "Synthetic terrain DEM / 2026 / test-dem-v1",
-      detail: "来源 Synthetic DEM；校验码 abc123def456",
+      value: "方向地形剖面",
+      detail: "公开页仅展示方向遮挡判断，源数据细节已隐藏。",
     });
     expect(
       viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "最大采样距离")
@@ -7339,9 +7340,12 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-astro-professional-data-expanded="false"');
     expect(html).not.toContain("terrain-dem.cog.tif");
     expect(html).not.toContain("checksum abc123def456");
+    expect(publicTerrainText).not.toMatch(
+      /DEM|Copernicus|GLO-30|VRT|raster|tile|horizonAltitudeDegrees|obstructionClearanceDegrees|datasetYear|checksum|校验码|Copernicus_DSM_COG_30_N30_00_E118_00_DEM/i,
+    );
   });
 
-  it("distinguishes available DEM horizon from missing surrounding relief in public terrain output", () => {
+  it("distinguishes available directional horizon from missing surrounding relief in public terrain output", () => {
     const result = resultWithUnifiedTerrainDisplayState("general", {
       terrainHorizon: terrainHorizonDemForTest,
       reliefMeters: null,
@@ -7369,7 +7373,7 @@ describe("forecast result target-aware view model", () => {
     expect(output).not.toContain("周边高差暂未计算");
     expect(output).not.toContain("clearance");
     expect(output).toContain("高海拔");
-    expect(output).toContain("DEM 方向剖面");
+    expect(output).toContain("方向地形剖面");
     expect(output).toContain("周边高差统计暂未返回");
     expect(output).toContain("目标方向地形地平线");
     expect(output).toContain("地形净空角");
@@ -7397,7 +7401,7 @@ describe("forecast result target-aware view model", () => {
     expect(terrainItem?.value).toBe("高海拔 / 高差缺测");
     expect(terrainItem?.value).not.toBe("低");
     expect(terrainItem?.value).not.toMatch(/^低$/);
-    expect(terrainText).toContain("DEM 方向遮挡数据已可用");
+    expect(terrainText).toContain("方向地形遮挡数据已可用");
     expect(terrainText).not.toContain("目标方向地形地平线");
     expect(terrainText).not.toContain("不按无遮挡处理");
     expect(terrainText).not.toContain("地形净空角");
@@ -7425,8 +7429,8 @@ describe("forecast result target-aware view model", () => {
     expect(terrainText).toContain("高差缺测");
     expect(terrainItem?.value).toBe("低海拔 / 高差缺测");
     expect(terrainItem?.value).not.toMatch(/^低$/);
-    expect(terrainText).toContain("DEM 方向遮挡数据已可用");
-    expect(terrainText).not.toContain("DEM 方向遮挡未返回");
+    expect(terrainText).toContain("方向地形遮挡数据已可用");
+    expect(terrainText).not.toContain("方向地形遮挡未返回");
     expect(terrainText).not.toContain("目标方向地形地平线");
     expect(terrainText).not.toContain("不按无遮挡处理");
     expect(terrainText).not.toContain("地形净空角");
@@ -7531,7 +7535,7 @@ describe("forecast result target-aware view model", () => {
       expect(output).not.toContain("当前使用演示地形数据");
     }
     expect(cloudSeaOutput).toContain("高差缺测");
-    expect(cloudSeaTerrainText).toContain("DEM 方向遮挡数据已可用");
+    expect(cloudSeaTerrainText).toContain("方向地形遮挡数据已可用");
     expect(cloudSeaOutput).not.toContain("目标方向地形地平线");
     expect(cloudSeaOutput).not.toContain("不按无遮挡处理");
     expect(cloudSeaOutput).not.toContain("地形净空角");
@@ -7577,7 +7581,7 @@ describe("forecast result target-aware view model", () => {
     expect(
       viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "地形遮挡状态")
         ?.value,
-    ).toBe("无遮挡");
+    ).toBe("地形遮挡需复核");
     expect(html).toContain('data-astro-public-factor-chip="terrain-horizon"');
     expect(html).not.toContain('data-astro-terrain-horizon-level="unknown"');
     expect(html).not.toContain('data-astro-terrain-horizon-level="clear"');
@@ -7593,7 +7597,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.terrainHorizon.detail).toContain("系统将地形遮挡标记为需复核");
   });
 
-  it("shows safe public DEM missing copy and tile ID only in professional diagnostics", () => {
+  it("shows safe public direction-terrain missing copy without source internals", () => {
     const result = resultWithAstroTerrainHorizon(terrainHorizonMissingDemCoverageForTest);
     const viewModel = buildAstroForecastViewModel(result);
     const html = renderToStaticMarkup(
@@ -7603,6 +7607,7 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    const publicTerrainText = JSON.stringify(viewModel.terrainHorizon);
 
     expect(viewModel.terrainHorizon.available).toBe(false);
     expect(viewModel.terrainHorizon.statusLabelZh).toBe("地形数据不足");
@@ -7610,16 +7615,21 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.terrainHorizon.publicDecisionLabel).not.toBe("地形无遮挡");
     expect(viewModel.terrainHorizon.obstructionLevel).not.toBe("clear");
     expect(
-      viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "DEM 覆盖状态"),
+      viewModel.terrainHorizon.professionalDataItems.find(
+        (item) => item.label === "方向地形覆盖状态",
+      ),
     ).toMatchObject({
-      value: "DEM 覆盖缺失",
-      detail: expect.stringContaining("Copernicus_DSM_COG_30_N30_00_E118_00_DEM"),
+      value: "方向地形覆盖缺失",
+      detail: expect.not.stringContaining("Copernicus_DSM_COG_30_N30_00_E118_00_DEM"),
     });
     expect(html).toContain('data-astro-public-factor-chip="terrain-horizon"');
     expect(html).toContain("地形数据不足");
     expect(html).not.toContain("Copernicus_DSM_COG_30_N30_00_E118_00_DEM");
     expect(html).not.toContain("curl -fL");
     expect(html).not.toContain("/app/data/terrain-dem/incoming");
+    expect(publicTerrainText).not.toMatch(
+      /DEM|Copernicus|GLO-30|VRT|raster|tile|horizonAltitudeDegrees|obstructionClearanceDegrees|datasetYear|checksum|瓦片|校验码|Copernicus_DSM_COG_30_N30_00_E118_00_DEM/i,
+    );
   });
 
   it.each([
@@ -8945,6 +8955,15 @@ describe("forecast result target-aware view model", () => {
       "计算口径",
       "VIIRS annual nighttime lights",
       "EOG VIIRS",
+      "Copernicus",
+      "GLO-30",
+      "VRT",
+      "raster",
+      "tile",
+      "horizonAltitudeDegrees",
+      "obstructionClearanceDegrees",
+      "datasetYear",
+      "checksum",
     ]) {
       expect(publicResultText).not.toContain(forbiddenText);
     }

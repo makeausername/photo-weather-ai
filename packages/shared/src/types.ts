@@ -698,7 +698,10 @@ export type TerrainDemTileCoverageDiagnostic = {
 export type TerrainHorizonDirectionSample = {
   readonly target?: TerrainHorizonTarget;
   readonly azimuthDegrees: number;
+  readonly targetAltitudeDegrees?: number | null;
   readonly horizonAltitudeDegrees?: number | null;
+  readonly obstructionClearanceDegrees?: number | null;
+  readonly obstructionLevel?: TerrainHorizonObstructionLevel;
   readonly elevationMeters?: number | null;
   readonly distanceMeters?: number | null;
   readonly sampledLatitudeWgs84?: number | null;
@@ -718,6 +721,10 @@ export type TerrainHorizonDirectionSample = {
   readonly checksumShort?: string | null;
   readonly unavailableReason?: TerrainHorizonUnavailableReason;
   readonly terrainDemCoverage?: TerrainDemTileCoverageDiagnostic | null;
+  readonly sourceWindowKey?: string;
+  readonly sourceDate?: string;
+  readonly sourcePhase?: "sunrise" | "sunset" | "milky_way";
+  readonly lightPathRole?: "sunrise_low_angle" | "sunset_low_angle" | "galactic_center";
 };
 
 export type TerrainHorizonAssessment = {

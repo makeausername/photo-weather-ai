@@ -345,12 +345,7 @@ const terrainHorizonTargetSchema = z.enum([
   "custom",
 ]);
 
-const terrainHorizonObstructionLevelSchema = z.enum([
-  "clear",
-  "marginal",
-  "obstructed",
-  "unknown",
-]);
+const terrainHorizonObstructionLevelSchema = z.enum(["clear", "marginal", "obstructed", "unknown"]);
 
 const terrainHorizonConfidenceSchema = z.enum(["high", "medium", "low", "unknown"]);
 
@@ -1498,9 +1493,7 @@ function mapLightPollutionResponse(
 export function mapTerrainDemProfileToDirectionSample(
   profile: AstroServiceTerrainDemProfileQueryResponse,
 ): TerrainHorizonDirectionSample | null {
-  if (
-    typeof profile.targetAzimuthDegrees !== "number"
-  ) {
+  if (typeof profile.targetAzimuthDegrees !== "number") {
     return null;
   }
 
@@ -1508,10 +1501,19 @@ export function mapTerrainDemProfileToDirectionSample(
   const common = {
     target: profile.target,
     azimuthDegrees: roundTo(profile.targetAzimuthDegrees, 3),
+    targetAltitudeDegrees:
+      typeof profile.targetAltitudeDegrees === "number"
+        ? roundTo(profile.targetAltitudeDegrees, 3)
+        : null,
+    obstructionClearanceDegrees:
+      typeof profile.obstructionClearanceDegrees === "number"
+        ? roundTo(profile.obstructionClearanceDegrees, 3)
+        : null,
+    obstructionLevel: profile.obstructionLevel,
     observerElevationMeters: profile.observerElevationMeters ?? null,
     directionLabelZh: directionLabelZhFromAzimuth(profile.targetAzimuthDegrees),
     dataSource: "dem_raster" as const,
-    dataSourceLabelZh: "本地 DEM 地形剖面",
+    dataSourceLabelZh: "方向地形剖面",
     confidence: profile.confidence,
     sampleCount: profile.sampleCount,
     validSampleCount: profile.validSampleCount,

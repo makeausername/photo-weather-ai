@@ -701,7 +701,7 @@ describe("AstroServiceClient", () => {
       sampledLongitudeWgs84: 118.198,
       observerElevationMeters: 1800,
       dataSource: "dem_raster",
-      dataSourceLabelZh: "本地 DEM 地形剖面",
+      dataSourceLabelZh: "方向地形剖面",
       confidence: "high",
       sampleCount: 120,
       validSampleCount: 118,

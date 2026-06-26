@@ -20,6 +20,7 @@ import {
   type AstroServiceCalculationResponse,
   type AstroServiceClientLike,
   type AstroServiceCalculateInput,
+  type AstroServiceTerrainDemProfileQueryInput,
   type AstroServiceTerrainDemProfileQueryResponse,
 } from "../astro-service-client.js";
 
@@ -41,6 +42,14 @@ const validPayload = {
 function addOneDay(date: string): string {
   const [year, month, day] = date.split("-").map(Number);
   const next = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, (day ?? 1) + 1));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    next.getUTCDate(),
+  ).padStart(2, "0")}`;
+}
+
+function addDays(date: string, days: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, (day ?? 1) + days));
   return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(
     next.getUTCDate(),
   ).padStart(2, "0")}`;
@@ -386,6 +395,99 @@ function buildAstroServiceResponse(
   };
 }
 
+function buildMultiDayAstroServiceResponse(
+  input: AstroServiceCalculateInput,
+  days: number,
+): AstroServiceCalculationResponse {
+  const base = buildAstroServiceResponse(input);
+  const startDate = input.startDateTime.slice(0, 10);
+  const targetDates = Array.from({ length: days }, (_, index) => addDays(startDate, index));
+  const lastDate = targetDates[targetDates.length - 1] ?? startDate;
+  const baseSun = base.sun.daily[0]!;
+  const baseMoon = base.moon.daily[0]!;
+
+  return {
+    ...base,
+    forecastEnd: `${addOneDay(lastDate)}T00:00:00+08:00`,
+    targetDates,
+    sun: {
+      daily: targetDates.map((date, index) => ({
+        ...baseSun,
+        date,
+        sunrise: `${date}T05:${String(8 + (index % 4)).padStart(2, "0")}:00+08:00`,
+        sunset: `${date}T18:${String(50 + (index % 6)).padStart(2, "0")}:00+08:00`,
+        solarNoon: `${date}T12:03:00+08:00`,
+        civilDawn: `${date}T04:42:00+08:00`,
+        civilDusk: `${date}T19:24:00+08:00`,
+        nauticalDawn: `${date}T04:10:00+08:00`,
+        nauticalDusk: `${date}T19:57:00+08:00`,
+        astronomicalDawn: `${date}T03:36:00+08:00`,
+        astronomicalDusk: `${date}T20:31:00+08:00`,
+        sunriseAzimuth: 67.2 + index,
+        sunsetAzimuth: 292.8 - index,
+        sunriseGlowBestStart: `${date}T05:02:00+08:00`,
+        sunriseGlowBestEnd: `${date}T05:18:00+08:00`,
+        sunsetGlowBestStart: `${date}T18:44:00+08:00`,
+        sunsetGlowBestEnd: `${date}T19:02:00+08:00`,
+      })),
+    },
+    moon: {
+      daily: targetDates.map((date, index) => ({
+        ...baseMoon,
+        date,
+        moonrise: `${date}T10:42:00+08:00`,
+        moonset: `${addOneDay(date)}T00:28:00+08:00`,
+        moonAltitudeByHour: [
+          { time: `${date}T20:00:00+08:00`, altitude: 32, azimuth: 250 },
+          { time: `${addOneDay(date)}T01:00:00+08:00`, altitude: -7, azimuth: 296 },
+        ],
+        moonImpactLevel: index % 2 === 0 ? "low" : "medium",
+      })),
+      altitudeByHour: targetDates.flatMap((date) => [
+        { time: `${date}T20:00:00+08:00`, altitude: 32, azimuth: 250 },
+        { time: `${addOneDay(date)}T01:00:00+08:00`, altitude: -7, azimuth: 296 },
+      ]),
+    },
+    night: {
+      astronomicalNightWindows: targetDates.map((date) => ({
+        date,
+        start: `${date}T20:31:00+08:00`,
+        end: `${addOneDay(date)}T03:35:00+08:00`,
+        durationMinutes: 424,
+        noteZh: "太阳高度低于 -18 度。",
+      })),
+      moonlessNightWindows: targetDates.map((date) => ({
+        date,
+        start: `${addOneDay(date)}T00:28:00+08:00`,
+        end: `${addOneDay(date)}T03:35:00+08:00`,
+        durationMinutes: 187,
+        reasonZh: "月落后进入低月光影响窗口。",
+      })),
+    },
+    milkyWay: {
+      ...base.milkyWay,
+      candidateWindows: targetDates.map((date, index) => ({
+        ...base.milkyWay.candidateWindows[0]!,
+        date,
+        start: `${date}T22:20:00+08:00`,
+        end: `${addOneDay(date)}T03:35:00+08:00`,
+        bestTime: `${addOneDay(date)}T02:10:00+08:00`,
+        bestAzimuth: 146 + index,
+        maxAltitude: 31 + (index % 3),
+      })),
+      recommendedWindows: targetDates.map((date, index) => ({
+        ...base.milkyWay.recommendedWindows[0]!,
+        date,
+        start: `${addOneDay(date)}T00:28:00+08:00`,
+        end: `${addOneDay(date)}T03:35:00+08:00`,
+        bestTime: `${addOneDay(date)}T02:10:00+08:00`,
+        bestAzimuth: 146 + index,
+        galacticCenterMaxAltitude: 31 + (index % 3),
+      })),
+    },
+  };
+}
+
 function buildTerrainDemProfileResponse(
   overrides: Partial<AstroServiceTerrainDemProfileQueryResponse> = {},
 ): AstroServiceTerrainDemProfileQueryResponse {
@@ -455,6 +557,28 @@ function buildTerrainDemProfileResponse(
     cacheHit: false,
     ...overrides,
   };
+}
+
+function buildTerrainDemProfileResponseForInput(
+  input: AstroServiceTerrainDemProfileQueryInput,
+  overrides: Partial<AstroServiceTerrainDemProfileQueryResponse> = {},
+): AstroServiceTerrainDemProfileQueryResponse {
+  const horizonAltitudeDegrees =
+    input.target === "sunrise" ? 5.5 : input.target === "sunset" ? 6.5 : 34;
+  const targetAltitudeDegrees =
+    input.targetAltitudeDegrees ?? (input.target === "milky_way" ? 31 : 1);
+
+  return buildTerrainDemProfileResponse({
+    target: input.target,
+    targetAzimuthDegrees: input.targetAzimuthDegrees,
+    targetAltitudeDegrees,
+    horizonAltitudeDegrees,
+    obstructionClearanceDegrees: Number(
+      (targetAltitudeDegrees - horizonAltitudeDegrees).toFixed(1),
+    ),
+    obstructionLevel: horizonAltitudeDegrees > targetAltitudeDegrees ? "obstructed" : "clear",
+    ...overrides,
+  });
 }
 
 function delay(ms: number): Promise<void> {
@@ -1858,13 +1982,13 @@ describe("forecast query validation route", () => {
     );
     expect(body.terrainAnalysis).toMatchObject({
       dataSource: "dem",
-      dataSourceLabelZh: "本地 DEM 地形剖面",
+      dataSourceLabelZh: "方向地形剖面",
       isMock: false,
     });
     expect(body.terrainAnalysis.horizonProfile.directionSamples[0]).toMatchObject({
       target: "milky_way",
       dataSource: "dem_raster",
-      dataSourceLabelZh: "本地 DEM 地形剖面",
+      dataSourceLabelZh: "方向地形剖面",
       sampleCount: 120,
       validSampleCount: 118,
       datasetVersion: "test-dem-v1",
@@ -1882,7 +2006,7 @@ describe("forecast query validation route", () => {
       obstructionLevel: "obstructed",
       confidence: "high",
       dataSource: "dem_raster",
-      dataSourceLabelZh: "本地 DEM 地形剖面",
+      dataSourceLabelZh: "方向地形剖面",
       directionSample: expect.objectContaining({
         dataSource: "dem_raster",
         observerElevationMeters: 1860,
@@ -1972,8 +2096,8 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(body.terrainAnalysis).toMatchObject({
-      dataSourceLabelZh: "本地 DEM 覆盖诊断",
-      honestyNoteZh: "地形数据不足；缺少可用 DEM 剖面时不按无遮挡处理。",
+      dataSourceLabelZh: "方向地形覆盖诊断",
+      honestyNoteZh: "方向地形数据不足；缺少可用剖面时不按无遮挡处理。",
     });
     expect(body.astroAnalysis.terrainHorizonAssessment).toMatchObject({
       obstructionLevel: "unknown",
@@ -1989,6 +2113,240 @@ describe("forecast query validation route", () => {
       }),
     });
     expect(body.astroAnalysis.terrainHorizonAssessment.obstructionClearanceDegrees).toBeNull();
+  });
+
+  it("queries sunrise and sunset terrain DEM profiles for glow forecasts", async () => {
+    const calculateMock = vi.fn((input: AstroServiceCalculateInput) =>
+      Promise.resolve(buildAstroServiceResponse(input)),
+    );
+    const queryTerrainDemProfileMock = vi.fn(
+      async (input: AstroServiceTerrainDemProfileQueryInput) =>
+        buildTerrainDemProfileResponseForInput(input),
+    );
+    const astroServiceClient: AstroServiceClientLike = {
+      calculate: calculateMock,
+      queryTerrainDemProfile: queryTerrainDemProfileMock,
+    };
+    app = buildApiServer({
+      authConfig: forecastTestAuthConfig,
+      astroServiceClient,
+      env: {
+        ...process.env,
+        ENABLE_ASTRO_SERVICE: "true",
+        ASTRO_SERVICE_URL: "http://127.0.0.1:4100",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "glow",
+      },
+    });
+    const body = response.json();
+    const targets = queryTerrainDemProfileMock.mock.calls.map(
+      ([input]) => (input as AstroServiceTerrainDemProfileQueryInput).target,
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(targets).toEqual(["sunrise", "sunset"]);
+    expect(queryTerrainDemProfileMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: "sunrise",
+        targetAzimuthDegrees: 67.2,
+        targetAltitudeDegrees: 1,
+      }),
+    );
+    expect(queryTerrainDemProfileMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: "sunset",
+        targetAzimuthDegrees: 292.8,
+        targetAltitudeDegrees: 1,
+      }),
+    );
+    expect(
+      body.terrainAnalysis.horizonProfile.directionSamples.map(
+        (sample: { target?: string; lightPathRole?: string }) => [
+          sample.target,
+          sample.lightPathRole,
+        ],
+      ),
+    ).toEqual([
+      ["sunrise", "sunrise_low_angle"],
+      ["sunset", "sunset_low_angle"],
+    ]);
+    expect(body.scores.sunriseGlow.score).toBeLessThan(70);
+    expect(body.scores.sunsetGlow.score).toBeLessThan(70);
+  });
+
+  it("collects sunrise, sunset, and Milky Way terrain DEM targets for general forecasts", async () => {
+    const calculateMock = vi.fn((input: AstroServiceCalculateInput) => {
+      const response = buildAstroServiceResponse(input);
+      return Promise.resolve({
+        ...response,
+        milkyWay: {
+          ...response.milkyWay,
+          candidateWindows: response.milkyWay.candidateWindows.map((window) => ({
+            ...window,
+            bestAzimuth: 146,
+          })),
+          recommendedWindows: response.milkyWay.recommendedWindows.map((window) => ({
+            ...window,
+            bestAzimuth: 146,
+          })),
+        },
+      });
+    });
+    const queryTerrainDemProfileMock = vi.fn(
+      async (input: AstroServiceTerrainDemProfileQueryInput) =>
+        buildTerrainDemProfileResponseForInput(input),
+    );
+    const astroServiceClient: AstroServiceClientLike = {
+      calculate: calculateMock,
+      queryTerrainDemProfile: queryTerrainDemProfileMock,
+    };
+    app = buildApiServer({
+      authConfig: forecastTestAuthConfig,
+      astroServiceClient,
+      env: {
+        ...process.env,
+        ENABLE_ASTRO_SERVICE: "true",
+        ASTRO_SERVICE_URL: "http://127.0.0.1:4100",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "general",
+      },
+    });
+    const body = response.json();
+    const targets = queryTerrainDemProfileMock.mock.calls.map(
+      ([input]) => (input as AstroServiceTerrainDemProfileQueryInput).target,
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(new Set(targets)).toEqual(new Set(["sunrise", "sunset", "milky_way"]));
+    expect(
+      body.terrainAnalysis.horizonProfile.directionSamples.map(
+        (sample: { target?: string; sourceWindowKey?: string }) => [
+          sample.target,
+          sample.sourceWindowKey,
+        ],
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        ["sunrise", expect.stringContaining("sunrise:")],
+        ["sunset", expect.stringContaining("sunset:")],
+        ["milky_way", expect.stringContaining("recommended_milky_way:")],
+      ]),
+    );
+  });
+
+  it("caps and deduplicates directional terrain DEM targets by horizon", async () => {
+    const calculateMock = vi.fn((input: AstroServiceCalculateInput) =>
+      Promise.resolve(buildMultiDayAstroServiceResponse(input, 7)),
+    );
+    const queryTerrainDemProfileMock = vi.fn(
+      async (input: AstroServiceTerrainDemProfileQueryInput) =>
+        buildTerrainDemProfileResponseForInput(input),
+    );
+    const astroServiceClient: AstroServiceClientLike = {
+      calculate: calculateMock,
+      queryTerrainDemProfile: queryTerrainDemProfileMock,
+    };
+    app = buildApiServer({
+      authConfig: forecastTestAuthConfig,
+      astroServiceClient,
+      env: {
+        ...process.env,
+        ENABLE_ASTRO_SERVICE: "true",
+        ASTRO_SERVICE_URL: "http://127.0.0.1:4100",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "general",
+        horizon: "72h",
+        startDateTime: "2026-05-20T00:00:00+08:00",
+      },
+    });
+    const calls = queryTerrainDemProfileMock.mock.calls.map(
+      ([input]) => input as AstroServiceTerrainDemProfileQueryInput,
+    );
+    const stableKeys = calls.map(
+      (input) =>
+        `${input.target}:${
+          typeof input.targetAzimuthDegrees === "number"
+            ? input.targetAzimuthDegrees.toFixed(1)
+            : "unknown"
+        }:${input.targetAltitudeDegrees ?? "unknown"}`,
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(calls).toHaveLength(8);
+    expect(new Set(stableKeys).size).toBe(stableKeys.length);
+    expect(calls.some((input) => input.target === "sunrise")).toBe(true);
+    expect(calls.some((input) => input.target === "sunset")).toBe(true);
+    expect(calls.some((input) => input.target === "milky_way")).toBe(true);
+  });
+
+  it("keeps forecast calculation successful when one directional DEM profile fails", async () => {
+    const calculateMock = vi.fn((input: AstroServiceCalculateInput) =>
+      Promise.resolve(buildAstroServiceResponse(input)),
+    );
+    const queryTerrainDemProfileMock = vi.fn(
+      async (input: AstroServiceTerrainDemProfileQueryInput) => {
+        if (input.target === "sunrise") {
+          throw new Error("terrain profile unavailable");
+        }
+        return buildTerrainDemProfileResponseForInput(input);
+      },
+    );
+    const astroServiceClient: AstroServiceClientLike = {
+      calculate: calculateMock,
+      queryTerrainDemProfile: queryTerrainDemProfileMock,
+    };
+    app = buildApiServer({
+      authConfig: forecastTestAuthConfig,
+      astroServiceClient,
+      env: {
+        ...process.env,
+        ENABLE_ASTRO_SERVICE: "true",
+        ASTRO_SERVICE_URL: "http://127.0.0.1:4100",
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: {
+        ...validPayload,
+        target: "glow",
+      },
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(queryTerrainDemProfileMock).toHaveBeenCalledTimes(2);
+    expect(
+      body.terrainAnalysis.horizonProfile.directionSamples.map(
+        (sample: { target?: string }) => sample.target,
+      ),
+    ).toEqual(["sunset"]);
   });
 
   it("attaches a safe calibration hint for general forecast when enough labels exist", async () => {

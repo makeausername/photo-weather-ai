@@ -14,13 +14,17 @@ import {
   buildTerrainTemperatureBasisContext,
   type ForecastCalculationResult,
   type ElevationSource,
+  type ForecastHorizon,
   type ForecastQueryInput,
+  type ForecastTarget,
   type TerrainAnalysisSummary,
   type TerrainHorizonDirectionSample,
+  type TerrainHorizonTarget,
   forecastHorizonLabels,
   normalizeForecastQueryInput,
   forecastQueryInputSchema,
   forecastTargetLabels,
+  glowSolarAltitudeGeometryConfig,
 } from "@photo-weather/shared";
 import {
   checkForecastAccess,
@@ -1209,10 +1213,32 @@ async function calculateForecastResult(
   });
 }
 
+type DirectionalTerrainDemTarget = Extract<
+  TerrainHorizonTarget,
+  "sunrise" | "sunset" | "milky_way"
+>;
+type DirectionalTerrainDemPhase = "sunrise" | "sunset" | "milky_way";
+
 type TerrainDemTargetGeometry = {
+  readonly target: DirectionalTerrainDemTarget;
   readonly targetAzimuthDegrees: number;
   readonly targetAltitudeDegrees: number | null;
   readonly sourceWindowKey: string;
+  readonly sourceDate?: string;
+  readonly sourcePhase: DirectionalTerrainDemPhase;
+  readonly lightPathRole: NonNullable<TerrainHorizonDirectionSample["lightPathRole"]>;
+  readonly priority: number;
+};
+
+type TerrainDemDirectionalDiagnostics = {
+  successfulProfileCount: number;
+  obstructedProfileCount: number;
+  marginalProfileCount: number;
+  clearProfileCount: number;
+  penaltyByTarget: Partial<Record<DirectionalTerrainDemTarget, number>>;
+  maxHorizonAltitudeDegrees: number | null;
+  minClearanceDegrees: number | null;
+  profileElapsedMsTotal: number;
 };
 
 async function enrichTerrainAnalysisWithTerrainDem(options: {
@@ -1229,7 +1255,11 @@ async function enrichTerrainAnalysisWithTerrainDem(options: {
     return options.terrainAnalysis;
   }
 
-  const targets = collectMilkyWayTerrainDemTargets(options.astroServiceData);
+  const targets = collectDirectionalTerrainDemTargets({
+    target: options.query.target,
+    horizon: options.query.horizon,
+    astroServiceData: options.astroServiceData,
+  });
   if (targets.length === 0) {
     return options.terrainAnalysis;
   }
@@ -1240,35 +1270,53 @@ async function enrichTerrainAnalysisWithTerrainDem(options: {
     options.query.elevationMeters,
   ]);
   const demSamples: TerrainHorizonDirectionSample[] = [];
+  const diagnostics: TerrainDemDirectionalDiagnostics = {
+    successfulProfileCount: 0,
+    obstructedProfileCount: 0,
+    marginalProfileCount: 0,
+    clearProfileCount: 0,
+    penaltyByTarget: {},
+    maxHorizonAltitudeDegrees: null,
+    minClearanceDegrees: null,
+    profileElapsedMsTotal: 0,
+  };
 
   for (const target of targets) {
+    const profileStartedAt = Date.now();
     try {
       const profile = await queryTerrainDemProfile({
         latitudeWgs84: options.query.latitudeWgs84,
         longitudeWgs84: options.query.longitudeWgs84,
         observerElevationMeters,
-        target: "milky_way",
+        target: target.target,
         targetAzimuthDegrees: target.targetAzimuthDegrees,
         targetAltitudeDegrees: target.targetAltitudeDegrees,
         maxDistanceMeters: 30_000,
         sampleIntervalMeters: 250,
       });
+      const elapsedMs =
+        typeof profile.queryElapsedMs === "number" && Number.isFinite(profile.queryElapsedMs)
+          ? profile.queryElapsedMs
+          : Date.now() - profileStartedAt;
       const sample = mapTerrainDemProfileToDirectionSample(profile);
       if (sample) {
-        demSamples.push(sample);
+        const annotatedSample = annotateTerrainDemDirectionSample(sample, target);
+        demSamples.push(annotatedSample);
+        recordTerrainDemDirectionalDiagnostics(diagnostics, annotatedSample, elapsedMs);
+      } else {
+        diagnostics.profileElapsedMsTotal += elapsedMs;
       }
       options.logger.info(
         {
           route: "/forecast/calculate",
-          target: options.query.target,
+          forecastTarget: options.query.target,
+          horizon: options.query.horizon,
+          terrainDemTarget: target.target,
           terrainDemAvailable: profile.available,
           terrainDemUnavailableReason: profile.unavailableReason ?? null,
           terrainDemConfidence: profile.confidence,
-          terrainDemDatasetYear: profile.datasetYear ?? null,
-          terrainDemDatasetVersion: profile.datasetVersion ?? null,
           terrainDemSampleCount: profile.sampleCount,
           terrainDemValidSampleCount: profile.validSampleCount,
-          terrainDemRequiredTileId: profile.demCoverage?.requiredTileId ?? null,
           terrainDemTileStatus: profile.demCoverage?.status ?? null,
           targetAzimuthDegrees: target.targetAzimuthDegrees,
           targetAltitudeDegrees: target.targetAltitudeDegrees,
@@ -1281,7 +1329,9 @@ async function enrichTerrainAnalysisWithTerrainDem(options: {
       options.logger.warn(
         {
           route: "/forecast/calculate",
-          target: options.query.target,
+          forecastTarget: options.query.target,
+          horizon: options.query.horizon,
+          terrainDemTarget: target.target,
           targetAzimuthDegrees: target.targetAzimuthDegrees,
           sourceWindowKey: target.sourceWindowKey,
           errorName: normalized.name,
@@ -1292,88 +1342,372 @@ async function enrichTerrainAnalysisWithTerrainDem(options: {
     }
   }
 
+  logTerrainDemDirectionalDiagnostics(options.logger, options.query, targets, diagnostics);
+
   if (demSamples.length === 0) {
     return options.terrainAnalysis;
   }
 
-  const hasResolvedDemProfile = demSamples.some(
-    (sample) =>
-      typeof sample.horizonAltitudeDegrees === "number" &&
-      sample.unavailableReason === undefined &&
-      (sample.confidence === "medium" || sample.confidence === "high"),
+  const hasResolvedDemProfile = demSamples.some(isDeterministicTerrainDemSample);
+  const directionSamples = mergeTerrainDemDirectionSamples(
+    options.terrainAnalysis.horizonProfile.directionSamples,
+    demSamples,
   );
 
   return {
     ...options.terrainAnalysis,
     horizonProfile: {
       ...options.terrainAnalysis.horizonProfile,
-      directionSamples: mergeTerrainDemDirectionSamples(
-        options.terrainAnalysis.horizonProfile.directionSamples,
+      sunriseHorizonAngle: mergeDirectionalDemHorizonAngle(
+        options.terrainAnalysis.horizonProfile.sunriseHorizonAngle,
         demSamples,
+        "sunrise",
       ),
+      sunsetHorizonAngle: mergeDirectionalDemHorizonAngle(
+        options.terrainAnalysis.horizonProfile.sunsetHorizonAngle,
+        demSamples,
+        "sunset",
+      ),
+      directionSamples,
       obstructionNoteZh: hasResolvedDemProfile
-        ? "本地 DEM 已提供银河方向地形剖面；云海高差、近景遮挡、树线和建筑遮挡仍需现场复核。"
-        : "地形数据不足；当前 DEM 未覆盖目标坐标或样本不可用，系统未按无遮挡处理。",
+        ? "方向地形剖面已用于低角度光路和银河方向遮挡判断；近景、树线和建筑遮挡仍需现场复核。"
+        : "方向地形数据不足；缺少可用剖面时不按无遮挡处理。",
     },
     dataSource: "dem",
-    dataSourceLabelZh: hasResolvedDemProfile ? "本地 DEM 地形剖面" : "本地 DEM 覆盖诊断",
+    dataSourceLabelZh: hasResolvedDemProfile ? "方向地形剖面" : "方向地形覆盖诊断",
     isMock: false,
     honestyNoteZh: hasResolvedDemProfile
-      ? "银河方向地形遮挡使用本地 DEM；云海高差、近景遮挡、树线和建筑遮挡仍需现场复核。"
-      : "地形数据不足；缺少可用 DEM 剖面时不按无遮挡处理。",
+      ? "方向地形遮挡已纳入判断；云海高差、近景遮挡、树线和建筑遮挡仍需现场复核。"
+      : "方向地形数据不足；缺少可用剖面时不按无遮挡处理。",
   };
 }
 
-function collectMilkyWayTerrainDemTargets(
+function collectDirectionalTerrainDemTargets(options: {
+  readonly target: ForecastTarget;
+  readonly horizon: ForecastHorizon;
+  readonly astroServiceData: ForecastAstroServiceData;
+}): readonly TerrainDemTargetGeometry[] {
+  if (options.target === "cloud_sea") {
+    return [];
+  }
+
+  const targets: TerrainDemTargetGeometry[] = [];
+  if (options.target === "glow" || options.target === "general") {
+    targets.push(...collectGlowTerrainDemTargets(options.astroServiceData));
+  }
+  if (options.target === "astro" || options.target === "general") {
+    targets.push(...collectMilkyWayTerrainDemTargets(options.astroServiceData));
+  }
+
+  return dedupeAndCapTerrainDemTargets(targets, terrainDemTargetCapForHorizon(options.horizon));
+}
+
+function collectGlowTerrainDemTargets(
   astroServiceData: ForecastAstroServiceData,
 ): readonly TerrainDemTargetGeometry[] {
-  const windows = [
-    ...astroServiceData.astroWindowBundle.recommendedMilkyWayWindows,
-    ...astroServiceData.astroWindowBundle.milkyWayCandidateWindows,
-  ];
-  const seen = new Set<string>();
   const targets: TerrainDemTargetGeometry[] = [];
 
-  for (const window of windows) {
-    if (
-      typeof window.galacticCenterAzimuth !== "number" ||
-      !Number.isFinite(window.galacticCenterAzimuth)
-    ) {
-      continue;
+  for (const [index, astro] of astroServiceData.astroSummaries.entries()) {
+    if (typeof astro.sunriseAzimuth === "number" && Number.isFinite(astro.sunriseAzimuth)) {
+      targets.push({
+        target: "sunrise",
+        targetAzimuthDegrees: astro.sunriseAzimuth,
+        targetAltitudeDegrees: glowLowAngleTerrainTargetAltitude("sunrise"),
+        sourceWindowKey: `sunrise:${astro.date}:${astro.sunriseGlowBestStartAt ?? astro.sunrise ?? "unknown"}`,
+        sourceDate: astro.date,
+        sourcePhase: "sunrise",
+        lightPathRole: "sunrise_low_angle",
+        priority:
+          (astro.sunriseGlowBestStartAt || astro.sunriseGlowBestEndAt ? 10 : 30) + index * 4,
+      });
     }
-    const targetAzimuthDegrees = window.galacticCenterAzimuth;
-    const targetAltitudeDegrees =
-      typeof window.galacticCenterAltitude === "number" &&
-      Number.isFinite(window.galacticCenterAltitude)
-        ? window.galacticCenterAltitude
-        : null;
-    const key = `${Math.round(targetAzimuthDegrees * 10) / 10}:${targetAltitudeDegrees === null ? "unknown" : Math.round(targetAltitudeDegrees * 10) / 10}`;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    targets.push({
-      targetAzimuthDegrees,
-      targetAltitudeDegrees,
-      sourceWindowKey: `${window.type}:${window.date ?? "unknown"}:${window.start}`,
-    });
-    if (targets.length >= 3) {
-      break;
+    if (typeof astro.sunsetAzimuth === "number" && Number.isFinite(astro.sunsetAzimuth)) {
+      targets.push({
+        target: "sunset",
+        targetAzimuthDegrees: astro.sunsetAzimuth,
+        targetAltitudeDegrees: glowLowAngleTerrainTargetAltitude("sunset"),
+        sourceWindowKey: `sunset:${astro.date}:${astro.sunsetGlowBestStartAt ?? astro.sunset ?? "unknown"}`,
+        sourceDate: astro.date,
+        sourcePhase: "sunset",
+        lightPathRole: "sunset_low_angle",
+        priority: (astro.sunsetGlowBestStartAt || astro.sunsetGlowBestEndAt ? 11 : 31) + index * 4,
+      });
     }
   }
 
   return targets;
 }
 
+function collectMilkyWayTerrainDemTargets(
+  astroServiceData: ForecastAstroServiceData,
+): readonly TerrainDemTargetGeometry[] {
+  const windows = [
+    ...astroServiceData.astroWindowBundle.recommendedMilkyWayWindows.map((window) => ({
+      window,
+      priority: 20,
+    })),
+    ...astroServiceData.astroWindowBundle.milkyWayCandidateWindows.map((window) => ({
+      window,
+      priority: 60,
+    })),
+  ].sort((left, right) => left.priority - right.priority || right.window.score - left.window.score);
+  const targets: TerrainDemTargetGeometry[] = [];
+
+  for (const { window, priority } of windows) {
+    if (
+      typeof window.galacticCenterAzimuth !== "number" ||
+      !Number.isFinite(window.galacticCenterAzimuth)
+    ) {
+      continue;
+    }
+    targets.push({
+      target: "milky_way",
+      targetAzimuthDegrees: window.galacticCenterAzimuth,
+      targetAltitudeDegrees:
+        typeof window.galacticCenterAltitude === "number" &&
+        Number.isFinite(window.galacticCenterAltitude)
+          ? window.galacticCenterAltitude
+          : null,
+      sourceWindowKey: `${window.type}:${window.date ?? "unknown"}:${window.start}`,
+      sourceDate: window.date,
+      sourcePhase: "milky_way",
+      lightPathRole: "galactic_center",
+      priority,
+    });
+  }
+
+  return targets;
+}
+
+function dedupeAndCapTerrainDemTargets(
+  targets: readonly TerrainDemTargetGeometry[],
+  cap: number,
+): readonly TerrainDemTargetGeometry[] {
+  const seen = new Set<string>();
+  const cappedTargets: TerrainDemTargetGeometry[] = [];
+
+  for (const target of [...targets].sort(compareTerrainDemTargets)) {
+    const key = terrainDemTargetStableKey(target);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    cappedTargets.push(target);
+    if (cappedTargets.length >= cap) {
+      break;
+    }
+  }
+
+  return cappedTargets;
+}
+
+function compareTerrainDemTargets(
+  left: TerrainDemTargetGeometry,
+  right: TerrainDemTargetGeometry,
+): number {
+  return (
+    left.priority - right.priority ||
+    String(left.sourceDate ?? "").localeCompare(String(right.sourceDate ?? "")) ||
+    left.sourceWindowKey.localeCompare(right.sourceWindowKey)
+  );
+}
+
+function terrainDemTargetStableKey(target: TerrainDemTargetGeometry): string {
+  return [
+    target.target,
+    target.sourceDate ?? "unknown",
+    roundTerrainDemKeyValue(target.targetAzimuthDegrees),
+    target.targetAltitudeDegrees === null
+      ? "unknown"
+      : roundTerrainDemKeyValue(target.targetAltitudeDegrees),
+  ].join(":");
+}
+
+function terrainDemTargetCapForHorizon(horizon: ForecastHorizon): number {
+  if (horizon === "72h") {
+    return 8;
+  }
+  if (horizon === "7d") {
+    return 12;
+  }
+  return 6;
+}
+
+function glowLowAngleTerrainTargetAltitude(phase: "sunrise" | "sunset"): number {
+  // Low-angle sunrise/sunset checks approximate directional light-path obstruction;
+  // they are not an exact cloud illumination model.
+  const band = glowSolarAltitudeGeometryConfig[phase].best;
+  return phase === "sunrise" ? band.endAltitudeDegrees : band.startAltitudeDegrees;
+}
+
+function annotateTerrainDemDirectionSample(
+  sample: TerrainHorizonDirectionSample,
+  target: TerrainDemTargetGeometry,
+): TerrainHorizonDirectionSample {
+  return {
+    ...sample,
+    target: target.target,
+    azimuthDegrees: roundTerrainDemSampleValue(target.targetAzimuthDegrees),
+    targetAltitudeDegrees:
+      target.targetAltitudeDegrees === null
+        ? null
+        : roundTerrainDemSampleValue(target.targetAltitudeDegrees),
+    sourceWindowKey: target.sourceWindowKey,
+    sourceDate: target.sourceDate,
+    sourcePhase: target.sourcePhase,
+    lightPathRole: target.lightPathRole,
+  };
+}
+
+function recordTerrainDemDirectionalDiagnostics(
+  diagnostics: TerrainDemDirectionalDiagnostics,
+  sample: TerrainHorizonDirectionSample,
+  elapsedMs: number,
+): void {
+  diagnostics.profileElapsedMsTotal += elapsedMs;
+  const target = sample.target;
+  if (target !== "sunrise" && target !== "sunset" && target !== "milky_way") {
+    return;
+  }
+
+  if (isDeterministicTerrainDemSample(sample)) {
+    diagnostics.successfulProfileCount += 1;
+  }
+  if (sample.obstructionLevel === "obstructed") {
+    diagnostics.obstructedProfileCount += 1;
+  } else if (sample.obstructionLevel === "marginal") {
+    diagnostics.marginalProfileCount += 1;
+  } else if (sample.obstructionLevel === "clear") {
+    diagnostics.clearProfileCount += 1;
+  }
+  if (typeof sample.horizonAltitudeDegrees === "number") {
+    diagnostics.maxHorizonAltitudeDegrees =
+      diagnostics.maxHorizonAltitudeDegrees === null
+        ? sample.horizonAltitudeDegrees
+        : Math.max(diagnostics.maxHorizonAltitudeDegrees, sample.horizonAltitudeDegrees);
+  }
+  if (typeof sample.obstructionClearanceDegrees === "number") {
+    diagnostics.minClearanceDegrees =
+      diagnostics.minClearanceDegrees === null
+        ? sample.obstructionClearanceDegrees
+        : Math.min(diagnostics.minClearanceDegrees, sample.obstructionClearanceDegrees);
+  }
+
+  diagnostics.penaltyByTarget[target] = Math.max(
+    diagnostics.penaltyByTarget[target] ?? 0,
+    terrainDemDiagnosticPenalty(sample),
+  );
+}
+
+function terrainDemDiagnosticPenalty(sample: TerrainHorizonDirectionSample): number {
+  if (sample.confidence !== "medium" && sample.confidence !== "high") {
+    return 0;
+  }
+  if (sample.obstructionLevel === "obstructed") {
+    return 26;
+  }
+  if (sample.obstructionLevel === "marginal") {
+    return 8;
+  }
+  return 0;
+}
+
+function logTerrainDemDirectionalDiagnostics(
+  logger: FastifyBaseLogger,
+  query: ForecastQueryInput,
+  targets: readonly TerrainDemTargetGeometry[],
+  diagnostics: TerrainDemDirectionalDiagnostics,
+): void {
+  logger.info(
+    {
+      route: "/forecast/calculate",
+      forecastTarget: query.target,
+      horizon: query.horizon,
+      terrainDemDirectionalTargetCount: targets.length,
+      terrainDemSunriseTargetCount: countTerrainDemTargets(targets, "sunrise"),
+      terrainDemSunsetTargetCount: countTerrainDemTargets(targets, "sunset"),
+      terrainDemMilkyWayTargetCount: countTerrainDemTargets(targets, "milky_way"),
+      terrainDemSuccessfulProfileCount: diagnostics.successfulProfileCount,
+      terrainDemObstructedProfileCount: diagnostics.obstructedProfileCount,
+      terrainDemMarginalProfileCount: diagnostics.marginalProfileCount,
+      terrainDemClearProfileCount: diagnostics.clearProfileCount,
+      terrainDemPenaltyByTarget: diagnostics.penaltyByTarget,
+      terrainDemMaxHorizonAltitudeDegrees: diagnostics.maxHorizonAltitudeDegrees,
+      terrainDemMinClearanceDegrees: diagnostics.minClearanceDegrees,
+      terrainDemProfileElapsedMsTotal: roundTerrainDemSampleValue(
+        diagnostics.profileElapsedMsTotal,
+      ),
+      terrainDemTargetTypesSampled: [...new Set(targets.map((target) => target.target))].sort(),
+    },
+    "Terrain DEM directional profile diagnostics for forecast calculation",
+  );
+}
+
+function countTerrainDemTargets(
+  targets: readonly TerrainDemTargetGeometry[],
+  target: DirectionalTerrainDemTarget,
+): number {
+  return targets.filter((item) => item.target === target).length;
+}
+
+function mergeDirectionalDemHorizonAngle(
+  existing: number | undefined,
+  demSamples: readonly TerrainHorizonDirectionSample[],
+  target: Extract<DirectionalTerrainDemTarget, "sunrise" | "sunset">,
+): number | undefined {
+  const demAngles = demSamples
+    .filter((sample) => isDeterministicTerrainDemSample(sample) && sample.target === target)
+    .map((sample) => sample.horizonAltitudeDegrees)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (demAngles.length === 0) {
+    return existing;
+  }
+  const maxDemAngle = Math.max(...demAngles);
+  return typeof existing === "number" && Number.isFinite(existing)
+    ? Math.max(existing, maxDemAngle)
+    : maxDemAngle;
+}
+
+function isDeterministicTerrainDemSample(sample: TerrainHorizonDirectionSample): boolean {
+  return (
+    sample.dataSource === "dem_raster" &&
+    typeof sample.horizonAltitudeDegrees === "number" &&
+    (sample.confidence === "medium" || sample.confidence === "high") &&
+    sample.unavailableReason === undefined
+  );
+}
+
 function mergeTerrainDemDirectionSamples(
   existing: readonly TerrainHorizonDirectionSample[] | undefined,
   demSamples: readonly TerrainHorizonDirectionSample[],
 ): readonly TerrainHorizonDirectionSample[] {
-  const demTargets = new Set(demSamples.map((sample) => sample.target ?? "custom"));
-  const existingWithoutSameTarget = (existing ?? []).filter(
-    (sample) => !demTargets.has(sample.target ?? "custom"),
-  );
-  return [...demSamples, ...existingWithoutSameTarget];
+  const merged = new Map<string, TerrainHorizonDirectionSample>();
+  for (const sample of existing ?? []) {
+    merged.set(terrainDemDirectionSampleStableKey(sample), sample);
+  }
+  for (const sample of demSamples) {
+    merged.set(terrainDemDirectionSampleStableKey(sample), sample);
+  }
+  return [...merged.values()];
+}
+
+function terrainDemDirectionSampleStableKey(sample: TerrainHorizonDirectionSample): string {
+  return [
+    sample.target ?? "custom",
+    roundTerrainDemKeyValue(sample.azimuthDegrees),
+    sample.targetAltitudeDegrees === undefined || sample.targetAltitudeDegrees === null
+      ? "unknown"
+      : roundTerrainDemKeyValue(sample.targetAltitudeDegrees),
+    sample.sourceWindowKey ?? sample.sourceDate ?? "unknown",
+  ].join(":");
+}
+
+function roundTerrainDemKeyValue(value: number): string {
+  return (Math.round(value * 10) / 10).toFixed(1);
+}
+
+function roundTerrainDemSampleValue(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 function firstFiniteNumber(values: readonly (number | null | undefined)[]): number | undefined {

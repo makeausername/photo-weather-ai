@@ -4967,7 +4967,7 @@ function astroTerrainHorizonDisplay(
       horizonAltitudeDisplay: "暂无精确角度",
       clearanceDisplay: "暂无精确角度",
       confidenceLabelZh: terrainHorizonConfidenceLabel(assessment.confidence),
-      dataSourceLabelZh: assessment.dataSourceLabelZh ?? terrainHorizonDataSourceLabel(assessment),
+      dataSourceLabelZh: terrainHorizonPublicDataSourceLabel(assessment),
       unavailableReasonLabelZh: terrainHorizonUnavailableReasonLabel(assessment.unavailableReason),
       professionalDataItems: terrainHorizonProfessionalItems(assessment),
       diagnosticsNoteZh: terrainHorizonDiagnosticsNote(assessment),
@@ -4999,7 +4999,7 @@ function astroTerrainHorizonDisplay(
         ? formatNullableNumberForView(assessment.obstructionClearanceDegrees, "°")
         : "暂无精确角度",
     confidenceLabelZh: terrainHorizonConfidenceLabel(assessment.confidence),
-    dataSourceLabelZh: assessment.dataSourceLabelZh ?? terrainHorizonDataSourceLabel(assessment),
+    dataSourceLabelZh: terrainHorizonPublicDataSourceLabel(assessment),
     unavailableReasonLabelZh: terrainHorizonUnavailableReasonLabel(assessment.unavailableReason),
     professionalDataItems: terrainHorizonProfessionalItems(assessment),
     diagnosticsNoteZh: terrainHorizonDiagnosticsNote(assessment),
@@ -5016,6 +5016,40 @@ function astroTerrainHorizonAssessmentIsPubliclyResolved(
     typeof assessment.horizonAltitudeDegrees === "number" &&
     typeof assessment.obstructionClearanceDegrees === "number" &&
     assessment.obstructionLevel !== "unknown"
+  );
+}
+
+function terrainHorizonPublicDataSourceLabel(assessment: TerrainHorizonAssessment): string {
+  if (terrainHorizonAssessmentIsDemBacked(assessment)) {
+    return "方向地形剖面";
+  }
+  const sourceLabel = assessment.dataSourceLabelZh ?? terrainHorizonDataSourceLabel(assessment);
+  return terrainDisplayTextWithoutRawLabels(sourceLabel);
+}
+
+function terrainHorizonPublicDataSourceDetail(assessment: TerrainHorizonAssessment): string {
+  if (terrainHorizonAssessmentIsDemBacked(assessment)) {
+    return "公开页仅展示方向遮挡判断，不展示内部数据源代码。";
+  }
+  return terrainDisplayTextWithoutRawLabels(assessment.dataSource);
+}
+
+function terrainHorizonAssessmentIsDemBacked(assessment: TerrainHorizonAssessment): boolean {
+  const sources = [
+    assessment.dataSource,
+    assessment.directionSample?.dataSource,
+    ...(assessment.directionSamples ?? []).map((sample) => sample.dataSource),
+  ].filter(Boolean);
+  return (
+    sources.some(
+      (source) => source === "dem" || source === "dem_raster" || source === "custom_local_dem",
+    ) ||
+    Boolean(
+      assessment.dataSourceLabelZh?.includes("DEM") ||
+        assessment.directionSample?.dataSourceLabelZh?.includes("DEM") ||
+        assessment.professionalDiagnostics.terrainDemCoverage?.status === "available" ||
+        assessment.directionSample?.terrainDemCoverage?.status === "available",
+    )
   );
 }
 
@@ -5069,8 +5103,8 @@ function terrainHorizonProfessionalItems(
     },
     {
       label: "数据来源",
-      value: assessment.dataSourceLabelZh ?? terrainHorizonDataSourceLabel(assessment),
-      detail: assessment.dataSource,
+      value: terrainHorizonPublicDataSourceLabel(assessment),
+      detail: terrainHorizonPublicDataSourceDetail(assessment),
     },
     {
       label: "观测点海拔",
@@ -5080,7 +5114,7 @@ function terrainHorizonProfessionalItems(
       ),
       detail:
         directionSample?.observerElevationMeters !== undefined
-          ? "来自 DEM 剖面或输入的机位海拔。"
+          ? "来自方向剖面或输入的机位海拔。"
           : "机位海拔暂未确认。",
     },
     {
@@ -5098,14 +5132,14 @@ function terrainHorizonProfessionalItems(
       detail: `有效样本 ${diagnostics.validSampleCount}/${diagnostics.sampleCount}`,
     },
     {
-      label: "DEM 数据集",
+      label: "地形数据范围",
       value: terrainHorizonDatasetLabel(assessment),
       detail: terrainHorizonDatasetDetail(assessment),
     },
     ...(demCoverage
       ? [
           {
-            label: "DEM 覆盖状态",
+            label: "方向地形覆盖状态",
             value: terrainDemCoverageStatusLabel(demCoverage.status),
             detail: terrainDemCoverageDetail(demCoverage),
           },
@@ -5246,15 +5280,15 @@ function terrainHorizonUnavailableReasonLabel(
     case "invalid_coordinate":
       return "坐标无效";
     case "terrain_dem_missing":
-      return "本地 DEM 数据缺失";
+      return "方向地形数据缺失";
     case "terrain_dem_metadata_missing":
-      return "本地 DEM 元数据缺失";
+      return "方向地形元数据缺失";
     case "terrain_dem_unreadable":
-      return "本地 DEM 无法读取";
+      return "方向地形数据无法读取";
     case "terrain_dem_out_of_bounds":
-      return "坐标超出 DEM 范围";
+      return "坐标超出方向地形覆盖范围";
     case "terrain_dem_no_data":
-      return "DEM 像元无有效海拔";
+      return "方向地形样本无有效海拔";
     case "missing_directional_profile":
       return "缺少目标方向地形剖面";
     case "unknown":
@@ -5270,30 +5304,31 @@ function terrainDemCoverageStatusLabel(
 ): string {
   switch (status) {
     case "available":
-      return "瓦片已在本地";
+      return "方向地形覆盖可用";
     case "missing":
-      return "DEM 覆盖缺失";
+      return "方向地形覆盖缺失";
     case "invalid":
-      return "瓦片无效";
+      return "方向地形覆盖异常";
     case "pending":
-      return "待处理";
+      return "方向地形覆盖待处理";
   }
 }
 
 function terrainDemCoverageDetail(
   coverage: NonNullable<TerrainHorizonAssessment["professionalDiagnostics"]["terrainDemCoverage"]>,
 ): string {
-  const tileId = coverage.requiredTileId
-    ? `所需瓦片 ${coverage.requiredTileId}`
-    : "所需瓦片暂无法解析";
-  const active = coverage.coveredByActiveDataset ? "已被当前激活 DEM 覆盖" : "当前激活 DEM 未覆盖";
-  const local = coverage.tileFileExists ? "本地瓦片文件存在" : "本地瓦片文件缺失";
-  return `${tileId}；${active}；${local}。${coverage.noteZh}`;
+  const coverageState = coverage.coveredByActiveDataset
+    ? "当前坐标落在方向地形覆盖范围内"
+    : "当前坐标未落在方向地形覆盖范围内";
+  const availability =
+    coverage.status === "available" ? "方向剖面可用于公开判断" : "方向剖面暂不可用于公开判断";
+  const note = coverage.noteZh ? terrainDisplayTextWithoutRawLabels(coverage.noteZh) : "";
+  return [coverageState, availability, note].filter(Boolean).join("；");
 }
 
 function terrainHorizonDataSourceLabel(assessment: TerrainHorizonAssessment): string {
   if (assessment.dataSource === "dem" || assessment.dataSource === "dem_raster") {
-    return "本地 DEM 地形剖面";
+    return "方向地形剖面";
   }
   if (assessment.dataSource === "qualitative_fallback") {
     return "定性地形参考";
@@ -5305,7 +5340,7 @@ function terrainHorizonDataSourceLabel(assessment: TerrainHorizonAssessment): st
     return "人工地形剖面";
   }
   if (assessment.dataSource === "custom_local_dem") {
-    return "本地 DEM 地形剖面";
+    return "方向地形剖面";
   }
   if (assessment.dataSource === "directional_profile") {
     return "方向地形剖面";
@@ -5317,12 +5352,15 @@ function terrainHorizonDataSourceLabel(assessment: TerrainHorizonAssessment): st
     assessment.dataSource === "mapbox_terrain_rgb" ||
     assessment.dataSource === "aws_terrain_tiles"
   ) {
-    return "地形瓦片剖面";
+    return "方向地形剖面";
   }
   return "地形剖面";
 }
 
 function terrainHorizonDatasetLabel(assessment: TerrainHorizonAssessment): string {
+  if (terrainHorizonAssessmentIsDemBacked(assessment)) {
+    return "方向地形剖面";
+  }
   const diagnostics = assessment.professionalDiagnostics;
   const sample = assessment.directionSample;
   const name = diagnostics.datasetName ?? sample?.datasetName;
@@ -5332,18 +5370,19 @@ function terrainHorizonDatasetLabel(assessment: TerrainHorizonAssessment): strin
   const parts = [name ?? source, year, version].filter(
     (value): value is string | number => value !== null && value !== undefined && value !== "",
   );
-  return parts.length > 0 ? parts.join(" / ") : "暂未提供";
+  return parts.length > 0 ? terrainDisplayTextWithoutRawLabels(parts.join(" / ")) : "暂未提供";
 }
 
 function terrainHorizonDatasetDetail(assessment: TerrainHorizonAssessment): string {
+  if (terrainHorizonAssessmentIsDemBacked(assessment)) {
+    return "公开页仅展示方向遮挡判断，源数据细节已隐藏。";
+  }
   const diagnostics = assessment.professionalDiagnostics;
   const sample = assessment.directionSample;
   const source = diagnostics.sourceName ?? sample?.sourceName;
-  const checksum = diagnostics.checksumShort ?? sample?.checksumShort;
-  return [
-    source ? `来源 ${source}` : "来源暂未提供",
-    checksum ? `校验码 ${checksum}` : "校验码暂未提供",
-  ].join("；");
+  return source
+    ? `来源 ${terrainDisplayTextWithoutRawLabels(source)}；源数据细节已隐藏`
+    : "来源暂未提供；源数据细节已隐藏";
 }
 
 function missingTerrainHorizonDetail(): string {
@@ -8353,8 +8392,7 @@ function buildGlowDailyCloudLayerSummary(
   analysis: GlowAnalysisResult,
 ): string {
   const carrierScore = day.colorCarrierScore ?? analysis.colorCarrierScore;
-  const lightPathRisk =
-    day.glowLightPathObstructionRisk ?? analysis.glowLightPathObstructionRisk;
+  const lightPathRisk = day.glowLightPathObstructionRisk ?? analysis.glowLightPathObstructionRisk;
   const suppressionRisk = day.cloudSuppressionRisk ?? analysis.cloudSuppressionRisk;
   const lowCloudRisk =
     day.lowCloudFogWallRisk ?? analysis.lowCloudFogWallRisk ?? analysis.lowCloudObstructionRisk;
@@ -8480,10 +8518,7 @@ function buildGlowDataNotice(result: ForecastCalculationResult): string {
   );
   const uniqueNotes = [...new Set(notes)];
 
-  return [
-    buildForecastDataBoundaryNotice(result, "glow"),
-    ...uniqueNotes,
-  ].join("");
+  return [buildForecastDataBoundaryNotice(result, "glow"), ...uniqueNotes].join("");
 }
 
 function glowBestTargetLabel(target: GlowBestTarget): string {

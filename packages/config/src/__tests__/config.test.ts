@@ -44,9 +44,9 @@ describe("environment config", () => {
   });
 
   it("defines visual admin keys for future configuration", () => {
-    expect(adminSettingDefinitions.some((setting) => setting.key === "ai.openai.apiKey")).toBe(
-      false,
-    );
+    expect(
+      adminSettingDefinitions.some((setting) => String(setting.key) === "ai.openai.apiKey"),
+    ).toBe(false);
     expect(
       adminSettingDefinitions.some((setting) => setting.key === "scoring.weights.cloudCover"),
     ).toBe(true);

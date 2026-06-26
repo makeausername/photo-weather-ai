@@ -6,6 +6,7 @@ import type {
   HorizonProfileSummary,
   NormalizedHourlyWeather,
   TerrainAnalysisSummary,
+  TerrainHorizonDirectionSample,
 } from "@photo-weather/shared";
 import { buildMockForecastInput, calculateForecast, calculateGlowAnalysis } from "../index.js";
 
@@ -214,6 +215,50 @@ function withHorizon(
       },
     },
   };
+}
+
+function withDirectionalTerrainSample(
+  input: ForecastCalculationInput,
+  phase: "sunrise" | "sunset",
+  options: {
+    readonly obstructionLevel: NonNullable<TerrainHorizonDirectionSample["obstructionLevel"]>;
+    readonly horizonAltitudeDegrees: number;
+    readonly targetAltitudeDegrees?: number;
+  },
+): ForecastCalculationInput {
+  const targetAltitudeDegrees = options.targetAltitudeDegrees ?? 1;
+  const azimuthDegrees =
+    phase === "sunrise"
+      ? (input.astroSummaries[0]?.sunriseAzimuth ?? 67)
+      : (input.astroSummaries[0]?.sunsetAzimuth ?? 293);
+  const sample: TerrainHorizonDirectionSample = {
+    target: phase,
+    azimuthDegrees,
+    targetAltitudeDegrees,
+    horizonAltitudeDegrees: options.horizonAltitudeDegrees,
+    obstructionClearanceDegrees: Number(
+      (targetAltitudeDegrees - options.horizonAltitudeDegrees).toFixed(1),
+    ),
+    obstructionLevel: options.obstructionLevel,
+    dataSource: "dem_raster",
+    dataSourceLabelZh: "方向地形剖面",
+    confidence: "high",
+    sampleCount: 120,
+    validSampleCount: 120,
+    sourceWindowKey: `${phase}:2026-05-20:sample`,
+    sourceDate: "2026-05-20",
+    sourcePhase: phase,
+    lightPathRole: phase === "sunrise" ? "sunrise_low_angle" : "sunset_low_angle",
+  };
+
+  return withHorizon(input, {
+    sunriseHorizonAngle:
+      phase === "sunrise" ? undefined : input.terrainAnalysis.horizonProfile.sunriseHorizonAngle,
+    sunsetHorizonAngle:
+      phase === "sunset" ? undefined : input.terrainAnalysis.horizonProfile.sunsetHorizonAngle,
+    blockedDirectionsZh: [],
+    directionSamples: [...(input.terrainAnalysis.horizonProfile.directionSamples ?? []), sample],
+  });
 }
 
 function hourOverlaps(hour: NormalizedHourlyWeather, start: string, end: string): boolean {
@@ -600,9 +645,7 @@ describe("glow analysis v2", () => {
     expect(unknownAnalysis.lowCloudFogWallRisk).toBeLessThan(70);
     expect(unknownAnalysis.practicalGlowScore).toBeLessThanOrEqual(64);
     expect(unknownAnalysis.bestGlowWindows).toHaveLength(0);
-    expect(unknownAnalysis.riskReasons.join("")).toContain(
-      "太阳方向光路缺少足够的方向性数据",
-    );
+    expect(unknownAnalysis.riskReasons.join("")).toContain("太阳方向光路缺少足够的方向性数据");
   });
 
   it("does not apply directional terrain obstruction when the phase horizon is missing", () => {
@@ -634,6 +677,46 @@ describe("glow analysis v2", () => {
     expect(unknownAnalysis.glowLightPathObstructionRisk).toBeLessThanOrEqual(
       deterministicAnalysis.glowLightPathObstructionRisk,
     );
+  });
+
+  it("uses sunrise and sunset direction samples to lower glow scoring", () => {
+    const open = withHorizon(
+      favorableGlowInput(),
+      {
+        sunriseHorizonAngle: undefined,
+        sunsetHorizonAngle: undefined,
+        blockedDirectionsZh: [],
+        directionSamples: [],
+      },
+      { elevationConfidence: "high" },
+    );
+    const sunriseClear = withDirectionalTerrainSample(open, "sunrise", {
+      obstructionLevel: "clear",
+      horizonAltitudeDegrees: -2,
+    });
+    const sunsetClear = withDirectionalTerrainSample(open, "sunset", {
+      obstructionLevel: "clear",
+      horizonAltitudeDegrees: -2,
+    });
+    const sunriseBlocked = withDirectionalTerrainSample(open, "sunrise", {
+      obstructionLevel: "obstructed",
+      horizonAltitudeDegrees: 8,
+    });
+    const sunsetBlocked = withDirectionalTerrainSample(open, "sunset", {
+      obstructionLevel: "obstructed",
+      horizonAltitudeDegrees: 8,
+    });
+    const sunriseClearAnalysis = calculateGlowAnalysis(sunriseClear);
+    const sunsetClearAnalysis = calculateGlowAnalysis(sunsetClear);
+    const sunriseBlockedAnalysis = calculateGlowAnalysis(sunriseBlocked);
+    const sunsetBlockedAnalysis = calculateGlowAnalysis(sunsetBlocked);
+
+    expect(sunriseBlockedAnalysis.sunriseGlowScore).toBeLessThan(
+      sunriseClearAnalysis.sunriseGlowScore,
+    );
+    expect(sunsetBlockedAnalysis.sunsetGlowScore).toBeLessThan(sunsetClearAnalysis.sunsetGlowScore);
+    expect(sunriseBlockedAnalysis.glowLightPathDataAvailability).toBe("available");
+    expect(sunsetBlockedAnalysis.glowLightPathDataAvailability).toBe("available");
   });
 
   it("returns no high-certainty glow window when nothing is shootable", () => {

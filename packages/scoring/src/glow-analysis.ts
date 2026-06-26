@@ -23,6 +23,7 @@ import type {
   GlowWindowRainRisk,
   GlowWindowType,
   NormalizedHourlyWeather,
+  TerrainHorizonDirectionSample,
 } from "@photo-weather/shared";
 import { glowSolarAltitudeGeometryConfig } from "@photo-weather/shared";
 import { addHoursInTimezone } from "@photo-weather/calendar";
@@ -172,12 +173,14 @@ export function calculateGlowAnalysis(input: ForecastCalculationInput): GlowAnal
   const sunrisePracticalScore = phaseMetric(
     candidates,
     "sunrise",
-    (candidate) => candidate.practicalSuitabilityScore ?? candidate.practicalScore ?? candidate.score,
+    (candidate) =>
+      candidate.practicalSuitabilityScore ?? candidate.practicalScore ?? candidate.score,
   );
   const sunsetPracticalScore = phaseMetric(
     candidates,
     "sunset",
-    (candidate) => candidate.practicalSuitabilityScore ?? candidate.practicalScore ?? candidate.score,
+    (candidate) =>
+      candidate.practicalSuitabilityScore ?? candidate.practicalScore ?? candidate.score,
   );
   const lowCloudObstructionRisk = calculateLowCloudObstructionRisk(candidates);
   const lowCloudFogWallRisk = lowCloudObstructionRisk;
@@ -719,7 +722,11 @@ function scoreGlowWindowDataCompleteness(
   if (window.length === 0) {
     score -= 35;
   }
-  if (["cloudLow", "cloudMid", "cloudHigh"].some((field) => input.weatherMissingFields.includes(field))) {
+  if (
+    ["cloudLow", "cloudMid", "cloudHigh"].some((field) =>
+      input.weatherMissingFields.includes(field),
+    )
+  ) {
     score -= 28;
   }
   if (!window.some((hour) => typeof hour.visibility === "number")) {
@@ -853,7 +860,10 @@ type GlowProviderModelGroup = {
 function glowProviderModelGroups(
   window: readonly NormalizedHourlyWeather[],
 ): readonly GlowProviderModelGroup[] {
-  const groups = new Map<string, { source: GlowProviderModelSource; rows: NormalizedHourlyWeather[] }>();
+  const groups = new Map<
+    string,
+    { source: GlowProviderModelSource; rows: NormalizedHourlyWeather[] }
+  >();
   for (const hour of window) {
     const source = glowProviderModelSourceForHour(hour);
     const key = `${source.providerCode}::${source.sourceId ?? source.modelName ?? "default"}`;
@@ -890,7 +900,8 @@ function glowProviderModelSourceForHour(hour: NormalizedHourlyWeather): GlowProv
     fieldMetadata.precipitationAmountMm;
   const providerCode = metadata?.providerCode ?? hour.providerCode ?? "unknown";
   const modelName = metadata?.modelName;
-  const sourceId = metadata?.sourceId ?? (modelName ? `${providerCode}:${modelName}` : providerCode);
+  const sourceId =
+    metadata?.sourceId ?? (modelName ? `${providerCode}:${modelName}` : providerCode);
 
   return {
     providerCode,
@@ -906,7 +917,9 @@ function buildGlowProviderAgreement(
 ): GlowProviderAgreement {
   const providerCount = new Set(modelResults.map((result) => result.providerCode)).size;
   const modelCount = new Set(
-    modelResults.map((result) => `${result.providerCode}:${result.sourceId ?? result.modelName ?? "default"}`),
+    modelResults.map(
+      (result) => `${result.providerCode}:${result.sourceId ?? result.modelName ?? "default"}`,
+    ),
   ).size;
   const sources = modelResults.map((result) => ({
     providerCode: result.providerCode,
@@ -928,7 +941,9 @@ function buildGlowProviderAgreement(
     };
   }
 
-  const occurrenceSpread = spread(modelResults.map((result) => result.occurrenceProbabilityPercent));
+  const occurrenceSpread = spread(
+    modelResults.map((result) => result.occurrenceProbabilityPercent),
+  );
   const vividnessSpread = spread(modelResults.map((result) => result.vividnessIndex));
   const practicalSpread = spread(modelResults.map((result) => result.practicalSuitabilityScore));
   const modelSpread = Math.max(occurrenceSpread, vividnessSpread, practicalSpread);
@@ -1260,11 +1275,7 @@ function scoreCloudSuppressionRisk(
         ? 10
         : 0;
   const transparencyRisk =
-    scores.visibilityColorQualityScore < 42
-      ? 18
-      : scores.visibilityColorQualityScore < 56
-        ? 8
-        : 0;
+    scores.visibilityColorQualityScore < 42 ? 18 : scores.visibilityColorQualityScore < 56 ? 8 : 0;
   const carrierOverpromiseRisk = scores.colorCarrierScore >= 68 && denseTotalRisk >= 26 ? 10 : 0;
   const humidityRisk =
     humidity !== undefined && humidity >= 94 && scores.visibilityColorQualityScore < 60 ? 8 : 0;
@@ -1306,11 +1317,7 @@ function assessGlowLightPathObstruction(
         ? 8
         : 0;
   const transparencyRisk =
-    scores.visibilityColorQualityScore < 42
-      ? 10
-      : scores.visibilityColorQualityScore < 55
-        ? 5
-        : 0;
+    scores.visibilityColorQualityScore < 42 ? 10 : scores.visibilityColorQualityScore < 55 ? 5 : 0;
   const cloudLayerMissingPenalty = hasCloudLayerGaps(window) ? 8 : 0;
   const unknownDirectionPenalty = hasDirectionalData ? 0 : 12;
   const risk = clampScore(
@@ -1528,7 +1535,9 @@ function calculatePostRainOpeningChance(
 }
 
 function scoreTerrainObstruction(input: ForecastCalculationInput, phase: GlowPhase): number {
+  const explicitHorizonAngle = explicitHorizonAngleForPhase(input, phase);
   const horizonAngle = horizonAngleForPhase(input, phase);
+  const directionSample = directionalTerrainSampleForPhase(input, phase);
   const hasDeterministicLightPath = hasDeterministicGlowLightPathData(input, phase);
   const directionPenalty = hasDeterministicLightPath && hasBlockedDirection(input, phase) ? 24 : 0;
   const terrainConfidencePenalty =
@@ -1541,17 +1550,29 @@ function scoreTerrainObstruction(input: ForecastCalculationInput, phase: GlowPha
         ? 6
         : 0;
   const penalty = directionPenalty + terrainConfidencePenalty + viewingPenalty;
+  const unknownBaseline = clampScore(66 - penalty);
+  let score: number;
 
   if (typeof horizonAngle !== "number" || !Number.isFinite(horizonAngle)) {
-    return clampScore(66 - penalty);
+    score = unknownBaseline;
+  } else if (horizonAngle <= 5) {
+    score = clampScore(92 - penalty);
+  } else if (horizonAngle <= 10) {
+    score = clampScore(78 - (horizonAngle - 5) * 3 - penalty);
+  } else {
+    score = clampScore(56 - (horizonAngle - 10) * 4 - penalty);
   }
-  if (horizonAngle <= 5) {
-    return clampScore(92 - penalty);
+
+  if (directionSample?.obstructionLevel === "obstructed") {
+    return Math.min(score, 42);
   }
-  if (horizonAngle <= 10) {
-    return clampScore(78 - (horizonAngle - 5) * 3 - penalty);
+  if (directionSample?.obstructionLevel === "marginal") {
+    return Math.min(score, 64);
   }
-  return clampScore(56 - (horizonAngle - 10) * 4 - penalty);
+  if (directionSample?.obstructionLevel === "clear" && explicitHorizonAngle === undefined) {
+    return Math.min(score, unknownBaseline);
+  }
+  return score;
 }
 
 function scoreWindHumidity(window: readonly NormalizedHourlyWeather[]): number {
@@ -1626,9 +1647,7 @@ function calculateLowCloudObstructionRisk(candidates: readonly GlowCandidate[]):
   }
 
   const maxRisk = Math.max(
-    ...candidates.map((candidate) =>
-      scoreLowCloudFogWallRisk(candidate.weatherWindow),
-    ),
+    ...candidates.map((candidate) => scoreLowCloudFogWallRisk(candidate.weatherWindow)),
   );
   return clampScore(maxRisk);
 }
@@ -1871,10 +1890,8 @@ function calculateGlowTravelScore(
     lowCloudObstructionRisk >= 82 ? 12 : lowCloudObstructionRisk >= 70 ? 6 : 0;
   const lightPathPenalty =
     glowLightPathObstructionRisk >= 82 ? 18 : glowLightPathObstructionRisk >= 68 ? 9 : 0;
-  const suppressionPenalty =
-    cloudSuppressionRisk >= 80 ? 16 : cloudSuppressionRisk >= 65 ? 8 : 0;
-  const lightPathUncertaintyPenalty =
-    glowLightPathDataAvailability === "insufficient" ? 8 : 0;
+  const suppressionPenalty = cloudSuppressionRisk >= 80 ? 16 : cloudSuppressionRisk >= 65 ? 8 : 0;
+  const lightPathUncertaintyPenalty = glowLightPathDataAvailability === "insufficient" ? 8 : 0;
 
   const score = clampScore(
     bestGlow * 0.58 +
@@ -2148,7 +2165,8 @@ function buildCloudLayerEvidence(
       label: "低云",
       value: formatPercentValue(cloudLow),
       effect: cloudLow !== undefined && cloudLow > 70 ? "risk" : "neutral",
-      noteZh: "低云偏厚会增加近地雾墙和低云墙风险；太阳方向光路是否打开需依赖独立方向性数据或现场复核。",
+      noteZh:
+        "低云偏厚会增加近地雾墙和低云墙风险；太阳方向光路是否打开需依赖独立方向性数据或现场复核。",
     },
     {
       label: "中云",
@@ -2324,9 +2342,11 @@ function buildTerrainObstructionAssessment(
   astro: AstroSummary,
   phase: GlowPhase,
 ): GlowTerrainObstructionAssessment {
+  const directionSample = directionalTerrainSampleForPhase(input, phase);
   const horizonAngle = horizonAngleForPhase(input, phase);
   const solarAzimuthDegrees =
-    phase === "sunrise" ? astro.sunriseAzimuth ?? null : astro.sunsetAzimuth ?? null;
+    directionSample?.azimuthDegrees ??
+    (phase === "sunrise" ? (astro.sunriseAzimuth ?? null) : (astro.sunsetAzimuth ?? null));
   const hasProfile = hasDirectionalTerrainProfile(input);
   const dataAvailable =
     hasProfile &&
@@ -2334,19 +2354,34 @@ function buildTerrainObstructionAssessment(
     Number.isFinite(horizonAngle) &&
     typeof solarAzimuthDegrees === "number" &&
     Number.isFinite(solarAzimuthDegrees);
-  const solarElevationDegrees = dataAvailable ? 6 : null;
+  const solarElevationDegrees = dataAvailable
+    ? typeof directionSample?.targetAltitudeDegrees === "number"
+      ? directionSample.targetAltitudeDegrees
+      : 6
+    : null;
   const solarClearanceDegrees =
-    dataAvailable && solarElevationDegrees !== null
-      ? Math.round((solarElevationDegrees - horizonAngle) * 10) / 10
-      : null;
+    typeof directionSample?.obstructionClearanceDegrees === "number"
+      ? directionSample.obstructionClearanceDegrees
+      : dataAvailable && solarElevationDegrees !== null
+        ? Math.round((solarElevationDegrees - horizonAngle) * 10) / 10
+        : null;
+  const sampleStatus =
+    directionSample?.obstructionLevel === "obstructed"
+      ? "blocked"
+      : directionSample?.obstructionLevel === "marginal"
+        ? "marginal"
+        : directionSample?.obstructionLevel === "clear"
+          ? "clear"
+          : null;
   const blocked = hasBlockedDirection(input, phase);
   const obstructionStatus = !dataAvailable
     ? "unavailable"
-    : blocked || (solarClearanceDegrees ?? 0) < -4
-      ? "blocked"
-      : (solarClearanceDegrees ?? 0) < 1
-        ? "marginal"
-        : "clear";
+    : (sampleStatus ??
+      (blocked || (solarClearanceDegrees ?? 0) < -4
+        ? "blocked"
+        : (solarClearanceDegrees ?? 0) < 1
+          ? "marginal"
+          : "clear"));
 
   return {
     phase,
@@ -2357,9 +2392,11 @@ function buildTerrainObstructionAssessment(
     solarClearanceDegrees,
     obstructionStatus,
     confidence: dataAvailable
-      ? input.terrainAnalysis.terrainProfile.elevationConfidence === "high"
+      ? directionSample?.confidence === "high"
         ? "high"
-        : "medium"
+        : input.terrainAnalysis.terrainProfile.elevationConfidence === "high"
+          ? "high"
+          : "medium"
       : "low",
     dataAvailable,
     labelZh: phase === "sunrise" ? "日出方向地形遮挡" : "日落方向地形遮挡",
@@ -3001,12 +3038,31 @@ function horizonAngleForPhase(
   input: ForecastCalculationInput,
   phase: GlowPhase,
 ): number | undefined {
+  const explicitHorizonAngle = explicitHorizonAngleForPhase(input, phase);
+  if (explicitHorizonAngle !== undefined) {
+    return explicitHorizonAngle;
+  }
+  const directionSample = directionalTerrainSampleForPhase(input, phase);
+  return typeof directionSample?.horizonAltitudeDegrees === "number" &&
+    Number.isFinite(directionSample.horizonAltitudeDegrees)
+    ? directionSample.horizonAltitudeDegrees
+    : undefined;
+}
+
+function explicitHorizonAngleForPhase(
+  input: ForecastCalculationInput,
+  phase: GlowPhase,
+): number | undefined {
   return phase === "sunrise"
     ? input.terrainAnalysis.horizonProfile.sunriseHorizonAngle
     : input.terrainAnalysis.horizonProfile.sunsetHorizonAngle;
 }
 
 function hasBlockedDirection(input: ForecastCalculationInput, phase: GlowPhase): boolean {
+  const directionSample = directionalTerrainSampleForPhase(input, phase);
+  if (directionSample?.obstructionLevel === "obstructed") {
+    return true;
+  }
   const directions = input.terrainAnalysis.horizonProfile.blockedDirectionsZh;
   return directions.some((direction) => {
     const normalized = direction.toLowerCase();
@@ -3022,6 +3078,38 @@ function hasBlockedDirection(input: ForecastCalculationInput, phase: GlowPhase):
           normalized === "w" ||
           normalized === "sw";
   });
+}
+
+function directionalTerrainSampleForPhase(
+  input: ForecastCalculationInput,
+  phase: GlowPhase,
+): TerrainHorizonDirectionSample | undefined {
+  const role = phase === "sunrise" ? "sunrise_low_angle" : "sunset_low_angle";
+  return [...(input.terrainAnalysis.horizonProfile.directionSamples ?? [])]
+    .filter(
+      (sample) =>
+        sample.target === phase &&
+        (sample.lightPathRole === undefined || sample.lightPathRole === role) &&
+        sample.dataSource === "dem_raster" &&
+        sample.unavailableReason === undefined &&
+        (sample.confidence === "medium" || sample.confidence === "high"),
+    )
+    .sort(
+      (left, right) => terrainSampleObstructionRank(right) - terrainSampleObstructionRank(left),
+    )[0];
+}
+
+function terrainSampleObstructionRank(sample: TerrainHorizonDirectionSample): number {
+  if (sample.obstructionLevel === "obstructed") {
+    return 3;
+  }
+  if (sample.obstructionLevel === "marginal") {
+    return 2;
+  }
+  if (sample.obstructionLevel === "clear") {
+    return 1;
+  }
+  return 0;
 }
 
 function bestPhaseWindow(
@@ -3051,6 +3139,7 @@ function hasDirectionalTerrainProfile(input: ForecastCalculationInput): boolean 
   const profile = input.terrainAnalysis.terrainProfile;
   const horizon = input.terrainAnalysis.horizonProfile;
   return (
+    (horizon.directionSamples?.length ?? 0) > 0 ||
     typeof profile.localReliefMeters === "number" ||
     typeof profile.elevationDiff5km === "number" ||
     typeof profile.minElevation1km === "number" ||
