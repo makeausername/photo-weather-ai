@@ -140,6 +140,13 @@ export type NormalizedWeatherFieldMetadata = {
   readonly providerElevationMeters?: number;
   readonly selectedSpotElevationMeters?: number;
   readonly elevationDifferenceMeters?: number;
+  readonly modelCount?: number;
+  readonly providerCount?: number;
+  readonly minValue?: number;
+  readonly maxValue?: number;
+  readonly medianValue?: number;
+  readonly spread?: number;
+  readonly consensusStrategy?: string;
 };
 
 export type NormalizedWeatherFieldMetadataMap = Partial<
@@ -618,6 +625,7 @@ export type ForecastProviderRuntimeSnapshot = {
   readonly modelFamily?: string;
   readonly modelName?: string;
   readonly modelList?: readonly string[];
+  readonly modelListLimit?: number;
   readonly configUpdatedAt?: string;
 };
 
@@ -2273,6 +2281,17 @@ export type WeatherFusionSummary = {
   readonly multiSourceAgreementContext?: ForecastMultiSourceAgreementContext;
   readonly cloudLayerCoverage?: CloudLayerCoverageSummary;
   readonly aerosolDiagnostics?: WeatherAerosolDiagnostics;
+  readonly multiModelConsensusDiagnostics?: WeatherMultiModelConsensusDiagnostics;
+};
+
+export type WeatherMultiModelConsensusDiagnostics = {
+  readonly multiModelConsensusHours: number;
+  readonly multiModelConsensusFields: readonly string[];
+  readonly multiModelHighSpreadHours: number;
+  readonly multiModelCloudSpreadMax: number | null;
+  readonly multiModelLowCloudSpreadMax: number | null;
+  readonly multiModelVisibilitySpreadMax: number | null;
+  readonly multiModelConfidencePenaltyByTarget: Partial<Record<ForecastTarget, number>>;
 };
 
 export type WeatherAerosolDiagnostics = {

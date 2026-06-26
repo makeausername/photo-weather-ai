@@ -47,8 +47,9 @@ import {
 
 const meteoblueParserVersion = "meteoblue-data1h-time-v3";
 export const openMeteoForecastCloudLayerDefaultModelList =
-  "best_match,gfs_seamless,gfs_global";
-const openMeteoForecastModelListLimit = 5;
+  "best_match,gfs_seamless,gfs_global,icon_global,cma_grapes_global,ecmwf_ifs025";
+const openMeteoForecastModelListDefaultLimit = 6;
+const openMeteoForecastModelListMaxLimit = 8;
 
 export type WeatherProviderRuntimeOptions = {
   readonly dbClient?: DatabaseClient;
@@ -95,6 +96,7 @@ export type ResolvedOpenMeteoRuntimeConfig = {
   readonly defaultModel: string;
   readonly modelPreference?: string;
   readonly modelList: readonly string[];
+  readonly modelListLimit: number;
   readonly iconModel: string;
   readonly timezone: string;
   readonly timeoutMs: number;
@@ -389,6 +391,7 @@ function serializeMeteobluePackageList(value: JsonValue | string | undefined): s
 
 export function normalizeOpenMeteoForecastModelList(
   value: JsonValue | string | undefined,
+  limit = openMeteoForecastModelListDefaultLimit,
 ): readonly string[] {
   const rawModels = Array.isArray(value)
     ? value
@@ -396,6 +399,12 @@ export function normalizeOpenMeteoForecastModelList(
       ? value.split(",")
       : [];
   const models: string[] = [];
+  const modelLimit = clampInteger(
+    limit,
+    openMeteoForecastModelListDefaultLimit,
+    1,
+    openMeteoForecastModelListMaxLimit,
+  );
 
   for (const item of rawModels) {
     const model = typeof item === "string" ? item.trim() : "";
@@ -403,7 +412,7 @@ export function normalizeOpenMeteoForecastModelList(
       continue;
     }
     models.push(model);
-    if (models.length >= openMeteoForecastModelListLimit) {
+    if (models.length >= modelLimit) {
       break;
     }
   }
@@ -419,20 +428,24 @@ function resolveOpenMeteoForecastModelList(input: {
   readonly configuredModelList?: JsonValue | string;
   readonly envModelList?: string;
   readonly modelPreference?: string;
+  readonly modelListLimit?: number;
 }): readonly string[] {
+  const modelListLimit = input.modelListLimit ?? openMeteoForecastModelListDefaultLimit;
   const explicitSource = input.configuredModelList ?? input.envModelList;
   if (explicitSource !== undefined) {
-    const explicitModels = normalizeOpenMeteoForecastModelList(explicitSource);
+    const explicitModels = normalizeOpenMeteoForecastModelList(explicitSource, modelListLimit);
     return explicitModels.length > 0 ? explicitModels : defaultOpenMeteoForecastModelList();
   }
 
-  const preferredModels = normalizeOpenMeteoForecastModelList(input.modelPreference);
+  const preferredModels = normalizeOpenMeteoForecastModelList(
+    input.modelPreference,
+    modelListLimit,
+  );
   if (preferredModels.length > 0) {
-    return normalizeOpenMeteoForecastModelList([
-      ...preferredModels,
-      "gfs_seamless",
-      "gfs_global",
-    ]);
+    return normalizeOpenMeteoForecastModelList(
+      [...preferredModels, "gfs_seamless", "gfs_global"],
+      modelListLimit,
+    );
   }
 
   return defaultOpenMeteoForecastModelList();
@@ -500,12 +513,19 @@ export function resolveOpenMeteoRuntimeConfig(
   const endpoint = mode === "customer" ? customerEndpoint : openMeteoFreeEndpoint;
   const modelPreference =
     readString(configJson.modelPreference) ?? readEnvString(env.OPEN_METEO_MODEL_PREFERENCE);
+  const modelListLimit = clampInteger(
+    readNumber(configJson.modelListLimit) ?? readEnvNumber(env.OPEN_METEO_MODEL_LIST_LIMIT),
+    openMeteoForecastModelListDefaultLimit,
+    1,
+    openMeteoForecastModelListMaxLimit,
+  );
   const modelList = resolveOpenMeteoForecastModelList({
     configuredModelList: Object.prototype.hasOwnProperty.call(configJson, "modelList")
       ? configJson.modelList
       : undefined,
     envModelList: readEnvString(env.OPEN_METEO_MODEL_LIST),
     modelPreference,
+    modelListLimit,
   });
 
   return {
@@ -528,6 +548,7 @@ export function resolveOpenMeteoRuntimeConfig(
       openMeteoDefaultModel,
     modelPreference,
     modelList,
+    modelListLimit,
     iconModel:
       readString(configJson.iconModel) ??
       readEnvString(env.OPEN_METEO_ICON_MODEL) ??
@@ -640,6 +661,12 @@ export function normalizeOpenMeteoAdminConfigJson(
     baseUrl: readString(current.baseUrl) ?? openMeteoDefaultBaseUrl,
     defaultModel: readString(current.defaultModel) ?? openMeteoDefaultModel,
     modelList: serializeOpenMeteoForecastModelList(current.modelList),
+    modelListLimit: clampInteger(
+      readNumber(current.modelListLimit),
+      openMeteoForecastModelListDefaultLimit,
+      1,
+      openMeteoForecastModelListMaxLimit,
+    ),
     iconModel: readString(current.iconModel) ?? openMeteoIconCloudLayerDefaultModel,
     timezone: readString(current.timezone) ?? "Asia/Shanghai",
     timeoutMs: clampInteger(readNumber(current.timeoutMs), weatherDefaultTimeoutMs, 1000, 30000),
@@ -908,6 +935,7 @@ function buildRuntimeSnapshot(
       modelFamily: "icon",
       modelName: openMeteo.modelPreference ?? openMeteo.iconModel,
       modelList: openMeteo.modelList,
+      modelListLimit: openMeteo.modelListLimit,
       configUpdatedAt: openMeteo.configUpdatedAt,
     },
     ...openMeteo.modelList.map((modelName) => ({
@@ -920,6 +948,7 @@ function buildRuntimeSnapshot(
       parserVersion: openMeteoForecastCloudLayerParserVersion,
       modelFamily: "open_meteo",
       modelName,
+      modelListLimit: openMeteo.modelListLimit,
       configUpdatedAt: openMeteo.configUpdatedAt,
     })),
     {
@@ -950,6 +979,7 @@ function buildRuntimeCacheNamespace(snapshot: readonly ForecastProviderRuntimeSn
       modelFamily: provider.modelFamily,
       modelName: provider.modelName,
       modelList: provider.modelList,
+      modelListLimit: provider.modelListLimit,
       configUpdatedAt: provider.configUpdatedAt,
     })),
   );

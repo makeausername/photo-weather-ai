@@ -60,7 +60,8 @@ export const openMeteoCustomerEndpoint = "https://customer-api.open-meteo.com";
 
 export const openMeteoDefaultModel = "forecast";
 
-export const openMeteoForecastModelListDefault = "best_match,gfs_seamless,gfs_global";
+export const openMeteoForecastModelListDefault =
+  "best_match,gfs_seamless,gfs_global,icon_global,cma_grapes_global,ecmwf_ifs025";
 
 export const openMeteoModeOptions = [
   {
@@ -273,7 +274,19 @@ export const providerFieldPresets = [
         placeholder: openMeteoForecastModelListDefault,
         defaultValue: openMeteoForecastModelListDefault,
         helpText:
-          "用英文逗号分隔，系统会把多个模型作为独立校验源参与融合；普通生产建议保留默认。",
+          "用英文逗号分隔，系统会把多个模型作为独立校验源参与融合；增加模型会增加延迟和请求量，普通生产建议保留默认。",
+        advanced: true,
+      },
+      {
+        key: "modelListLimit",
+        label: "模型数量上限",
+        target: "configJson",
+        control: "number",
+        defaultValue: 6,
+        min: 1,
+        max: 8,
+        step: 1,
+        helpText: "默认最多 6 个模型参与融合；最大可调到 8，值越高延迟和请求量越高。",
         advanced: true,
       },
       {

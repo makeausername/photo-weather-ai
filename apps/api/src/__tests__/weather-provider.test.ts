@@ -218,7 +218,7 @@ describe("weather runtime resolvers", () => {
     });
   });
 
-  it("defaults Open-Meteo forecast model list to best_match and GFS models", () => {
+  it("defaults Open-Meteo forecast model list to the production consensus portfolio", () => {
     const config = resolveOpenMeteoRuntimeConfig(
       {
         ...baseOpenMeteoProvider,
@@ -232,7 +232,15 @@ describe("weather runtime resolvers", () => {
       },
     );
 
-    expect(config.modelList).toEqual(["best_match", "gfs_seamless", "gfs_global"]);
+    expect(config.modelList).toEqual([
+      "best_match",
+      "gfs_seamless",
+      "gfs_global",
+      "icon_global",
+      "cma_grapes_global",
+      "ecmwf_ifs025",
+    ]);
+    expect(config.modelListLimit).toBe(6);
     expect(config.modelList.join(",")).toBe(openMeteoForecastCloudLayerDefaultModelList);
   });
 
@@ -284,6 +292,25 @@ describe("weather runtime resolvers", () => {
       "gfs_global",
       "icon_global",
       "ecmwf_ifs025",
+      "cma_grapes_global",
+    ]);
+  });
+
+  it("allows Open-Meteo modelList cap to be raised up to eight", () => {
+    expect(
+      normalizeOpenMeteoForecastModelList(
+        "best_match,gfs_seamless,gfs_global,icon_global,ecmwf_ifs025,cma_grapes_global,jma_seamless,knmi_seamless,extra_model",
+        8,
+      ),
+    ).toEqual([
+      "best_match",
+      "gfs_seamless",
+      "gfs_global",
+      "icon_global",
+      "ecmwf_ifs025",
+      "cma_grapes_global",
+      "jma_seamless",
+      "knmi_seamless",
     ]);
   });
 
@@ -340,7 +367,8 @@ describe("weather runtime resolvers", () => {
       baseUrl: "https://api.open-meteo.com/v1",
       customerEndpoint: "https://customer-api.open-meteo.com",
       defaultModel: "forecast",
-      modelList: "best_match,gfs_seamless,gfs_global",
+      modelList: "best_match,gfs_seamless,gfs_global,icon_global,cma_grapes_global,ecmwf_ifs025",
+      modelListLimit: 6,
       iconModel: "icon_global",
       timezone: "Asia/Shanghai",
       timeoutMs: 10000,

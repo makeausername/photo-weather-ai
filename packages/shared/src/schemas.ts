@@ -164,6 +164,13 @@ const weatherFieldMetadataSchema = z
       providerElevationMeters: z.number().finite().optional(),
       selectedSpotElevationMeters: z.number().finite().optional(),
       elevationDifferenceMeters: z.number().finite().optional(),
+      modelCount: z.number().int().positive().optional(),
+      providerCount: z.number().int().positive().optional(),
+      minValue: z.number().finite().optional(),
+      maxValue: z.number().finite().optional(),
+      medianValue: z.number().finite().optional(),
+      spread: z.number().finite().min(0).optional(),
+      consensusStrategy: z.string().trim().min(1).optional(),
     }),
   )
   .optional();

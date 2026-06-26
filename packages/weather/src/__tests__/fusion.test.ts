@@ -101,21 +101,25 @@ describe("weather source fusion", () => {
     });
 
     expect(result.fusedHourly[0]?.precipitationProbability).toBeNull();
-    expect(result.fusedHourly[0]?.precipitationAmountMm).toBe(10);
+    expect(result.fusedHourly[0]?.precipitationAmountMm).toBe(12);
     expect(result.fusedHourly[0]?.fieldMetadata?.precipitationProbability).toMatchObject({
       value: null,
       missingReason: "provider_field_missing",
     });
     expect(result.fusedHourly[0]?.fieldMetadata?.precipitationAmountMm).toMatchObject({
-      value: 10,
-      providerCode: "open_meteo",
+      value: 12,
+      providerCode: "multi_model",
+      consensusStrategy: "upper_percentile",
+      minValue: 10,
+      maxValue: 12,
+      spread: 2,
       estimated: false,
     });
-    expect(result.confidenceByField.precipitation).toBeGreaterThanOrEqual(0.8);
+    expect(result.confidenceByField.precipitation).toBeGreaterThanOrEqual(0.6);
     expect(result.confidenceByTarget.general).toBeGreaterThanOrEqual(0.55);
   });
 
-  it("prefers same-source Open-Meteo ICON cloud fields for Cloud Sea professional data", () => {
+  it("uses multi-model consensus for cloud totals while preserving single-source layer fields", () => {
     const result = fuseWeatherSources({
       providerBundles: [
         bundle(
@@ -150,12 +154,24 @@ describe("weather source fusion", () => {
     });
 
     expect(result.fusedHourly[0]).toMatchObject({
-      cloudTotal: 55,
+      cloudTotal: 71.5,
       cloudLow: 24,
       cloudMid: 38,
       cloudHigh: 48,
     });
-    for (const field of ["cloudTotal", "cloudLow", "cloudMid", "cloudHigh"] as const) {
+    expect(result.fusedHourly[0]?.fieldMetadata?.cloudTotal).toMatchObject({
+      providerCode: "multi_model",
+      providerLabelZh: "多模型融合",
+      modelCount: 2,
+      providerCount: 2,
+      minValue: 55,
+      maxValue: 88,
+      medianValue: 71.5,
+      spread: 33,
+      consensusStrategy: "median",
+      estimated: false,
+    });
+    for (const field of ["cloudLow", "cloudMid", "cloudHigh"] as const) {
       expect(result.fusedHourly[0]?.fieldMetadata?.[field]).toMatchObject({
         providerCode: "open_meteo",
         estimated: false,
@@ -173,7 +189,7 @@ describe("weather source fusion", () => {
     expect(result.confidenceByField.cloudLow).toBeGreaterThan(0.45);
   });
 
-  it("fills missing ICON layer fields from Open-Meteo Forecast best-match same fields only", () => {
+  it("uses Open-Meteo model consensus where two cloud layer model values exist", () => {
     const result = fuseWeatherSources({
       providerBundles: [
         bundle(
@@ -219,14 +235,30 @@ describe("weather source fusion", () => {
     });
 
     expect(result.fusedHourly[0]).toMatchObject({
-      cloudTotal: 62,
+      cloudTotal: 60,
       cloudLow: 22,
-      cloudMid: 36,
+      cloudMid: 38,
       cloudHigh: 51,
     });
     expect(result.fusedHourly[0]?.fieldMetadata?.cloudTotal).toMatchObject({
-      sourceId: openMeteoIconCloudLayerProviderName,
-      basis: "total_cloud",
+      providerCode: "multi_model",
+      modelCount: 2,
+      providerCount: 1,
+      minValue: 58,
+      maxValue: 62,
+      medianValue: 60,
+      spread: 4,
+      consensusStrategy: "median",
+    });
+    expect(result.fusedHourly[0]?.fieldMetadata?.cloudMid).toMatchObject({
+      providerCode: "multi_model",
+      modelCount: 2,
+      providerCount: 1,
+      minValue: 36,
+      maxValue: 40,
+      medianValue: 38,
+      spread: 4,
+      consensusStrategy: "median",
     });
     expect(result.fusedHourly[0]?.fieldMetadata?.cloudLow).toMatchObject({
       sourceId: openMeteoForecastCloudLayerProviderName,
@@ -246,6 +278,73 @@ describe("weather source fusion", () => {
       cloudMidCoverage: 1,
       cloudHighCoverage: 1,
     });
+  });
+
+  it("uses conservative low-cloud obstruction consensus for astro when models diverge", () => {
+    const result = fuseWeatherSources({
+      providerBundles: [
+        bundle(
+          "open_meteo",
+          "云层分层补全",
+          hour({
+            providerCode: "open_meteo",
+            providerLabelZh: "云层分层补全",
+            cloudTotal: 18,
+            cloudLow: 10,
+            cloudMid: 14,
+            cloudHigh: 22,
+          }),
+          {
+            providerId: `${openMeteoForecastCloudLayerProviderName}:best_match`,
+            modelFamily: "open_meteo",
+            modelName: "best_match",
+          },
+        ),
+        bundle(
+          "open_meteo",
+          "云层分层补全",
+          hour({
+            providerCode: "open_meteo",
+            providerLabelZh: "云层分层补全",
+            cloudTotal: 74,
+            cloudLow: 82,
+            cloudMid: 18,
+            cloudHigh: 24,
+          }),
+          {
+            providerId: `${openMeteoForecastCloudLayerProviderName}:ecmwf_ifs025`,
+            modelFamily: "open_meteo",
+            modelName: "ecmwf_ifs025",
+          },
+        ),
+      ],
+      target: "astro",
+      location: { name: "generic mountain", coordinates },
+      forecastStart: "2026-05-22T00:00:00+08:00",
+      forecastEnd: "2026-05-23T00:00:00+08:00",
+    });
+
+    expect(result.fusedHourly[0]?.cloudLow).toBe(82);
+    expect(result.fusedHourly[0]?.fieldMetadata?.cloudLow).toMatchObject({
+      providerCode: "multi_model",
+      modelCount: 2,
+      providerCount: 1,
+      minValue: 10,
+      maxValue: 82,
+      medianValue: 46,
+      spread: 72,
+      consensusStrategy: "upper_percentile",
+    });
+    expect(result.conflictFlags.map((flag) => flag.field)).toEqual(
+      expect.arrayContaining([
+        "multi_model_cloud_total_spread",
+        "multi_model_low_cloud_obstruction_spread",
+      ]),
+    );
+    expect(
+      result.summary.multiModelConsensusDiagnostics?.multiModelConfidencePenaltyByTarget.astro,
+    ).toBeGreaterThan(0);
+    expect(result.confidenceByTarget.astro).toBeLessThan(0.7);
   });
 
   it("keeps missing ICON layer values null instead of backfilling them from total cloud", () => {
@@ -284,7 +383,7 @@ describe("weather source fusion", () => {
     });
 
     expect(result.fusedHourly[0]).toMatchObject({
-      cloudTotal: 62,
+      cloudTotal: 77,
       cloudLow: null,
       cloudMid: 36,
       cloudHigh: null,
@@ -296,6 +395,14 @@ describe("weather source fusion", () => {
       providerCode: "open_meteo",
       value: null,
       missingReason: "provider_field_missing",
+    });
+    expect(result.fusedHourly[0]?.fieldMetadata?.cloudTotal).toMatchObject({
+      providerCode: "multi_model",
+      modelCount: 2,
+      minValue: 62,
+      maxValue: 92,
+      medianValue: 77,
+      spread: 30,
     });
     expect(result.confidenceByField.cloudLow).toBeLessThanOrEqual(0.45);
     expect(result.summary.cloudLayerCoverage?.fieldCoverageSummary).toMatchObject({

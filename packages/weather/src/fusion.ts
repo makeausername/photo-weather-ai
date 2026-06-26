@@ -12,6 +12,7 @@ import type {
   WeatherAerosolDiagnostics,
   WeatherConfidenceLevel,
   WeatherFusionSummary,
+  WeatherMultiModelConsensusDiagnostics,
 } from "@photo-weather/shared";
 import { aerosolImpactRank, assessAerosolTransparency } from "@photo-weather/shared";
 import type {
@@ -103,6 +104,26 @@ const aerosolFieldKeys = [
   "aerosolSourceNoteZh",
 ] as const satisfies readonly (keyof NormalizedHourlyWeather)[];
 
+const consensusEligibleFields = [
+  "cloudTotal",
+  "cloudLow",
+  "cloudMid",
+  "cloudHigh",
+  "visibility",
+  "humidity",
+  "windSpeed",
+  "windGust",
+  "precipitation",
+  "precipitationAmountMm",
+  "rainAmountMm",
+  "snowAmountMm",
+  "precipitationProbability",
+] as const satisfies readonly (typeof numericFields)[number][];
+
+type ConsensusEligibleField = (typeof consensusEligibleFields)[number];
+
+type FieldConsensusStrategy = "median" | "upper_percentile" | "lower_percentile";
+
 export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResult {
   const usableBundles = input.providerBundles.filter((bundle) => bundle.hourly.length > 0);
   if (usableBundles.length === 0) {
@@ -132,8 +153,10 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
     timezone: timezoneFromWeather(input.forecastStart),
   });
   const fusedHourly = cloudLayerCoverage.hourlyRows;
+  const multiModelConsensusDiagnostics = buildMultiModelConsensusDiagnostics(fusedHourly, input);
+  const multiModelConflictFlags = buildMultiModelConflictFlags(fusedHourly, input);
   const aerosolConflictFlags = buildAerosolConflictFlags(fusedHourly, input);
-  const conflictFlags = [...baseConflictFlags, ...aerosolConflictFlags];
+  const conflictFlags = [...baseConflictFlags, ...multiModelConflictFlags, ...aerosolConflictFlags];
   const aerosolDiagnostics = buildAerosolDiagnostics(fusedHourly);
   const transparencyPenaltyByTarget = buildTransparencyPenaltyByTarget(fusedHourly, input);
   const fusedDaily = fuseDailyByDate(usableBundles, primaryBundle);
@@ -146,10 +169,13 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
     cloudLayerCoverage.fieldCoverageSummary,
   );
   const confidenceByTarget = applyAerosolTargetConfidencePenalty(
-    applyProviderConfidenceFloor(
-      buildConfidenceByTarget(confidenceByField, conflictFlags, input.terrainSummary),
-      usableBundles,
-      conflictFlags,
+    applyMultiModelTargetConfidencePenalty(
+      applyProviderConfidenceFloor(
+        buildConfidenceByTarget(confidenceByField, conflictFlags, input.terrainSummary),
+        usableBundles,
+        conflictFlags,
+      ),
+      multiModelConsensusDiagnostics.multiModelConfidencePenaltyByTarget,
     ),
     transparencyPenaltyByTarget,
   );
@@ -211,6 +237,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
       multiSourceAgreementContext,
       cloudLayerCoverage,
       aerosolDiagnostics,
+      multiModelConsensusDiagnostics,
     },
   };
 }
@@ -567,9 +594,10 @@ function fuseHourlyAt(
 
   for (const field of numericFields) {
     const selected =
-      isCloudLayerGroupField(field) && preferredCloudGroup
+      selectConsensusFieldValue(field, candidates, primaryHour, target) ??
+      (isCloudLayerGroupField(field) && preferredCloudGroup
         ? selectCloudLayerGroupField(field, preferredCloudGroup)
-        : selectFieldValue(field, candidates, primaryHour);
+        : selectFieldValue(field, candidates, primaryHour));
     if (selected.value !== undefined) {
       next[field] = selected.value;
     }
@@ -585,6 +613,13 @@ function fuseHourlyAt(
       providerElevationMeters: selected.providerElevationMeters,
       selectedSpotElevationMeters: selected.selectedSpotElevationMeters,
       elevationDifferenceMeters: selected.elevationDifferenceMeters,
+      modelCount: selected.modelCount,
+      providerCount: selected.providerCount,
+      minValue: selected.minValue,
+      maxValue: selected.maxValue,
+      medianValue: selected.medianValue,
+      spread: selected.spread,
+      consensusStrategy: selected.consensusStrategy,
     };
     if (selected.estimated) {
       estimatedFields.add(field);
@@ -690,6 +725,23 @@ type HourlyCandidate = {
   readonly hour: NormalizedHourlyWeather;
 };
 
+type SelectedNumericField = {
+  readonly value: number | null | undefined;
+  readonly providerCode: string;
+  readonly providerLabelZh?: string;
+  readonly estimated: boolean;
+  readonly providerElevationMeters?: number;
+  readonly selectedSpotElevationMeters?: number;
+  readonly elevationDifferenceMeters?: number;
+  readonly modelCount?: number;
+  readonly providerCount?: number;
+  readonly minValue?: number;
+  readonly maxValue?: number;
+  readonly medianValue?: number;
+  readonly spread?: number;
+  readonly consensusStrategy?: string;
+};
+
 function isCloudLayerGroupField(
   field: (typeof numericFields)[number],
 ): field is "cloudTotal" | "cloudLow" | "cloudMid" | "cloudHigh" {
@@ -735,18 +787,270 @@ function hasUsableNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function selectConsensusFieldValue(
+  field: (typeof numericFields)[number],
+  candidates: readonly HourlyCandidate[],
+  primaryHour: NormalizedHourlyWeather,
+  target: ForecastTarget,
+): SelectedNumericField | undefined {
+  if (!isConsensusEligibleField(field)) {
+    return undefined;
+  }
+
+  const values = candidates
+    .map((candidate) => {
+      const value = consensusValueForField(candidate.hour, field);
+      if (value === null || !isConsensusCandidateUsable(candidate)) {
+        return null;
+      }
+      return {
+        candidate,
+        value,
+        sourceKey: consensusSourceKey(candidate),
+        providerCode: candidate.bundle.providerCode,
+        estimated: candidate.hour.estimatedFields?.includes(field) ?? false,
+      };
+    })
+    .filter(
+      (
+        entry,
+      ): entry is {
+        readonly candidate: HourlyCandidate;
+        readonly value: number;
+        readonly sourceKey: string;
+        readonly providerCode: WeatherProviderCode;
+        readonly estimated: boolean;
+      } => entry !== null,
+    );
+
+  const sourceKeys = new Set(values.map((entry) => entry.sourceKey));
+  if (values.length < 2 || sourceKeys.size < 2) {
+    return undefined;
+  }
+
+  const providerCodes = new Set(values.map((entry) => entry.providerCode));
+  const numericValues = values.map((entry) => entry.value);
+  const stats = numericStats(numericValues);
+  const strategy = consensusStrategyForField(field, target, stats.spread);
+  const selectedValue = clampConsensusValue(
+    field,
+    strategy === "upper_percentile"
+      ? percentile(numericValues, 0.75)
+      : strategy === "lower_percentile"
+        ? percentile(numericValues, 0.25)
+        : stats.median,
+  );
+  const reference =
+    values.find((entry) => entry.candidate.hour === primaryHour)?.candidate ?? values[0]!.candidate;
+
+  return {
+    value: selectedValue,
+    providerCode: "multi_model",
+    providerLabelZh: "多模型融合",
+    estimated: values.every((entry) => entry.estimated),
+    providerElevationMeters: reference.hour.providerElevationMeters,
+    selectedSpotElevationMeters:
+      reference.hour.selectedSpotElevationMeters ??
+      reference.bundle.terrainMetadata?.selectedSpotElevationMeters,
+    elevationDifferenceMeters:
+      reference.hour.elevationDifferenceMeters ??
+      reference.bundle.terrainMetadata?.elevationDifferenceMeters,
+    modelCount: sourceKeys.size,
+    providerCount: providerCodes.size,
+    minValue: stats.min,
+    maxValue: stats.max,
+    medianValue: stats.median,
+    spread: stats.spread,
+    consensusStrategy: strategy,
+  };
+}
+
+function isConsensusEligibleField(
+  field: (typeof numericFields)[number],
+): field is ConsensusEligibleField {
+  return (consensusEligibleFields as readonly string[]).includes(field);
+}
+
+function isConsensusCandidateUsable(candidate: HourlyCandidate): boolean {
+  return candidate.bundle.dataMode !== "mock" && candidate.bundle.dataMode !== "demo";
+}
+
+function consensusValueForField(
+  hour: NormalizedHourlyWeather,
+  field: ConsensusEligibleField,
+): number | null {
+  if (field === "visibility") {
+    return asNumber(hour.rawVisibilityKm ?? hour.visibility);
+  }
+  if (field === "precipitationAmountMm") {
+    return asNumber(hour.precipitationAmountMm ?? hour.precipitation);
+  }
+  if (field === "precipitation") {
+    return asNumber(hour.precipitation ?? hour.precipitationAmountMm);
+  }
+  if (field === "precipitationProbability") {
+    return asNumber(hour.precipitationProbabilityPercent ?? hour.precipitationProbability);
+  }
+  return asNumber(hour[field]);
+}
+
+function consensusStrategyForField(
+  field: ConsensusEligibleField,
+  target: ForecastTarget,
+  spread: number,
+): FieldConsensusStrategy {
+  const highSpread = spread >= consensusSpreadThreshold(field);
+  if (!highSpread) {
+    return "median";
+  }
+
+  if (field === "cloudLow") {
+    return target === "cloud_sea" ? "lower_percentile" : "upper_percentile";
+  }
+  if (field === "cloudTotal" && target === "astro") {
+    return "upper_percentile";
+  }
+  if (
+    field === "visibility" &&
+    (target === "cloud_sea" || target === "glow" || target === "astro")
+  ) {
+    return "lower_percentile";
+  }
+  if (field === "humidity" && target === "cloud_sea") {
+    return "upper_percentile";
+  }
+  if (
+    field === "windSpeed" ||
+    field === "windGust" ||
+    field === "precipitation" ||
+    field === "precipitationAmountMm" ||
+    field === "rainAmountMm" ||
+    field === "snowAmountMm" ||
+    field === "precipitationProbability"
+  ) {
+    return "upper_percentile";
+  }
+
+  return "median";
+}
+
+function consensusSpreadThreshold(field: ConsensusEligibleField): number {
+  switch (field) {
+    case "cloudTotal":
+      return 30;
+    case "cloudLow":
+      return 25;
+    case "cloudMid":
+    case "cloudHigh":
+      return 35;
+    case "visibility":
+      return 8;
+    case "humidity":
+      return 20;
+    case "windSpeed":
+      return 4;
+    case "windGust":
+      return 6;
+    case "precipitationProbability":
+      return 35;
+    case "precipitation":
+    case "precipitationAmountMm":
+    case "rainAmountMm":
+    case "snowAmountMm":
+      return 2;
+    default:
+      return 20;
+  }
+}
+
+function clampConsensusValue(field: ConsensusEligibleField, value: number): number {
+  const rounded = round1(value);
+  if (
+    field === "cloudTotal" ||
+    field === "cloudLow" ||
+    field === "cloudMid" ||
+    field === "cloudHigh" ||
+    field === "humidity" ||
+    field === "precipitationProbability"
+  ) {
+    return Math.min(100, Math.max(0, rounded));
+  }
+  if (
+    field === "visibility" ||
+    field === "windSpeed" ||
+    field === "windGust" ||
+    field === "precipitation" ||
+    field === "precipitationAmountMm" ||
+    field === "rainAmountMm" ||
+    field === "snowAmountMm"
+  ) {
+    return Math.max(0, rounded);
+  }
+  return rounded;
+}
+
+function consensusSourceKey(candidate: HourlyCandidate): string {
+  const summary = sourceSummary(candidate.bundle);
+  if (summary?.providerId) {
+    return summary.providerId;
+  }
+  if (summary?.modelName) {
+    return `${candidate.bundle.providerCode}:${summary.modelName}`;
+  }
+  const metadataModel = Object.values(candidate.hour.fieldMetadata ?? {}).find(
+    (metadata) => metadata?.modelName,
+  )?.modelName;
+  return metadataModel
+    ? `${candidate.bundle.providerCode}:${metadataModel}`
+    : candidate.bundle.providerCode;
+}
+
+function numericStats(values: readonly number[]): {
+  readonly min: number;
+  readonly max: number;
+  readonly median: number;
+  readonly spread: number;
+} {
+  const sorted = [...values].sort((left, right) => left - right);
+  const min = sorted[0] ?? 0;
+  const max = sorted.at(-1) ?? min;
+  return {
+    min: round1(min),
+    max: round1(max),
+    median: round1(median(sorted)),
+    spread: round1(max - min),
+  };
+}
+
+function median(sortedOrUnsorted: readonly number[]): number {
+  const sorted = [...sortedOrUnsorted].sort((left, right) => left - right);
+  if (sorted.length === 0) {
+    return 0;
+  }
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) {
+    return sorted[middle]!;
+  }
+  return ((sorted[middle - 1] ?? sorted[middle]!) + sorted[middle]!) / 2;
+}
+
+function percentile(values: readonly number[], ratio: number): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  if (sorted.length === 0) {
+    return 0;
+  }
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1));
+  return sorted[index]!;
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
 function selectCloudLayerGroupField(
   field: "cloudTotal" | "cloudLow" | "cloudMid" | "cloudHigh",
   candidate: HourlyCandidate,
-): {
-  readonly value: number | null | undefined;
-  readonly providerCode: string;
-  readonly providerLabelZh?: string;
-  readonly estimated: boolean;
-  readonly providerElevationMeters?: number;
-  readonly selectedSpotElevationMeters?: number;
-  readonly elevationDifferenceMeters?: number;
-} {
+): SelectedNumericField {
   const value = candidate.hour[field] ?? null;
 
   return {
@@ -771,15 +1075,7 @@ function selectFieldValue(
     readonly hour: NormalizedHourlyWeather;
   }[],
   primaryHour: NormalizedHourlyWeather,
-): {
-  readonly value: number | null | undefined;
-  readonly providerCode: string;
-  readonly providerLabelZh?: string;
-  readonly estimated: boolean;
-  readonly providerElevationMeters?: number;
-  readonly selectedSpotElevationMeters?: number;
-  readonly elevationDifferenceMeters?: number;
-} {
+): SelectedNumericField {
   const providerOrder = capabilityOrderForField(field);
   const sorted = [...candidates].sort(
     (left, right) =>
@@ -908,6 +1204,332 @@ function detectConflicts(bundles: readonly WeatherDataBundle[]): readonly Weathe
   return flags;
 }
 
+function buildMultiModelConflictFlags(
+  hours: readonly NormalizedHourlyWeather[],
+  input: Pick<WeatherFusionInput, "target" | "forecastStart" | "forecastEnd">,
+): readonly WeatherConflictFlag[] {
+  const flags: WeatherConflictFlag[] = [];
+  const relevantHours = relevantHoursForTarget(hours, input.target, input);
+
+  for (const hour of relevantHours) {
+    const providers = [providerCodeForFlag(hour.providerCode)];
+    const cloudTotal = consensusSpreadForField(hour, "cloudTotal");
+    if (isHighConsensusSpread("cloudTotal", cloudTotal)) {
+      flags.push({
+        field: "multi_model_cloud_total_spread",
+        time: hour.time,
+        providers,
+        severity: consensusSeverity("cloudTotal", cloudTotal),
+        noteZh: "多模型云量判断存在差异，建议临近复核。",
+      });
+    }
+
+    const lowCloud = consensusSpreadForField(hour, "cloudLow");
+    if (isHighConsensusSpread("cloudLow", lowCloud)) {
+      flags.push({
+        field: "multi_model_low_cloud_obstruction_spread",
+        time: hour.time,
+        providers,
+        severity: consensusSeverity("cloudLow", lowCloud),
+        noteZh: "低云遮挡判断分歧较大，不建议盲目强推荐。",
+      });
+    }
+
+    const midHigh = maxConsensusSpread(hour, ["cloudMid", "cloudHigh"]);
+    if (midHigh !== null && midHigh >= consensusSpreadThreshold("cloudMid")) {
+      flags.push({
+        field: "multi_model_mid_high_cloud_spread",
+        time: hour.time,
+        providers,
+        severity: midHigh >= consensusSpreadThreshold("cloudMid") * 1.5 ? "high" : "medium",
+        noteZh: "云层分层判断存在差异，建议临近复核。",
+      });
+    }
+
+    const visibility = consensusSpreadForField(hour, "visibility");
+    if (isHighConsensusSpread("visibility", visibility)) {
+      flags.push({
+        field: "multi_model_visibility_spread",
+        time: hour.time,
+        providers,
+        severity: consensusSeverity("visibility", visibility),
+        noteZh: "透明度与云层判断存在差异，建议现场复核。",
+      });
+    }
+
+    const precipitationSeverity = consensusGroupSeverity(hour, [
+      "precipitation",
+      "precipitationAmountMm",
+      "rainAmountMm",
+      "snowAmountMm",
+      "precipitationProbability",
+    ]);
+    if (precipitationSeverity) {
+      flags.push({
+        field: "multi_model_precipitation_spread",
+        time: hour.time,
+        providers,
+        severity: precipitationSeverity,
+        noteZh: "降水判断存在多模型差异，建议临近复核。",
+      });
+    }
+
+    const windSeverity = consensusGroupSeverity(hour, ["windSpeed", "windGust"]);
+    if (windSeverity) {
+      flags.push({
+        field: "multi_model_wind_spread",
+        time: hour.time,
+        providers,
+        severity: windSeverity,
+        noteZh: "风速判断存在多模型差异，建议保守评估脚架和暴露山脊风险。",
+      });
+    }
+
+    const humidity = consensusSpreadForField(hour, "humidity");
+    if (isHighConsensusSpread("humidity", humidity)) {
+      flags.push({
+        field: "multi_model_humidity_spread",
+        time: hour.time,
+        providers,
+        severity: consensusSeverity("humidity", humidity),
+        noteZh: "湿度与雾气判断存在差异，建议结合现场观测复核。",
+      });
+    }
+  }
+
+  return flags.slice(0, 48);
+}
+
+function buildMultiModelConsensusDiagnostics(
+  hours: readonly NormalizedHourlyWeather[],
+  input: Pick<WeatherFusionInput, "forecastStart" | "forecastEnd">,
+): WeatherMultiModelConsensusDiagnostics {
+  const consensusFields = new Set<string>();
+  let multiModelConsensusHours = 0;
+  let multiModelHighSpreadHours = 0;
+
+  for (const hour of hours) {
+    const fieldsForHour = consensusEligibleFields.filter(
+      (field) => consensusMetadataForField(hour, field) !== undefined,
+    );
+    if (fieldsForHour.length === 0) {
+      continue;
+    }
+
+    multiModelConsensusHours += 1;
+    for (const field of fieldsForHour) {
+      consensusFields.add(field);
+    }
+    if (
+      fieldsForHour.some((field) =>
+        isHighConsensusSpread(field, consensusSpreadForField(hour, field)),
+      )
+    ) {
+      multiModelHighSpreadHours += 1;
+    }
+  }
+
+  return {
+    multiModelConsensusHours,
+    multiModelConsensusFields: [...consensusFields].sort(),
+    multiModelHighSpreadHours,
+    multiModelCloudSpreadMax: maxConsensusSpreadAcrossHours(hours, [
+      "cloudTotal",
+      "cloudMid",
+      "cloudHigh",
+    ]),
+    multiModelLowCloudSpreadMax: maxConsensusSpreadAcrossHours(hours, ["cloudLow"]),
+    multiModelVisibilitySpreadMax: maxConsensusSpreadAcrossHours(hours, ["visibility"]),
+    multiModelConfidencePenaltyByTarget: {
+      cloud_sea: robustTargetMultiModelPenalty(hours, "cloud_sea", input),
+      glow: robustTargetMultiModelPenalty(hours, "glow", input),
+      astro: robustTargetMultiModelPenalty(hours, "astro", input),
+      general: robustTargetMultiModelPenalty(hours, "general", input),
+    },
+  };
+}
+
+function robustTargetMultiModelPenalty(
+  hours: readonly NormalizedHourlyWeather[],
+  target: ForecastTarget,
+  input: Pick<WeatherFusionInput, "forecastStart" | "forecastEnd">,
+): number {
+  const penalties = relevantHoursForTarget(hours, target, input)
+    .map((hour) => multiModelPenaltyForHour(hour, target))
+    .filter((penalty) => penalty > 0)
+    .sort((left, right) => left - right);
+
+  if (penalties.length === 0) {
+    return 0;
+  }
+
+  const index =
+    penalties.length <= 2
+      ? penalties.length - 1
+      : Math.min(penalties.length - 1, Math.ceil(penalties.length * 0.8) - 1);
+  return clampConfidence(penalties[index] ?? 0);
+}
+
+function multiModelPenaltyForHour(hour: NormalizedHourlyWeather, target: ForecastTarget): number {
+  if (target === "cloud_sea") {
+    const penalty =
+      spreadPenalty(hour, "cloudLow", 0.05, 0.08) +
+      spreadPenalty(hour, "humidity", 0.04, 0.07) +
+      spreadPenalty(hour, "visibility", 0.05, 0.08) +
+      Math.max(
+        spreadPenalty(hour, "windSpeed", 0.04, 0.06),
+        spreadPenalty(hour, "windGust", 0.03, 0.05),
+      ) +
+      maxSpreadPenalty(
+        hour,
+        ["precipitation", "precipitationAmountMm", "rainAmountMm", "snowAmountMm"],
+        0.04,
+        0.06,
+      ) +
+      (poorVisibilityAndHighHumidity(hour) ? 0.05 : 0);
+    return round2(Math.min(0.18, penalty));
+  }
+
+  if (target === "glow") {
+    const penalty =
+      spreadPenalty(hour, "cloudLow", 0.07, 0.11) +
+      spreadPenalty(hour, "cloudTotal", 0.04, 0.07) +
+      maxSpreadPenalty(hour, ["cloudMid", "cloudHigh"], 0.04, 0.07) +
+      spreadPenalty(hour, "visibility", 0.03, 0.05) +
+      maxSpreadPenalty(
+        hour,
+        ["precipitation", "precipitationAmountMm", "precipitationProbability"],
+        0.03,
+        0.05,
+      );
+    return round2(Math.min(0.2, penalty));
+  }
+
+  if (target === "astro") {
+    const penalty =
+      spreadPenalty(hour, "cloudTotal", 0.08, 0.12) +
+      spreadPenalty(hour, "cloudLow", 0.05, 0.08) +
+      maxSpreadPenalty(hour, ["cloudMid", "cloudHigh"], 0.05, 0.08) +
+      spreadPenalty(hour, "visibility", 0.03, 0.05);
+    return round2(Math.min(0.22, penalty));
+  }
+
+  const penalty =
+    spreadPenalty(hour, "cloudTotal", 0.03, 0.05) +
+    spreadPenalty(hour, "visibility", 0.03, 0.05) +
+    spreadPenalty(hour, "humidity", 0.03, 0.04) +
+    Math.max(
+      spreadPenalty(hour, "windSpeed", 0.03, 0.04),
+      spreadPenalty(hour, "windGust", 0.03, 0.04),
+    ) +
+    maxSpreadPenalty(
+      hour,
+      ["precipitation", "precipitationAmountMm", "precipitationProbability"],
+      0.03,
+      0.04,
+    );
+  return round2(Math.min(0.12, penalty));
+}
+
+function spreadPenalty(
+  hour: NormalizedHourlyWeather,
+  field: ConsensusEligibleField,
+  mediumPenalty: number,
+  highPenalty: number,
+): number {
+  const spread = consensusSpreadForField(hour, field);
+  if (!isHighConsensusSpread(field, spread)) {
+    return 0;
+  }
+  return consensusSeverity(field, spread) === "high" ? highPenalty : mediumPenalty;
+}
+
+function maxSpreadPenalty(
+  hour: NormalizedHourlyWeather,
+  fields: readonly ConsensusEligibleField[],
+  mediumPenalty: number,
+  highPenalty: number,
+): number {
+  return Math.max(...fields.map((field) => spreadPenalty(hour, field, mediumPenalty, highPenalty)));
+}
+
+function poorVisibilityAndHighHumidity(hour: NormalizedHourlyWeather): boolean {
+  const visibility = asNumber(hour.rawVisibilityKm ?? hour.visibility);
+  const humidity = asNumber(hour.humidity);
+  return visibility !== null && visibility <= 5 && humidity !== null && humidity >= 90;
+}
+
+function consensusMetadataForField(hour: NormalizedHourlyWeather, field: ConsensusEligibleField) {
+  const metadata = hour.fieldMetadata?.[field];
+  return metadata?.providerCode === "multi_model" && (metadata.modelCount ?? 0) >= 2
+    ? metadata
+    : undefined;
+}
+
+function consensusSpreadForField(
+  hour: NormalizedHourlyWeather,
+  field: ConsensusEligibleField,
+): number | null {
+  const spread = consensusMetadataForField(hour, field)?.spread;
+  return typeof spread === "number" && Number.isFinite(spread) ? spread : null;
+}
+
+function isHighConsensusSpread(field: ConsensusEligibleField, spread: number | null): boolean {
+  return spread !== null && spread >= consensusSpreadThreshold(field);
+}
+
+function consensusSeverity(
+  field: ConsensusEligibleField,
+  spread: number | null,
+): WeatherConflictFlag["severity"] {
+  if (spread === null) {
+    return "low";
+  }
+  return spread >= consensusSpreadThreshold(field) * 1.5 ? "high" : "medium";
+}
+
+function consensusGroupSeverity(
+  hour: NormalizedHourlyWeather,
+  fields: readonly ConsensusEligibleField[],
+): WeatherConflictFlag["severity"] | undefined {
+  let hasMedium = false;
+  for (const field of fields) {
+    const spread = consensusSpreadForField(hour, field);
+    if (!isHighConsensusSpread(field, spread)) {
+      continue;
+    }
+    if (consensusSeverity(field, spread) === "high") {
+      return "high";
+    }
+    hasMedium = true;
+  }
+  return hasMedium ? "medium" : undefined;
+}
+
+function maxConsensusSpread(
+  hour: NormalizedHourlyWeather,
+  fields: readonly ConsensusEligibleField[],
+): number | null {
+  const values = fields
+    .map((field) => consensusSpreadForField(hour, field))
+    .filter((value): value is number => value !== null);
+  return values.length > 0 ? Math.max(...values) : null;
+}
+
+function maxConsensusSpreadAcrossHours(
+  hours: readonly NormalizedHourlyWeather[],
+  fields: readonly ConsensusEligibleField[],
+): number | null {
+  const values = hours
+    .map((hour) => maxConsensusSpread(hour, fields))
+    .filter((value): value is number => value !== null);
+  return values.length > 0 ? round1(Math.max(...values)) : null;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function fuseDailyByDate(
   bundles: readonly WeatherDataBundle[],
   primaryBundle: WeatherDataBundle,
@@ -1032,6 +1654,10 @@ function countSourcesForConfidenceField(
 }
 
 function fieldMatchesConfidenceKey(field: string, key: keyof WeatherConfidenceByField): boolean {
+  const spreadField = confidenceFieldForSpreadFlag(field);
+  if (spreadField) {
+    return spreadField === key;
+  }
   if (key === "wind") {
     return field === "windSpeed" || field === "windGust" || field === "windDirection";
   }
@@ -1045,6 +1671,27 @@ function fieldMatchesConfidenceKey(field: string, key: keyof WeatherConfidenceBy
     );
   }
   return field === key;
+}
+
+function confidenceFieldForSpreadFlag(field: string): keyof WeatherConfidenceByField | undefined {
+  switch (field) {
+    case "multi_model_cloud_total_spread":
+      return "cloudTotal";
+    case "multi_model_low_cloud_obstruction_spread":
+      return "cloudLow";
+    case "multi_model_mid_high_cloud_spread":
+      return "cloudMid";
+    case "multi_model_visibility_spread":
+      return "visibility";
+    case "multi_model_precipitation_spread":
+      return "precipitation";
+    case "multi_model_wind_spread":
+      return "wind";
+    case "multi_model_humidity_spread":
+      return "humidity";
+    default:
+      return undefined;
+  }
 }
 
 function buildConfidenceByTarget(
@@ -1111,6 +1758,18 @@ function applyProviderConfidenceFloor(
     glow: Math.max(confidenceByTarget.glow, 0.55),
     astro: Math.max(confidenceByTarget.astro, 0.55),
     general: Math.max(confidenceByTarget.general, 0.55),
+  };
+}
+
+function applyMultiModelTargetConfidencePenalty(
+  confidenceByTarget: WeatherConfidenceByTarget,
+  penaltyByTarget: Partial<Record<ForecastTarget, number>>,
+): WeatherConfidenceByTarget {
+  return {
+    cloud_sea: clampConfidence(confidenceByTarget.cloud_sea - (penaltyByTarget.cloud_sea ?? 0)),
+    glow: clampConfidence(confidenceByTarget.glow - (penaltyByTarget.glow ?? 0)),
+    astro: clampConfidence(confidenceByTarget.astro - (penaltyByTarget.astro ?? 0)),
+    general: clampConfidence(confidenceByTarget.general - (penaltyByTarget.general ?? 0)),
   };
 }
 

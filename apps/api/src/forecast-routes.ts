@@ -1443,6 +1443,8 @@ function logWeatherRuntimeFusionDiagnostics(
     ]),
   ];
   const aerosolDiagnostics = result.weatherFusionSummary?.aerosolDiagnostics;
+  const multiModelConsensusDiagnostics =
+    result.weatherFusionSummary?.multiModelConsensusDiagnostics;
 
   logger.info(
     {
@@ -1457,6 +1459,16 @@ function logWeatherRuntimeFusionDiagnostics(
       aerosolConflictFlagsCount: result.weatherFusionSummary?.aerosolConflictFlagsCount ?? null,
       confidenceByTarget: result.weatherFusionSummary?.confidenceByTarget ?? null,
       transparencyPenaltyByTarget: result.weatherFusionSummary?.transparencyPenaltyByTarget ?? null,
+      multiModelConsensusHours: multiModelConsensusDiagnostics?.multiModelConsensusHours ?? null,
+      multiModelConsensusFields: multiModelConsensusDiagnostics?.multiModelConsensusFields ?? null,
+      multiModelHighSpreadHours: multiModelConsensusDiagnostics?.multiModelHighSpreadHours ?? null,
+      multiModelCloudSpreadMax: multiModelConsensusDiagnostics?.multiModelCloudSpreadMax ?? null,
+      multiModelLowCloudSpreadMax:
+        multiModelConsensusDiagnostics?.multiModelLowCloudSpreadMax ?? null,
+      multiModelVisibilitySpreadMax:
+        multiModelConsensusDiagnostics?.multiModelVisibilitySpreadMax ?? null,
+      multiModelConfidencePenaltyByTarget:
+        multiModelConsensusDiagnostics?.multiModelConfidencePenaltyByTarget ?? null,
       aerosolHoursAvailable: aerosolDiagnostics?.aerosolHoursAvailable ?? null,
       aerosolSuppressedHours: aerosolDiagnostics?.aerosolSuppressedHours ?? null,
       aerosolPoorHours: aerosolDiagnostics?.aerosolPoorHours ?? null,

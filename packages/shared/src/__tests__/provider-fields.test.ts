@@ -69,7 +69,16 @@ describe("provider field presets", () => {
         expect.objectContaining({
           key: "modelList",
           target: "configJson",
-          defaultValue: "best_match,gfs_seamless,gfs_global",
+          defaultValue:
+            "best_match,gfs_seamless,gfs_global,icon_global,cma_grapes_global,ecmwf_ifs025",
+          advanced: true,
+        }),
+        expect.objectContaining({
+          key: "modelListLimit",
+          target: "configJson",
+          control: "number",
+          defaultValue: 6,
+          max: 8,
           advanced: true,
         }),
         expect.objectContaining({ key: "defaultModel", target: "configJson", advanced: true }),
@@ -548,5 +557,4 @@ describe("provider field presets", () => {
       ]),
     );
   });
-
 });

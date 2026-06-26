@@ -100,6 +100,19 @@ export function resolveCloudLayerHourlyCoverage(
       };
 
       for (const field of cloudLayerFields) {
+        const existingMetadata = base.fieldMetadata?.[field];
+        if (existingMetadata?.providerCode === "multi_model" && hasFiniteNumber(base[field])) {
+          next[field] = base[field];
+          if (existingMetadata.estimated) {
+            estimatedFields.add(field);
+            missingFields.add(field);
+          } else {
+            missingFields.delete(field);
+          }
+          fieldMetadata[field] = existingMetadata;
+          continue;
+        }
+
         const selected = selectCloudLayerField(field, primaryCloudCandidate, candidates);
         applySelectedNumberField({
           next,
@@ -301,7 +314,9 @@ function buildFieldCoverageSummary(
   };
 }
 
-function buildProviderCoverageSummary(bundle: WeatherDataBundle): CloudLayerProviderCoverageSummary {
+function buildProviderCoverageSummary(
+  bundle: WeatherDataBundle,
+): CloudLayerProviderCoverageSummary {
   const summary = sourceSummaryForBundle(bundle);
   return {
     providerId: sourceIdForBundle(bundle),
@@ -328,10 +343,9 @@ function buildMissingFieldSummary(summary: CloudLayerFieldCoverageSummary): read
     .map((field) => `${field}:${summary[field]}/${summary.totalHours}`);
 }
 
-function buildCoverageNotes(summary: CloudLayerFieldCoverageSummary): Pick<
-  CloudLayerCoverageSummary,
-  "userFacingCoverageNoteZh" | "professionalCoverageNoteZh"
-> {
+function buildCoverageNotes(
+  summary: CloudLayerFieldCoverageSummary,
+): Pick<CloudLayerCoverageSummary, "userFacingCoverageNoteZh" | "professionalCoverageNoteZh"> {
   const layerMinimum = Math.min(
     summary.cloudLowCoverage,
     summary.cloudMidCoverage,
@@ -344,23 +358,20 @@ function buildCoverageNotes(summary: CloudLayerFieldCoverageSummary): Pick<
   if (layerRatio >= 0.9) {
     return {
       userFacingCoverageNoteZh: `分层云量覆盖较完整，${coverageText}。`,
-      professionalCoverageNoteZh:
-        `分层云量覆盖较完整，${coverageText}；可用于复核云海、白墙和开口风险。缺失值仍以“-”显示，不使用总云量回填。`,
+      professionalCoverageNoteZh: `分层云量覆盖较完整，${coverageText}；可用于复核云海、白墙和开口风险。缺失值仍以“-”显示，不使用总云量回填。`,
     };
   }
 
   if (layerRatio < 0.7) {
     return {
       userFacingCoverageNoteZh: `分层云量覆盖不足，${coverageText}；当前仅可作为趋势参考。`,
-      professionalCoverageNoteZh:
-        `分层云量覆盖不足，${coverageText}；当前仅可作为趋势参考，建议结合临近预报复核。缺失值以“-”显示，不使用总云量回填。`,
+      professionalCoverageNoteZh: `分层云量覆盖不足，${coverageText}；当前仅可作为趋势参考，建议结合临近预报复核。缺失值以“-”显示，不使用总云量回填。`,
     };
   }
 
   return {
     userFacingCoverageNoteZh: `分层云量部分补全，${coverageText}。`,
-    professionalCoverageNoteZh:
-      `分层云量部分补全，${coverageText}；缺失值以“-”显示，不使用总云量回填，后续仍需临近复核。`,
+    professionalCoverageNoteZh: `分层云量部分补全，${coverageText}；缺失值以“-”显示，不使用总云量回填，后续仍需临近复核。`,
   };
 }
 
@@ -382,10 +393,16 @@ function sourceIdForBundle(bundle: WeatherDataBundle): string {
   if (summary?.modelFamily === "best_match") {
     return openMeteoForecastCloudLayerProviderName;
   }
-  if (bundle.providerCode === "open_meteo" && summary?.modelName === openMeteoIconCloudLayerDefaultModel) {
+  if (
+    bundle.providerCode === "open_meteo" &&
+    summary?.modelName === openMeteoIconCloudLayerDefaultModel
+  ) {
     return openMeteoIconCloudLayerProviderName;
   }
-  if (bundle.providerCode === "open_meteo" && summary?.modelName === openMeteoForecastCloudLayerDefaultModel) {
+  if (
+    bundle.providerCode === "open_meteo" &&
+    summary?.modelName === openMeteoForecastCloudLayerDefaultModel
+  ) {
     return openMeteoForecastCloudLayerProviderName;
   }
   return summary?.modelName ? `${bundle.providerCode}:${summary.modelName}` : bundle.providerCode;
@@ -452,10 +469,7 @@ function terrainAdjustedTemperature(hour: NormalizedHourlyWeather): number | nul
   );
 }
 
-function countFinite<T>(
-  rows: readonly T[],
-  select: (row: T) => number | null | undefined,
-): number {
+function countFinite<T>(rows: readonly T[], select: (row: T) => number | null | undefined): number {
   return rows.filter((row) => hasFiniteNumber(select(row))).length;
 }
 
