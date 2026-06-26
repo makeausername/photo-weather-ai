@@ -627,7 +627,8 @@ export const providerFieldPresets = [
         key: "charset",
         label: "字符集",
         target: "configJson",
-        defaultValue: "utf-8",
+        defaultValue: "GBK",
+        helpText: "支付宝收银台对中文商品名更稳定的方式是使用 GBK；如无特殊需要请保持 GBK。",
         advanced: true,
       },
       {

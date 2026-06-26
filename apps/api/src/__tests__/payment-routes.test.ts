@@ -4,9 +4,12 @@ import type { FastifyInstance } from "fastify";
 import { buildApiServer } from "../server.js";
 import {
   alipayCanonicalString,
+  alipayRequestSignContent,
   encryptWechatResourceForFixture,
   rsaSha256Sign,
+  rsaSha256Verify,
 } from "../payment-security.js";
+import { decodeAlipayText, type AlipayCharset } from "../alipay-encoding.js";
 import { adminAuthorizationHeader, createFakeDatabaseClient, testAuthConfig } from "./fake-db.js";
 
 const apiV3Key = "0123456789abcdef0123456789abcdef";
@@ -71,6 +74,7 @@ function enableAlipayProvider(
   state: any,
   pair = createPemPair(),
   options: {
+    readonly charset?: string;
     readonly realCallEnabled?: boolean;
     readonly mode?: "page" | "wap";
     readonly appPrivateKeyPem?: string;
@@ -86,6 +90,7 @@ function enableAlipayProvider(
       realCallEnabled: options.realCallEnabled ?? false,
       mode: options.mode ?? "page",
       appId: "alipay-app-id",
+      ...(options.charset ? { charset: options.charset } : {}),
       notifyUrl: "https://example.com/billing/alipay/notify",
       returnUrl: "https://example.com/billing/alipay/return",
       sellerId: "seller-1000",
@@ -147,7 +152,14 @@ function insertStoredPaymentOrder(
     readonly amountCents: number;
     readonly provider?: "mock" | "wechat_pay" | "alipay";
     readonly userId?: string;
-    readonly status?: "created" | "pending" | "paid" | "closed" | "canceled" | "failed" | "refunded";
+    readonly status?:
+      | "created"
+      | "pending"
+      | "paid"
+      | "closed"
+      | "canceled"
+      | "failed"
+      | "refunded";
     readonly createdAt?: Date;
     readonly paidAt?: Date | null;
     readonly providerTradeNo?: string | null;
@@ -251,6 +263,44 @@ function signedAlipayBody(
   return new URLSearchParams([...params.entries()]).toString();
 }
 
+function decodeHtmlResponse(
+  response: { readonly rawPayload?: Buffer; readonly body: string },
+  charset: AlipayCharset = "GBK",
+) {
+  const rawPayload = response.rawPayload ?? Buffer.from(response.body, "binary");
+  return decodeAlipayText(rawPayload, charset);
+}
+
+function decodeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+function extractHiddenFields(html: string): Record<string, string> {
+  return Object.fromEntries(
+    [...html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map((match) => [
+      decodeHtmlAttribute(match[1] ?? ""),
+      decodeHtmlAttribute(match[2] ?? ""),
+    ]),
+  );
+}
+
+async function postAlipayPagePay(
+  app: FastifyInstance,
+  checkout: { readonly fields?: Record<string, string> },
+) {
+  return app.inject({
+    method: "POST",
+    url: "/billing/alipay/page-pay",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    payload: new URLSearchParams(checkout.fields ?? {}).toString(),
+  });
+}
+
 describe("payment routes", () => {
   let app: FastifyInstance | undefined;
 
@@ -264,7 +314,12 @@ describe("payment routes", () => {
 
   it("lists only public purchasable full-access billing products without authentication", async () => {
     const { client } = await createFakeDatabaseClient();
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: testEnv,
+      logger: false,
+    });
 
     const response = await app.inject({ method: "GET", url: "/billing/products" });
 
@@ -303,7 +358,12 @@ describe("payment routes", () => {
 
   it("requires authentication and an enabled provider to create orders", async () => {
     const { client } = await createFakeDatabaseClient();
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: testEnv,
+      logger: false,
+    });
 
     const unauthenticated = await app.inject({
       method: "POST",
@@ -418,7 +478,12 @@ describe("payment routes", () => {
 
   it("filters registration trial grants out of user billing orders and direct order lookup", async () => {
     const { client, state } = await createFakeDatabaseClient();
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: testEnv,
+      logger: false,
+    });
     const monthly = insertStoredPaymentOrder(state, {
       orderNo: "PUSERMONTHLY",
       productCode: "monthly_full",
@@ -491,7 +556,12 @@ describe("payment routes", () => {
       amountCents: 2500,
       durationDays: 45,
     });
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: testEnv,
+      logger: false,
+    });
 
     const { order } = await createBillingOrder(app, "alipay", "monthly_full");
     const response = await app.inject({
@@ -523,53 +593,90 @@ describe("payment routes", () => {
     app = buildApiServer({
       dbClient: client,
       authConfig: testAuthConfig,
-      env: { ...testEnv, NODE_ENV: "production" },
+      env: {
+        ...testEnv,
+        NODE_ENV: "production",
+        NEXT_PUBLIC_API_BASE_URL: "http://localhost:4000",
+      },
       logger: false,
     });
 
     const body = await createBillingOrder(app, "alipay", "monthly_full");
     const checkout = body.checkout;
     const fields = checkout.fields ?? {};
-    const bizContent = JSON.parse(fields.biz_content ?? "{}") as Record<string, string>;
     const storedOrder = state.paymentOrders.get(body.order.orderNo);
+    const productName = state.billingProducts.get("monthly_full").name;
 
     expect(checkout).toMatchObject({
       kind: "form_post",
-      actionUrl: "https://openapi.alipay.com/gateway.do",
+      actionUrl: "http://localhost:4000/billing/alipay/page-pay",
       method: "POST",
-      charset: "utf-8",
+      charset: "GBK",
     });
     expect(checkout.redirectUrl).toBeUndefined();
     expect(checkout.actionUrl).not.toContain("?");
     expect(fields).toMatchObject({
-      app_id: "alipay-app-id",
-      method: "alipay.trade.page.pay",
-      sign_type: "RSA2",
-      notify_url: "https://example.com/billing/alipay/notify",
-      return_url: "/pricing",
+      orderNo: body.order.orderNo,
+      checkoutToken: expect.any(String),
     });
-    expect(fields.sign).toEqual(expect.any(String));
-    expect(bizContent).toMatchObject({
-      out_trade_no: body.order.orderNo,
-      total_amount: "19.00",
-      subject: "月卡",
-      product_code: "FAST_INSTANT_TRADE_PAY",
-    });
+    expect(fields).not.toHaveProperty("sign");
+    expect(fields).not.toHaveProperty("biz_content");
     expect(storedOrder?.providerPayloadJson).toMatchObject({
       provider: "alipay",
       method: "alipay.trade.page.pay",
+      productCode: "FAST_INSTANT_TRADE_PAY",
       mode: "page",
       orderNo: body.order.orderNo,
       gatewayHost: "openapi.alipay.com",
-      charset: "utf-8",
+      charset: "GBK",
       signType: "RSA2",
       transportMode: "server_post_form",
+      subjectLength: productName.length,
+      subjectPreview: productName.slice(0, 8),
+      signContentIncludesSignType: true,
     });
     expect(JSON.stringify(storedOrder?.providerPayloadJson)).not.toContain('"sign":');
     expect(JSON.stringify(storedOrder?.providerPayloadJson)).not.toContain("biz_content");
     expect(JSON.stringify(body)).not.toContain(pair.privateKeyPem);
     expect(JSON.stringify(body)).not.toContain(pair.publicKeyPem);
     expect(JSON.stringify(body)).not.toContain("redirect_url");
+
+    const pagePayResponse = await postAlipayPagePay(app, checkout);
+    const html = decodeHtmlResponse(pagePayResponse);
+    const pageFields = extractHiddenFields(html);
+    const bizContent = JSON.parse(pageFields.biz_content ?? "{}") as Record<string, string>;
+    const signContent = alipayRequestSignContent(new Map(Object.entries(pageFields)));
+
+    expect(pagePayResponse.statusCode).toBe(200);
+    expect(pagePayResponse.headers["content-type"]).toContain("text/html; charset=GBK");
+    expect(html).toContain('<meta charset="GBK">');
+    expect(html).toContain('method="post"');
+    expect(html).toContain('action="https://openapi.alipay.com/gateway.do"');
+    expect(html).toContain('accept-charset="GBK"');
+    expect(pageFields).toMatchObject({
+      app_id: "alipay-app-id",
+      charset: "GBK",
+      method: "alipay.trade.page.pay",
+      notify_url: "https://example.com/billing/alipay/notify",
+      return_url: "/pricing",
+      sign_type: "RSA2",
+    });
+    expect(pageFields.sign).toEqual(expect.any(String));
+    expect(pageFields.biz_content).not.toContain("\\u");
+    expect(bizContent).toMatchObject({
+      out_trade_no: body.order.orderNo,
+      total_amount: "19.00",
+      subject: productName,
+      body: "逐光天气会员套餐",
+      product_code: "FAST_INSTANT_TRADE_PAY",
+    });
+    expect(signContent).toContain("sign_type=RSA2");
+    expect(signContent).not.toContain("sign=");
+    expect(rsaSha256Verify(signContent, pageFields.sign ?? "", pair.publicKeyPem, "GBK")).toBe(
+      true,
+    );
+    expect(JSON.stringify(pageFields)).not.toContain(pair.privateKeyPem);
+    expect(JSON.stringify(pageFields)).not.toContain(pair.publicKeyPem);
   });
 
   it("creates real Alipay wap payments as POST form payloads", async () => {
@@ -581,27 +688,74 @@ describe("payment routes", () => {
     app = buildApiServer({
       dbClient: client,
       authConfig: testAuthConfig,
-      env: { ...testEnv, NODE_ENV: "production" },
+      env: {
+        ...testEnv,
+        NODE_ENV: "production",
+        NEXT_PUBLIC_API_BASE_URL: "http://localhost:4000",
+      },
       logger: false,
     });
 
     const body = await createBillingOrder(app, "alipay", "quarterly_full");
-    const fields = body.checkout.fields ?? {};
+    const pagePayResponse = await postAlipayPagePay(app, body.checkout);
+    const html = decodeHtmlResponse(pagePayResponse);
+    const fields = extractHiddenFields(html);
     const bizContent = JSON.parse(fields.biz_content ?? "{}") as Record<string, string>;
 
     expect(body.checkout).toMatchObject({
       kind: "form_post",
-      actionUrl: "https://openapi.alipay.com/gateway.do",
+      actionUrl: "http://localhost:4000/billing/alipay/page-pay",
       method: "POST",
+      charset: "GBK",
     });
+    expect(pagePayResponse.statusCode).toBe(200);
+    expect(html).toContain('accept-charset="GBK"');
     expect(fields.method).toBe("alipay.trade.wap.pay");
     expect(bizContent.product_code).toBe("QUICK_WAP_WAY");
+  });
+
+  it("accepts explicitly configured UTF-8 for Alipay page-pay transport", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    enableAlipayProvider(state, createPemPair(), {
+      charset: "utf-8",
+      realCallEnabled: true,
+      mode: "page",
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...testEnv,
+        NODE_ENV: "production",
+        NEXT_PUBLIC_API_BASE_URL: "http://localhost:4000",
+      },
+      logger: false,
+    });
+
+    const body = await createBillingOrder(app, "alipay", "monthly_full");
+    const pagePayResponse = await postAlipayPagePay(app, body.checkout);
+    const html = decodeHtmlResponse(pagePayResponse, "UTF-8");
+    const fields = extractHiddenFields(html);
+
+    expect(body.checkout).toMatchObject({
+      kind: "form_post",
+      charset: "UTF-8",
+    });
+    expect(pagePayResponse.headers["content-type"]).toContain("text/html; charset=UTF-8");
+    expect(html).toContain('<meta charset="UTF-8">');
+    expect(html).toContain('accept-charset="UTF-8"');
+    expect(fields.charset).toBe("UTF-8");
   });
 
   it("rejects invalid WeChat signatures and processes valid notifications idempotently", async () => {
     const { client, state } = await createFakeDatabaseClient();
     const pair = enableWechatProvider(state);
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: testEnv,
+      logger: false,
+    });
     const { order } = await createBillingOrder(app, "wechat_pay");
     const rawBody = createWechatNotifyBody({
       orderNo: order.orderNo,
@@ -655,7 +809,12 @@ describe("payment routes", () => {
   it("rejects WeChat notification amount mismatches without granting entitlements", async () => {
     const { client, state } = await createFakeDatabaseClient();
     const pair = enableWechatProvider(state);
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: testEnv,
+      logger: false,
+    });
     const { order } = await createBillingOrder(app, "wechat_pay");
     const rawBody = createWechatNotifyBody({
       orderNo: order.orderNo,
@@ -682,7 +841,12 @@ describe("payment routes", () => {
   it("processes Alipay notifications only when the signature, app, seller, and amount match", async () => {
     const { client, state } = await createFakeDatabaseClient();
     const pair = enableAlipayProvider(state);
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: testEnv,
+      logger: false,
+    });
     const { order } = await createBillingOrder(app, "alipay");
     const body = signedAlipayBody(
       { orderNo: order.orderNo, totalAmount: "19.00" },
@@ -727,7 +891,12 @@ describe("payment routes", () => {
   it("rejects Alipay amount mismatches without granting entitlements", async () => {
     const { client, state } = await createFakeDatabaseClient();
     const pair = enableAlipayProvider(state);
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: testEnv,
+      logger: false,
+    });
     const { order } = await createBillingOrder(app, "alipay");
     const body = signedAlipayBody(
       { orderNo: order.orderNo, totalAmount: "9.91" },
@@ -751,7 +920,12 @@ describe("payment routes", () => {
   it("lets admins manually mark unpaid mock-mode orders paid and writes a safe audit log", async () => {
     const { client, state } = await createFakeDatabaseClient();
     enableAlipayProvider(state);
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, env: testEnv, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: testEnv,
+      logger: false,
+    });
     const { order } = await createBillingOrder(app, "alipay", "yearly_full");
 
     const response = await app.inject({

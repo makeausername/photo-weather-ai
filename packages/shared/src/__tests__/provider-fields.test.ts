@@ -558,6 +558,13 @@ describe("provider field presets", () => {
           target: "configJson",
           advanced: true,
         }),
+        expect.objectContaining({
+          key: "charset",
+          target: "configJson",
+          defaultValue: "GBK",
+          helpText: "支付宝收银台对中文商品名更稳定的方式是使用 GBK；如无特殊需要请保持 GBK。",
+          advanced: true,
+        }),
       ]),
     );
     const alipayFields = getProviderFieldPreset("alipay")?.fields ?? [];

@@ -409,7 +409,7 @@ const providerConfigs = [
       notifyUrl: "",
       returnUrl: "",
       gatewayUrl: "https://openapi.alipay.com/gateway.do",
-      charset: "utf-8",
+      charset: "GBK",
       signType: "RSA2",
       timeoutMs: 10000,
     },

@@ -4,10 +4,10 @@ import {
   alipayRequestSignContent,
   amountCentsToDecimalString,
   decimalAmountToCents,
-  parseFormUrlEncodedBody,
   rsaSha256Sign,
   rsaSha256Verify,
 } from "./payment-security.js";
+import { parseAlipayFormUrlEncodedBody } from "./alipay-encoding.js";
 import type {
   AlipayRuntimeConfig,
   PaymentCreateInput,
@@ -16,6 +16,14 @@ import type {
   PaymentNotificationVerificationResult,
   PaymentProvider,
 } from "./payment-provider.js";
+
+export type AlipayPagePayRequest = {
+  readonly charset: AlipayRuntimeConfig["charset"];
+  readonly fields: Record<string, string>;
+  readonly gatewayUrl: string;
+  readonly method: "POST";
+  readonly safeDiagnostics: JsonValue;
+};
 
 export class AlipayProvider implements PaymentProvider {
   readonly providerCode: PaymentProviderCode = "alipay";
@@ -35,34 +43,49 @@ export class AlipayProvider implements PaymentProvider {
       };
     }
 
-    const params = this.createRequestParams(input);
-    const canonical = alipayRequestSignContent(params);
-    const signature = rsaSha256Sign(canonical, this.config.appPrivateKeyPem, this.config.charset);
-    params.set("sign", signature);
-    const method = params.get("method") ?? "";
-    const fields = Object.fromEntries(params.entries());
+    const pagePayRequest = this.createPagePayRequest(input);
     return {
       provider: "alipay",
       mode: this.config.mode,
       realCall: true,
-      providerPayloadJson: {
+      providerPayloadJson: pagePayRequest.safeDiagnostics,
+      publicPayload: {
+        kind: "form_post",
+        actionUrl: "/billing/alipay/page-pay",
+        method: "POST",
+        charset: this.config.charset,
+        fields: {
+          orderNo: input.order.orderNo,
+        },
+        message: "请跳转到支付宝完成支付。",
+      },
+    };
+  }
+
+  createPagePayRequest(input: PaymentCreateInput): AlipayPagePayRequest {
+    const request = this.createRequestParams(input);
+    const signContent = alipayRequestSignContent(request.params);
+    const signature = rsaSha256Sign(signContent, this.config.appPrivateKeyPem, this.config.charset);
+    request.params.set("sign", signature);
+
+    return {
+      charset: this.config.charset,
+      fields: Object.fromEntries(request.params.entries()),
+      gatewayUrl: this.config.gatewayUrl,
+      method: "POST",
+      safeDiagnostics: {
         provider: "alipay",
-        method,
+        method: request.method,
+        productCode: request.productCode,
         mode: this.config.mode,
         orderNo: input.order.orderNo,
         gatewayHost: gatewayHostOf(this.config.gatewayUrl),
         charset: this.config.charset,
         signType: this.config.signType,
         transportMode: "server_post_form",
-        subjectLength: input.product.name.length,
-      },
-      publicPayload: {
-        kind: "form_post",
-        actionUrl: this.config.gatewayUrl,
-        method: "POST",
-        charset: this.config.charset,
-        fields,
-        message: "请跳转到支付宝完成支付。",
+        subjectLength: request.subject.length,
+        subjectPreview: request.subject.slice(0, 8),
+        signContentIncludesSignType: signContent.includes("sign_type=RSA2"),
       },
     };
   }
@@ -70,7 +93,12 @@ export class AlipayProvider implements PaymentProvider {
   async verifyNotification(
     input: PaymentNotificationInput,
   ): Promise<PaymentNotificationVerificationResult> {
-    const params = parseFormUrlEncodedBody(input.rawBody);
+    const { params } = parseAlipayFormUrlEncodedBody({
+      rawBody: input.rawBody,
+      rawBodyBytes: input.rawBodyBytes,
+      headers: input.headers,
+      fallbackCharset: this.config.charset,
+    });
     const rawJson = Object.fromEntries(params.entries()) as JsonValue;
     const signature = params.get("sign") ?? "";
     const canonical = alipayCanonicalString(params);
@@ -149,21 +177,24 @@ export class AlipayProvider implements PaymentProvider {
         providerTradeNo,
         amountCents: decimalAmountToCents(totalAmount),
         status:
-          tradeStatus === "TRADE_SUCCESS" || tradeStatus === "TRADE_FINISHED"
-            ? "paid"
-            : "ignored",
+          tradeStatus === "TRADE_SUCCESS" || tradeStatus === "TRADE_FINISHED" ? "paid" : "ignored",
         rawJson,
       },
     };
   }
 
-  private createRequestParams(input: PaymentCreateInput): Map<string, string> {
+  private createRequestParams(input: PaymentCreateInput): {
+    readonly method: string;
+    readonly params: Map<string, string>;
+    readonly productCode: string;
+    readonly subject: string;
+  } {
     const params = new Map<string, string>();
+    const method = this.config.mode === "wap" ? "alipay.trade.wap.pay" : "alipay.trade.page.pay";
+    const productCode = this.config.mode === "wap" ? "QUICK_WAP_WAY" : "FAST_INSTANT_TRADE_PAY";
+    const subject = this.getProductSubject(input.product);
     params.set("app_id", this.config.appId);
-    params.set(
-      "method",
-      this.config.mode === "wap" ? "alipay.trade.wap.pay" : "alipay.trade.page.pay",
-    );
+    params.set("method", method);
     params.set("format", "JSON");
     params.set("charset", this.config.charset);
     params.set("sign_type", this.config.signType);
@@ -176,12 +207,24 @@ export class AlipayProvider implements PaymentProvider {
       JSON.stringify({
         out_trade_no: input.order.orderNo,
         total_amount: amountCentsToDecimalString(input.order.amountCents),
-        subject: input.product.name,
-        product_code:
-          this.config.mode === "wap" ? "QUICK_WAP_WAY" : "FAST_INSTANT_TRADE_PAY",
+        subject,
+        body: this.getProductBody(),
+        product_code: productCode,
       }),
     );
-    return params;
+    return { method, params, productCode, subject };
+  }
+
+  private getProductSubject(product: PaymentCreateInput["product"]): string {
+    if (this.config.forceAsciiSubject) {
+      return `Photo Weather ${product.code}`;
+    }
+
+    return product.name;
+  }
+
+  private getProductBody(): string {
+    return this.config.forceAsciiSubject ? "Photo Weather membership plan" : "逐光天气会员套餐";
   }
 }
 

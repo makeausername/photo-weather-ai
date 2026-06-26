@@ -148,9 +148,11 @@ function collectClickableElements(
     value.forEach((item) => collectClickableElements(item, result));
     return result;
   }
-  if (React.isValidElement<{ readonly children?: React.ReactNode; readonly onClick?: () => void }>(
-    value,
-  )) {
+  if (
+    React.isValidElement<{ readonly children?: React.ReactNode; readonly onClick?: () => void }>(
+      value,
+    )
+  ) {
     if (typeof value.props.onClick === "function") {
       result.push(value as ClickableElement);
     }
@@ -175,28 +177,25 @@ describe("pricing checkout client", () => {
       React.createElement(CheckoutPayloadView, {
         checkout: {
           kind: "form_post",
-          actionUrl: "https://openapi.alipay.com/gateway.do",
+          actionUrl: "http://localhost:4000/billing/alipay/page-pay",
           method: "POST",
-          charset: "utf-8",
+          charset: "GBK",
           message: "Continue to Alipay.",
           fields: {
-            app_id: "alipay-app-id",
-            method: "alipay.trade.page.pay",
-            sign_type: "RSA2",
-            sign: "signed-value",
-            biz_content: "{\"out_trade_no\":\"P1000\"}",
+            orderNo: "P1000",
+            checkoutToken: "signed-checkout-proof",
           },
         },
       }),
     );
 
-    expect(html).toContain('action="https://openapi.alipay.com/gateway.do"');
+    expect(html).toContain('action="http://localhost:4000/billing/alipay/page-pay"');
     expect(html).toContain('method="POST"');
-    expect(html).toContain('accept-charset="utf-8"');
+    expect(html).toContain('accept-charset="GBK"');
     expect(html).toContain('type="hidden"');
-    expect(html).toContain('name="app_id"');
-    expect(html).toContain('value="alipay.trade.page.pay"');
-    expect(html).toContain('name="sign_type"');
+    expect(html).toContain('name="orderNo"');
+    expect(html).toContain('value="P1000"');
+    expect(html).toContain('name="checkoutToken"');
     expect(html).toContain("前往支付宝支付");
     expect(html).toContain("支付页面已生成，请继续完成支付。");
     expect(pricingClientSource).toContain('checkout.kind === "form_post"');
@@ -434,9 +433,7 @@ describe("pricing checkout client", () => {
     expect(pricingClientSource).not.toContain("grantType:");
     expect(pricingClientSource).not.toContain("hasFullAccess:");
     expect(pricingClientSource).not.toContain("entitlement type");
-    expect(pricingClientSource).toMatch(
-      /if \(checkoutSubmissionRef\.current\) \{\s*return;\s*\}/,
-    );
+    expect(pricingClientSource).toMatch(/if \(checkoutSubmissionRef\.current\) \{\s*return;\s*\}/);
     expect(pricingClientSource).toContain("checkoutSubmissionRef.current = true");
     expect(pricingClientSource).toContain("checkoutSubmissionRef.current = false");
   });

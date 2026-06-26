@@ -19,6 +19,7 @@ import {
   readIntegerField,
   readStringField,
 } from "./payment-security.js";
+import { normalizeAlipayCharset, type AlipayCharset } from "./alipay-encoding.js";
 
 export type PaymentCreateInput = {
   readonly order: PaymentOrderRecord;
@@ -66,6 +67,7 @@ export type PaymentCreateResult = {
 
 export type PaymentNotificationInput = {
   readonly rawBody: string;
+  readonly rawBodyBytes?: Uint8Array;
   readonly headers: Record<string, string | undefined>;
 };
 
@@ -125,12 +127,13 @@ export type AlipayRuntimeConfig = {
   readonly notifyUrl: string;
   readonly returnUrl: string;
   readonly gatewayUrl: string;
-  readonly charset: string;
+  readonly charset: AlipayCharset;
   readonly signType: "RSA2";
   readonly timeoutMs: number;
   readonly appPrivateKeyPem: string;
   readonly alipayPublicKeyPem: string;
   readonly sellerId: string;
+  readonly forceAsciiSubject: boolean;
 };
 
 export type BillingProviderRuntimeConfig = WechatPayRuntimeConfig | AlipayRuntimeConfig;
@@ -221,12 +224,13 @@ export async function readRuntimeBillingProviderConfig(
     notifyUrl: readStringField(configJson.notifyUrl),
     returnUrl: readStringField(configJson.returnUrl),
     gatewayUrl: readStringField(configJson.gatewayUrl) || alipayDefaultGatewayUrl,
-    charset: readStringField(configJson.charset) || "utf-8",
+    charset: normalizeAlipayCharset(configJson.charset),
     signType: "RSA2",
     timeoutMs: readIntegerField(configJson.timeoutMs, paymentDefaultTimeoutMs),
     appPrivateKeyPem: readStringField(secretJson.appPrivateKeyPem),
     alipayPublicKeyPem: readStringField(secretJson.alipayPublicKeyPem),
     sellerId: readStringField(configJson.sellerId),
+    forceAsciiSubject: readBooleanField(env.ALIPAY_FORCE_ASCII_SUBJECT),
   };
 }
 
@@ -275,7 +279,9 @@ function collectInvalidPemFields(config: BillingProviderRuntimeConfig): string[]
       try {
         assertPublicKeyPem(publicMaterial);
       } catch {
-        invalid.push(config.platformPublicKeyPem ? "platformPublicKeyPem" : "platformCertificatePem");
+        invalid.push(
+          config.platformPublicKeyPem ? "platformPublicKeyPem" : "platformCertificatePem",
+        );
       }
     }
     if (config.apiV3Key && Buffer.byteLength(config.apiV3Key, "utf8") !== 32) {

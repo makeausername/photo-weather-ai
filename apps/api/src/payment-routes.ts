@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
@@ -31,13 +32,16 @@ import { z } from "zod";
 import type { AuthConfig, AuthenticatedRequestContext } from "./auth-routes.js";
 import { authenticateRequest, requirePermission } from "./auth-routes.js";
 import { AlipayProvider } from "./alipay-provider.js";
+import { encodeAlipayText, type AlipayCharset } from "./alipay-encoding.js";
+import { renderAlipayPagePayFormHtml } from "./alipay-page-pay-form.js";
 import {
   checkBillingProviderConfig,
   readRuntimeBillingProviderConfig,
   type BillingProviderRuntimeConfig,
   type PaymentProvider,
+  type PublicCheckoutPayload,
 } from "./payment-provider.js";
-import { sanitizePaymentErrorMessage } from "./payment-security.js";
+import { isPlainRecord, sanitizePaymentErrorMessage } from "./payment-security.js";
 import { WechatPayProvider } from "./wechat-pay-provider.js";
 
 export type PaymentRoutesOptions = {
@@ -49,6 +53,7 @@ export type PaymentRoutesOptions = {
 
 type RawBodyRequest = FastifyRequest & {
   rawBody?: string;
+  rawBodyBytes?: Buffer;
 };
 
 const createOrderSchema = z.object({
@@ -63,6 +68,11 @@ const listOrdersQuerySchema = z.object({
 });
 
 const orderParamsSchema = z.object({
+  orderNo: z.string().trim().min(1).max(80),
+});
+
+const alipayPagePaySchema = z.object({
+  checkoutToken: z.string().trim().min(20).max(3000),
   orderNo: z.string().trim().min(1).max(80),
 });
 
@@ -84,6 +94,78 @@ function sendError(reply: FastifyReply, statusCode: number, error: string, messa
 
 function compactJson(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
+type AlipayCheckoutTokenPayload = {
+  readonly amountCents: number;
+  readonly exp: number;
+  readonly orderNo: string;
+  readonly productCode: string;
+  readonly userId: string;
+  readonly v: 1;
+};
+
+function base64UrlJson(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+function signCheckoutTokenPayload(payload: string, authConfig: AuthConfig): string {
+  return createHmac("sha256", authConfig.jwtSecret).update(payload).digest("base64url");
+}
+
+function safeEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function createAlipayCheckoutToken(
+  order: PaymentOrderRecord,
+  authConfig: AuthConfig,
+  now: Date = new Date(),
+): string {
+  const payload = base64UrlJson({
+    amountCents: order.amountCents,
+    exp: Math.floor((now.getTime() + 30 * 60 * 1000) / 1000),
+    orderNo: order.orderNo,
+    productCode: order.productCode,
+    userId: order.userId,
+    v: 1,
+  } satisfies AlipayCheckoutTokenPayload);
+  return `${payload}.${signCheckoutTokenPayload(payload, authConfig)}`;
+}
+
+function verifyAlipayCheckoutToken(input: {
+  readonly authConfig: AuthConfig;
+  readonly now?: Date;
+  readonly order: PaymentOrderRecord;
+  readonly token: string;
+}): boolean {
+  const [payloadText, signature, ...extra] = input.token.split(".");
+  if (!payloadText || !signature || extra.length > 0) {
+    return false;
+  }
+
+  if (!safeEqual(signature, signCheckoutTokenPayload(payloadText, input.authConfig))) {
+    return false;
+  }
+
+  let payload: AlipayCheckoutTokenPayload;
+  try {
+    payload = JSON.parse(Buffer.from(payloadText, "base64url").toString("utf8"));
+  } catch {
+    return false;
+  }
+
+  const nowSeconds = Math.floor((input.now ?? new Date()).getTime() / 1000);
+  return (
+    payload.v === 1 &&
+    payload.exp > nowSeconds &&
+    payload.orderNo === input.order.orderNo &&
+    payload.userId === input.order.userId &&
+    payload.productCode === input.order.productCode &&
+    payload.amountCents === input.order.amountCents
+  );
 }
 
 async function requireBillingAuth(
@@ -187,6 +269,101 @@ function normalizeReturnUrl(value: string | undefined, env: NodeJS.ProcessEnv): 
   return parsed.toString();
 }
 
+function firstHeaderValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function resolveApiActionUrl(
+  request: FastifyRequest,
+  env: NodeJS.ProcessEnv,
+  pathOrUrl: string,
+): string {
+  if (!pathOrUrl.startsWith("/")) {
+    return pathOrUrl;
+  }
+
+  const configuredBase =
+    env.NEXT_PUBLIC_API_BASE_URL ?? env.PUBLIC_API_BASE_URL ?? env.API_BASE_URL;
+  if (configuredBase) {
+    return new URL(pathOrUrl, configuredBase).toString();
+  }
+
+  const forwardedHost = firstHeaderValue(request.headers["x-forwarded-host"]);
+  const forwardedProto = firstHeaderValue(request.headers["x-forwarded-proto"]);
+  const host = forwardedHost ?? request.headers.host ?? "localhost:4000";
+  const protocol = forwardedProto?.split(",")[0]?.trim() || request.protocol || "http";
+  return new URL(pathOrUrl, `${protocol}://${host}`).toString();
+}
+
+function attachAlipayCheckoutProof(input: {
+  readonly authConfig: AuthConfig;
+  readonly env: NodeJS.ProcessEnv;
+  readonly order: PaymentOrderRecord;
+  readonly payload: PublicCheckoutPayload;
+  readonly request: FastifyRequest;
+}): PublicCheckoutPayload {
+  if (input.payload.kind !== "form_post") {
+    return input.payload;
+  }
+
+  return {
+    ...input.payload,
+    actionUrl: resolveApiActionUrl(input.request, input.env, input.payload.actionUrl),
+    fields: {
+      ...input.payload.fields,
+      checkoutToken: createAlipayCheckoutToken(input.order, input.authConfig),
+    },
+  };
+}
+
+function readUrlEncodedFormBody(request: FastifyRequest): Record<string, string> {
+  const rawBody = typeof request.body === "string" ? request.body : "";
+  return Object.fromEntries(new URLSearchParams(rawBody).entries());
+}
+
+function readOrderReturnUrl(order: PaymentOrderRecord): string | null {
+  const metadata = isPlainRecord(order.metadataJson) ? order.metadataJson : {};
+  const returnUrl = metadata.returnUrl;
+  return typeof returnUrl === "string" && returnUrl.trim() ? returnUrl.trim() : null;
+}
+
+function htmlHeaders(charset: AlipayCharset): Record<string, string> {
+  return {
+    "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
+    "Content-Type": `text/html; charset=${charset}`,
+    Expires: "0",
+    Pragma: "no-cache",
+  };
+}
+
+function htmlError(reply: FastifyReply, message: string, statusCode: number): FastifyReply {
+  const html = `<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"></head>
+<body>
+  <p>${escapeHtml(message)}</p>
+  <p><a href="/pricing">返回定价页</a></p>
+</body>
+</html>`;
+  return reply
+    .status(statusCode)
+    .headers(htmlHeaders("UTF-8"))
+    .send(Buffer.from(encodeAlipayText(html, "UTF-8")));
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>]/g, (character) => {
+    switch (character) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      default:
+        return "&gt;";
+    }
+  });
+}
+
 async function createPaymentProvider(input: {
   readonly providerCode: "wechat_pay" | "alipay";
   readonly dbClient?: DatabaseClient;
@@ -257,7 +434,11 @@ async function handleProviderNotify(input: {
     env: input.env,
     fetcher: input.fetcher,
   });
-  const verification = await provider.verifyNotification({ rawBody, headers });
+  const verification = await provider.verifyNotification({
+    rawBody,
+    rawBodyBytes: request.rawBodyBytes,
+    headers,
+  });
   if (!verification.ok) {
     await updatePaymentNotificationStatus(
       {
@@ -382,6 +563,7 @@ function registerRawBodyCapture(app: FastifyInstance) {
     });
     payload.on("end", () => {
       const buffer = Buffer.concat(chunks);
+      (request as RawBodyRequest).rawBodyBytes = buffer;
       (request as RawBodyRequest).rawBody = buffer.toString("utf8");
       done(null, Readable.from([buffer]));
     });
@@ -481,6 +663,16 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
         clientMode: parsedBody.data.clientMode,
         returnUrl,
       });
+      const checkout =
+        parsedBody.data.provider === "alipay"
+          ? attachAlipayCheckoutProof({
+              authConfig,
+              env,
+              order,
+              payload: payment.publicPayload,
+              request,
+            })
+          : payment.publicPayload;
       if (
         parsedBody.data.provider === "alipay" &&
         payment.providerPayloadJson &&
@@ -499,7 +691,7 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
       );
       return reply.status(201).send({
         order: orderResponse(updatedOrder),
-        checkout: payment.publicPayload,
+        checkout,
       });
     } catch (error) {
       await updatePaymentOrderStatus({ orderNo: order.orderNo, status: "failed" }, { client });
@@ -508,6 +700,79 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
         502,
         "payment_create_failed",
         sanitizePaymentErrorMessage(error, "创建支付订单失败，请稍后重试。"),
+      );
+    }
+  });
+
+  app.post("/billing/alipay/page-pay", async (request, reply) => {
+    const parsedBody = alipayPagePaySchema.safeParse(readUrlEncodedFormBody(request));
+    if (!parsedBody.success) {
+      return htmlError(reply, "支付参数无效，请返回定价页重试。", 400);
+    }
+
+    const order = await getPaymentOrderByOrderNo(parsedBody.data.orderNo, { client });
+    if (!order || order.provider !== "alipay") {
+      return htmlError(reply, "订单不存在或支付方式不匹配，请重新创建订单。", 404);
+    }
+    if (order.status !== "pending" && order.status !== "created") {
+      return htmlError(reply, "这笔订单暂时无法继续支付，请重新创建订单。", 409);
+    }
+    if (
+      !verifyAlipayCheckoutToken({
+        authConfig,
+        order,
+        token: parsedBody.data.checkoutToken,
+      })
+    ) {
+      return htmlError(reply, "支付请求已失效，请重新创建订单。", 403);
+    }
+
+    const product = await getBillingProductByCode(order.productCode, { client });
+    if (!product || !product.enabled) {
+      return htmlError(reply, "计费产品不存在或未启用，请重新创建订单。", 404);
+    }
+
+    const { config, provider } = await createPaymentProvider({
+      providerCode: "alipay",
+      dbClient: client,
+      env,
+      fetcher: options.fetcher,
+    });
+    if (!config.enabled || !config.realCallEnabled) {
+      return htmlError(reply, "支付宝通道尚未启用真实支付，请稍后重试。", 400);
+    }
+
+    const check = await checkBillingProviderConfig({
+      providerCode: "alipay",
+      dbClient: client,
+      env,
+    });
+    if (!check.configReady) {
+      return htmlError(reply, check.messageZh, 400);
+    }
+
+    try {
+      const pagePayRequest = (provider as AlipayProvider).createPagePayRequest({
+        order,
+        product,
+        returnUrl: readOrderReturnUrl(order) || config.returnUrl,
+      });
+      request.log.info(pagePayRequest.safeDiagnostics, "Created Alipay checkout request");
+      const html = renderAlipayPagePayFormHtml({
+        charset: pagePayRequest.charset,
+        fields: pagePayRequest.fields,
+        gatewayUrl: pagePayRequest.gatewayUrl,
+      });
+
+      return reply
+        .status(200)
+        .headers(htmlHeaders(pagePayRequest.charset))
+        .send(Buffer.from(encodeAlipayText(html, pagePayRequest.charset)));
+    } catch (error) {
+      return htmlError(
+        reply,
+        sanitizePaymentErrorMessage(error, "支付请求生成失败，请稍后重试。"),
+        502,
       );
     }
   });

@@ -7,7 +7,7 @@ import {
   createVerify,
   randomBytes,
 } from "node:crypto";
-import iconv from "iconv-lite";
+import { encodeAlipayText, normalizeAlipayCharset } from "./alipay-encoding.js";
 
 export function sanitizePaymentErrorMessage(error: unknown, fallback: string): string {
   const raw = error instanceof Error ? error.message : typeof error === "string" ? error : fallback;
@@ -127,18 +127,10 @@ export function normalizePublicKeyPem(value: string): string {
 }
 
 function encodePaymentText(value: string, charset: string): Buffer {
-  const normalizedCharset = charset.trim().toLowerCase().replace("_", "-");
-  if (normalizedCharset === "gbk" || normalizedCharset === "gb2312") {
-    return iconv.encode(value, "gbk");
-  }
-  return Buffer.from(value, "utf8");
+  return Buffer.from(encodeAlipayText(value, normalizeAlipayCharset(charset)));
 }
 
-export function rsaSha256Sign(
-  message: string,
-  privateKeyPem: string,
-  charset = "utf-8",
-): string {
+export function rsaSha256Sign(message: string, privateKeyPem: string, charset = "utf-8"): string {
   const signer = createSign("RSA-SHA256");
   signer.update(encodePaymentText(message, charset));
   signer.end();
@@ -231,9 +223,7 @@ function alipaySortedContent(
   return [...params.entries()]
     .filter(
       ([key, value]) =>
-        key !== "sign" &&
-        (!options.excludeSignType || key !== "sign_type") &&
-        value.trim() !== "",
+        key !== "sign" && (!options.excludeSignType || key !== "sign_type") && value.trim() !== "",
     )
     .sort(compareAsciiKeys)
     .map(([key, value]) => `${key}=${value}`)

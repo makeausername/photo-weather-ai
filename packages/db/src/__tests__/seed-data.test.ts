@@ -88,6 +88,7 @@ describe("database seed data", () => {
             realCallEnabled: false,
             mode: "page",
             gatewayUrl: "https://openapi.alipay.com/gateway.do",
+            charset: "GBK",
             signType: "RSA2",
           }),
           secretJson: {
