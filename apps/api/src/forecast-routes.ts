@@ -624,7 +624,6 @@ export function registerForecastRoutes(
     }
   });
 
-
   if (isLocalDevelopment(env)) {
     app.get("/debug/astro-service", async () =>
       checkAstroServiceHealth({
@@ -1438,9 +1437,12 @@ function logWeatherRuntimeFusionDiagnostics(
   const openMeteoModelList = [
     ...new Set([
       ...runtimeOpenMeteoModels,
-      ...openMeteoModelSummaries.flatMap((summary) => (summary.modelName ? [summary.modelName] : [])),
+      ...openMeteoModelSummaries.flatMap((summary) =>
+        summary.modelName ? [summary.modelName] : [],
+      ),
     ]),
   ];
+  const aerosolDiagnostics = result.weatherFusionSummary?.aerosolDiagnostics;
 
   logger.info(
     {
@@ -1452,7 +1454,16 @@ function logWeatherRuntimeFusionDiagnostics(
       failedOpenMeteoModelCount: failedOpenMeteoModels.length,
       failedOpenMeteoModels: failedOpenMeteoModels.map((summary) => summary.modelName),
       conflictFlagsCount: result.weatherFusionSummary?.conflictFlagsCount ?? null,
+      aerosolConflictFlagsCount: result.weatherFusionSummary?.aerosolConflictFlagsCount ?? null,
       confidenceByTarget: result.weatherFusionSummary?.confidenceByTarget ?? null,
+      transparencyPenaltyByTarget: result.weatherFusionSummary?.transparencyPenaltyByTarget ?? null,
+      aerosolHoursAvailable: aerosolDiagnostics?.aerosolHoursAvailable ?? null,
+      aerosolSuppressedHours: aerosolDiagnostics?.aerosolSuppressedHours ?? null,
+      aerosolPoorHours: aerosolDiagnostics?.aerosolPoorHours ?? null,
+      maxAerosolOpticalDepth550: aerosolDiagnostics?.maxAerosolOpticalDepth550 ?? null,
+      maxPm25: aerosolDiagnostics?.maxPm25 ?? null,
+      maxPm10: aerosolDiagnostics?.maxPm10 ?? null,
+      maxDust: aerosolDiagnostics?.maxDust ?? null,
       cacheHitCount: sourceSummaries.filter((summary) => summary.cacheHit === true).length,
       cacheHits: sourceSummaries
         .filter((summary) => summary.cacheHit === true)
@@ -1582,10 +1593,8 @@ function logGlowScoringDiagnostics(
               glowCarrierScore: window.scoreBreakdown.glowCarrierScore,
               lowCloudObstructionRisk: window.scoreBreakdown.lowCloudObstructionRisk,
               lowCloudFogWallRisk: window.scoreBreakdown.lowCloudFogWallRisk,
-              glowLightPathObstructionRisk:
-                window.scoreBreakdown.glowLightPathObstructionRisk,
-              glowLightPathDataAvailability:
-                window.scoreBreakdown.glowLightPathDataAvailability,
+              glowLightPathObstructionRisk: window.scoreBreakdown.glowLightPathObstructionRisk,
+              glowLightPathDataAvailability: window.scoreBreakdown.glowLightPathDataAvailability,
               glowLightPathConfidence: window.scoreBreakdown.glowLightPathConfidence,
               cloudSuppressionRisk: window.scoreBreakdown.cloudSuppressionRisk,
               visibilityColorQualityScore: window.scoreBreakdown.visibilityColorQualityScore,

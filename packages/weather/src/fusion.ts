@@ -1,6 +1,7 @@
 import type {
   CloudLayerCoverageSummary,
   CloudLayerFieldCoverageSummary,
+  AerosolTransparencyImpact,
   Coordinates,
   ForecastTarget,
   NormalizedCurrentWeather,
@@ -8,9 +9,11 @@ import type {
   NormalizedHourlyWeather,
   NormalizedWeatherFieldMetadataMap,
   TerrainProfileSummary,
+  WeatherAerosolDiagnostics,
   WeatherConfidenceLevel,
   WeatherFusionSummary,
 } from "@photo-weather/shared";
+import { aerosolImpactRank, assessAerosolTransparency } from "@photo-weather/shared";
 import type {
   WeatherConfidenceByField,
   WeatherConfidenceByTarget,
@@ -110,7 +113,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
   const hourlyTimes = [
     ...new Set(usableBundles.flatMap((bundle) => bundle.hourly.map((hour) => hour.time))),
   ].sort();
-  const conflictFlags = detectConflicts(usableBundles);
+  const baseConflictFlags = detectConflicts(usableBundles);
   const multiSourceAgreementContext = buildMultiSourceAgreementContext({
     providerBundles: usableBundles,
     target: input.target,
@@ -129,6 +132,10 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
     timezone: timezoneFromWeather(input.forecastStart),
   });
   const fusedHourly = cloudLayerCoverage.hourlyRows;
+  const aerosolConflictFlags = buildAerosolConflictFlags(fusedHourly, input);
+  const conflictFlags = [...baseConflictFlags, ...aerosolConflictFlags];
+  const aerosolDiagnostics = buildAerosolDiagnostics(fusedHourly);
+  const transparencyPenaltyByTarget = buildTransparencyPenaltyByTarget(fusedHourly, input);
   const fusedDaily = fuseDailyByDate(usableBundles, primaryBundle);
   const sourceSummaries = annotateSourceSummariesWithCoverage(
     usableBundles.map(sourceSummary),
@@ -138,10 +145,13 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
     buildConfidenceByField(usableBundles, conflictFlags),
     cloudLayerCoverage.fieldCoverageSummary,
   );
-  const confidenceByTarget = applyProviderConfidenceFloor(
-    buildConfidenceByTarget(confidenceByField, conflictFlags, input.terrainSummary),
-    usableBundles,
-    conflictFlags,
+  const confidenceByTarget = applyAerosolTargetConfidencePenalty(
+    applyProviderConfidenceFloor(
+      buildConfidenceByTarget(confidenceByField, conflictFlags, input.terrainSummary),
+      usableBundles,
+      conflictFlags,
+    ),
+    transparencyPenaltyByTarget,
   );
   const missingDataNotes = [
     ...new Set([
@@ -191,13 +201,16 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
       professionalSourceStatus,
       confidenceLevel,
       confidenceByTarget,
+      transparencyPenaltyByTarget,
       conflictStatusZh,
       conflictFlagsCount: conflictFlags.length,
+      aerosolConflictFlagsCount: aerosolConflictFlags.length,
       dataStatusZh,
       sourceSummaries,
       missingDataNotes,
       multiSourceAgreementContext,
       cloudLayerCoverage,
+      aerosolDiagnostics,
     },
   };
 }
@@ -210,6 +223,8 @@ export function targetPriorityFields(target: ForecastTarget): readonly string[] 
         "dewPointSpread",
         "cloudLow",
         "visibility",
+        "aerosolOpticalDepth550",
+        "dust",
         "windSpeed",
         "windDirection",
         "precipitation",
@@ -223,6 +238,10 @@ export function targetPriorityFields(target: ForecastTarget): readonly string[] 
         "cloudHigh",
         "cloudTotal",
         "visibility",
+        "aerosolOpticalDepth550",
+        "pm25",
+        "pm10",
+        "dust",
         "precipitation",
         "wind",
         "astro.twilight",
@@ -235,6 +254,10 @@ export function targetPriorityFields(target: ForecastTarget): readonly string[] 
         "cloudMid",
         "cloudHigh",
         "visibility",
+        "aerosolOpticalDepth550",
+        "pm25",
+        "pm10",
+        "dust",
         "humidity",
         "precipitation",
         "astro.moonImpact",
@@ -242,7 +265,18 @@ export function targetPriorityFields(target: ForecastTarget): readonly string[] 
         "terrain.horizonObstruction",
       ];
     default:
-      return ["cloudTotal", "visibility", "humidity", "wind", "precipitation", "pressure"];
+      return [
+        "cloudTotal",
+        "visibility",
+        "aerosolOpticalDepth550",
+        "pm25",
+        "pm10",
+        "dust",
+        "humidity",
+        "wind",
+        "precipitation",
+        "pressure",
+      ];
   }
 }
 
@@ -280,14 +314,22 @@ function emptyFusionResult(): WeatherFusionResult {
         astro: 0,
         general: 0,
       },
+      transparencyPenaltyByTarget: {
+        cloud_sea: 0,
+        glow: 0,
+        astro: 0,
+        general: 0,
+      },
       conflictStatusZh: "无明显冲突",
       conflictFlagsCount: 0,
+      aerosolConflictFlagsCount: 0,
       dataStatusZh: "天气数据：演示数据",
       sourceSummaries: [],
       multiSourceAgreementContext: buildMultiSourceAgreementContext({
         providerBundles: [],
         target: "general",
       }),
+      aerosolDiagnostics: emptyAerosolDiagnostics(),
       missingDataNotes: ["没有可用于融合的天气源。"],
     },
   };
@@ -297,7 +339,8 @@ function expectedForecastHours(input: WeatherFusionInput, fallback: number): num
   const start = Date.parse(input.forecastStart);
   const end = Date.parse(input.forecastEnd);
   const requested =
-    typeof input.requestedForecastHours === "number" && Number.isFinite(input.requestedForecastHours)
+    typeof input.requestedForecastHours === "number" &&
+    Number.isFinite(input.requestedForecastHours)
       ? Math.round(input.requestedForecastHours)
       : 0;
   if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
@@ -335,7 +378,10 @@ function applyCloudLayerCoverageConfidence(
   const totalHours = Math.max(1, coverage.totalHours);
   return {
     ...confidence,
-    cloudTotal: applyCoveragePenalty(confidence.cloudTotal, coverage.totalCloudCoverage / totalHours),
+    cloudTotal: applyCoveragePenalty(
+      confidence.cloudTotal,
+      coverage.totalCloudCoverage / totalHours,
+    ),
     cloudLow: applyCoveragePenalty(confidence.cloudLow, coverage.cloudLowCoverage / totalHours),
     cloudMid: applyCoveragePenalty(confidence.cloudMid, coverage.cloudMidCoverage / totalHours),
     cloudHigh: applyCoveragePenalty(confidence.cloudHigh, coverage.cloudHighCoverage / totalHours),
@@ -415,9 +461,13 @@ function fuseCurrent(
     aerosolSourceResolutionHours:
       primary?.aerosolSourceResolutionHours ?? hour?.aerosolSourceResolutionHours,
     aerosolAvailability:
-      primary?.aerosolAvailability ?? hour?.aerosolAvailability ?? primary?.airQuality?.aerosolAvailability,
+      primary?.aerosolAvailability ??
+      hour?.aerosolAvailability ??
+      primary?.airQuality?.aerosolAvailability,
     aerosolConfidence:
-      primary?.aerosolConfidence ?? hour?.aerosolConfidence ?? primary?.airQuality?.aerosolConfidence,
+      primary?.aerosolConfidence ??
+      hour?.aerosolConfidence ??
+      primary?.airQuality?.aerosolConfidence,
     aerosolSourceNoteZh: primary?.aerosolSourceNoteZh ?? hour?.aerosolSourceNoteZh,
     precipitation: primary?.precipitation ?? hour?.precipitation ?? null,
     precipitationAmountMm:
@@ -516,9 +566,10 @@ function fuseHourlyAt(
   const preferredCloudGroup = selectPreferredCloudLayerGroup(candidates, target);
 
   for (const field of numericFields) {
-    const selected = isCloudLayerGroupField(field) && preferredCloudGroup
-      ? selectCloudLayerGroupField(field, preferredCloudGroup)
-      : selectFieldValue(field, candidates, primaryHour);
+    const selected =
+      isCloudLayerGroupField(field) && preferredCloudGroup
+        ? selectCloudLayerGroupField(field, preferredCloudGroup)
+        : selectFieldValue(field, candidates, primaryHour);
     if (selected.value !== undefined) {
       next[field] = selected.value;
     }
@@ -563,6 +614,7 @@ function fuseHourlyAt(
       }
     }
   }
+  applyAerosolTransparencyToFusedHour(next);
 
   return {
     ...(next as NormalizedHourlyWeather),
@@ -642,10 +694,7 @@ function isCloudLayerGroupField(
   field: (typeof numericFields)[number],
 ): field is "cloudTotal" | "cloudLow" | "cloudMid" | "cloudHigh" {
   return (
-    field === "cloudTotal" ||
-    field === "cloudLow" ||
-    field === "cloudMid" ||
-    field === "cloudHigh"
+    field === "cloudTotal" || field === "cloudLow" || field === "cloudMid" || field === "cloudHigh"
   );
 }
 
@@ -1063,6 +1112,347 @@ function applyProviderConfidenceFloor(
     astro: Math.max(confidenceByTarget.astro, 0.55),
     general: Math.max(confidenceByTarget.general, 0.55),
   };
+}
+
+function applyAerosolTargetConfidencePenalty(
+  confidenceByTarget: WeatherConfidenceByTarget,
+  transparencyPenaltyByTarget: WeatherConfidenceByTarget,
+): WeatherConfidenceByTarget {
+  return {
+    cloud_sea: clampConfidence(
+      confidenceByTarget.cloud_sea - transparencyPenaltyByTarget.cloud_sea,
+    ),
+    glow: clampConfidence(confidenceByTarget.glow - transparencyPenaltyByTarget.glow),
+    astro: clampConfidence(confidenceByTarget.astro - transparencyPenaltyByTarget.astro),
+    general: clampConfidence(confidenceByTarget.general - transparencyPenaltyByTarget.general),
+  };
+}
+
+function buildTransparencyPenaltyByTarget(
+  hours: readonly NormalizedHourlyWeather[],
+  input: Pick<WeatherFusionInput, "forecastStart" | "forecastEnd">,
+): WeatherConfidenceByTarget {
+  return {
+    cloud_sea: confidencePenaltyFromAerosolPoints(
+      robustTargetAerosolPenalty(hours, "cloud_sea", input),
+      "cloud_sea",
+    ),
+    glow: confidencePenaltyFromAerosolPoints(
+      robustTargetAerosolPenalty(hours, "glow", input),
+      "glow",
+    ),
+    astro: confidencePenaltyFromAerosolPoints(
+      robustTargetAerosolPenalty(hours, "astro", input),
+      "astro",
+    ),
+    general: confidencePenaltyFromAerosolPoints(
+      robustTargetAerosolPenalty(hours, "general", input),
+      "general",
+    ),
+  };
+}
+
+function robustTargetAerosolPenalty(
+  hours: readonly NormalizedHourlyWeather[],
+  target: ForecastTarget,
+  input: Pick<WeatherFusionInput, "forecastStart" | "forecastEnd">,
+): number {
+  const penalties = relevantHoursForTarget(hours, target, input)
+    .map((hour) => {
+      const assessment = assessAerosolTransparency(hour);
+      if (!assessment.available || assessment.aerosolSignalCount === 0) {
+        return 0;
+      }
+      if (target === "glow") {
+        return assessment.glowPenalty;
+      }
+      if (target === "astro") {
+        return assessment.astroPenalty;
+      }
+      if (target === "cloud_sea") {
+        return assessment.cloudSeaPenalty;
+      }
+      return assessment.scorePenalty;
+    })
+    .filter((penalty) => penalty > 0)
+    .sort((left, right) => right - left);
+
+  if (penalties.length === 0) {
+    return 0;
+  }
+  if (penalties.length <= 2) {
+    return penalties[0] ?? 0;
+  }
+
+  const robustIndex = Math.max(0, Math.ceil(penalties.length * 0.2) - 1);
+  return penalties[Math.min(robustIndex, penalties.length - 1)] ?? 0;
+}
+
+function confidencePenaltyFromAerosolPoints(points: number, target: ForecastTarget): number {
+  if (points <= 0) {
+    return 0;
+  }
+  const rate = target === "glow" || target === "astro" ? 0.008 : 0.006;
+  const maxPenalty =
+    target === "astro" ? 0.24 : target === "glow" ? 0.22 : target === "general" ? 0.16 : 0.12;
+  return clampConfidence(Math.min(maxPenalty, points * rate));
+}
+
+function buildAerosolConflictFlags(
+  hours: readonly NormalizedHourlyWeather[],
+  input: Pick<WeatherFusionInput, "target" | "forecastStart" | "forecastEnd">,
+): readonly WeatherConflictFlag[] {
+  const flags: WeatherConflictFlag[] = [];
+  for (const hour of relevantHoursForTarget(hours, input.target, input)) {
+    const assessment = assessAerosolTransparency(hour);
+    if (
+      !assessment.available ||
+      assessment.aerosolSignalCount === 0 ||
+      aerosolImpactRank(assessment.transparencyImpact) < aerosolImpactRank("suppressed")
+    ) {
+      continue;
+    }
+
+    const severity = assessment.transparencyImpact === "poor" ? "high" : "medium";
+    const providers = [providerCodeForFlag(hour.providerCode)];
+    flags.push({
+      field: "aerosolTransparency",
+      time: hour.time,
+      providers,
+      severity,
+      noteZh:
+        assessment.reasonsZh[0] ?? "空气透明度受气溶胶影响，霞光、星空和远山层次需要临近复核。",
+    });
+
+    const visibility = asNumber(hour.rawVisibilityKm ?? hour.visibility);
+    if (visibility !== null && visibility >= 15) {
+      flags.push({
+        field: "aerosolVisibilityMismatch",
+        time: hour.time,
+        providers,
+        severity,
+        noteZh: "能见度数值较好，但大气散射、颗粒物或沙尘显示空气透明度可能受抑制。",
+      });
+    }
+
+    if (targetAerosolPenalty(assessment, input.target) > 0) {
+      flags.push({
+        field: `${input.target}.aerosolSuppression`,
+        time: hour.time,
+        providers,
+        severity,
+        noteZh: "当前拍摄窗口存在气溶胶压制信号，目标置信度已下调。",
+      });
+    }
+  }
+
+  return flags.slice(0, 24);
+}
+
+function buildAerosolDiagnostics(
+  hours: readonly NormalizedHourlyWeather[],
+): WeatherAerosolDiagnostics {
+  const assessments = hours.map((hour) => assessAerosolTransparency(hour));
+  return {
+    aerosolHoursAvailable: assessments.filter((assessment) => assessment.aerosolSignalCount > 0)
+      .length,
+    aerosolSuppressedHours: assessments.filter(
+      (assessment) =>
+        assessment.aerosolSignalCount > 0 &&
+        aerosolImpactRank(assessment.transparencyImpact) >= aerosolImpactRank("suppressed"),
+    ).length,
+    aerosolPoorHours: assessments.filter(
+      (assessment) =>
+        assessment.aerosolSignalCount > 0 &&
+        aerosolImpactRank(assessment.transparencyImpact) >= aerosolImpactRank("poor"),
+    ).length,
+    maxAerosolOpticalDepth550: maxFiniteRounded(hours, (hour) => hour.aerosolOpticalDepth550, 3),
+    maxPm25: maxFiniteRounded(hours, (hour) => hour.pm25, 1),
+    maxPm10: maxFiniteRounded(hours, (hour) => hour.pm10, 1),
+    maxDust: maxFiniteRounded(hours, (hour) => hour.dust, 1),
+  };
+}
+
+function emptyAerosolDiagnostics(): WeatherAerosolDiagnostics {
+  return {
+    aerosolHoursAvailable: 0,
+    aerosolSuppressedHours: 0,
+    aerosolPoorHours: 0,
+    maxAerosolOpticalDepth550: null,
+    maxPm25: null,
+    maxPm10: null,
+    maxDust: null,
+  };
+}
+
+function applyAerosolTransparencyToFusedHour(row: Record<string, unknown>): void {
+  const assessment = assessAerosolTransparency(row as AerosolTransparencyInputLike);
+  if (!assessment.available || assessment.scorePenalty <= 0) {
+    return;
+  }
+
+  const existingScore = asNumber(row.photographyTransparencyScore);
+  const adjustedScore =
+    existingScore === null ? null : clampScoreValue(existingScore - assessment.scorePenalty);
+  if (adjustedScore !== null) {
+    row.photographyTransparencyScore = adjustedScore;
+    row.transparencyGrade = downgradeTransparencyGrade(
+      typeof row.transparencyGrade === "string"
+        ? row.transparencyGrade
+        : transparencyGradeFromScoreValue(adjustedScore),
+      assessment.transparencyImpact,
+    );
+  } else if (typeof row.transparencyGrade === "string") {
+    row.transparencyGrade = downgradeTransparencyGrade(
+      row.transparencyGrade,
+      assessment.transparencyImpact,
+    );
+  }
+
+  row.cloudFogObstructionRisk = strongerCloudFogRisk(
+    typeof row.cloudFogObstructionRisk === "string" ? row.cloudFogObstructionRisk : undefined,
+    assessment.transparencyImpact,
+  );
+
+  const sourceNotes = Array.isArray(row.sourceNotes)
+    ? row.sourceNotes.filter((note): note is string => typeof note === "string")
+    : [];
+  row.sourceNotes = [...new Set([...sourceNotes, ...assessment.reasonsZh])];
+}
+
+type AerosolTransparencyInputLike = Parameters<typeof assessAerosolTransparency>[0];
+
+function targetAerosolPenalty(
+  assessment: ReturnType<typeof assessAerosolTransparency>,
+  target: ForecastTarget,
+): number {
+  if (target === "glow") {
+    return assessment.glowPenalty;
+  }
+  if (target === "astro") {
+    return assessment.astroPenalty;
+  }
+  if (target === "cloud_sea") {
+    return assessment.cloudSeaPenalty;
+  }
+  return assessment.scorePenalty;
+}
+
+function relevantHoursForTarget(
+  hours: readonly NormalizedHourlyWeather[],
+  target: ForecastTarget,
+  input: Pick<WeatherFusionInput, "forecastStart" | "forecastEnd">,
+): readonly NormalizedHourlyWeather[] {
+  const rangeHours = hoursForForecastRange(hours, input.forecastStart, input.forecastEnd);
+  if (target === "general") {
+    return rangeHours.slice(0, Math.max(1, Math.min(24, rangeHours.length)));
+  }
+
+  const targetHours = rangeHours.filter((hour) => {
+    const localHour = localHourInShanghai(hour.time);
+    if (localHour === null) {
+      return false;
+    }
+    if (target === "glow") {
+      return (localHour >= 4 && localHour <= 8) || (localHour >= 16 && localHour <= 20);
+    }
+    if (target === "astro") {
+      return localHour >= 20 || localHour <= 5;
+    }
+    return localHour >= 3 && localHour <= 10;
+  });
+
+  return targetHours.length > 0 ? targetHours : rangeHours;
+}
+
+function hoursForForecastRange(
+  hours: readonly NormalizedHourlyWeather[],
+  forecastStart: string,
+  forecastEnd: string,
+): readonly NormalizedHourlyWeather[] {
+  const start = Date.parse(forecastStart);
+  const end = Date.parse(forecastEnd);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return hours;
+  }
+
+  const filtered = hours.filter((hour) => {
+    const timestamp = Date.parse(hour.time);
+    return Number.isFinite(timestamp) && timestamp >= start && timestamp <= end;
+  });
+  return filtered.length > 0 ? filtered : hours;
+}
+
+function localHourInShanghai(time: string): number | null {
+  const timestamp = Date.parse(time);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+
+  const value = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(timestamp));
+  const hour = Number.parseInt(value, 10);
+  return Number.isFinite(hour) ? hour : null;
+}
+
+function providerCodeForFlag(value: string | undefined): WeatherProviderCode {
+  return value === "qweather" || value === "open_meteo" || value === "meteoblue" || value === "mock"
+    ? value
+    : "open_meteo";
+}
+
+function maxFiniteRounded(
+  hours: readonly NormalizedHourlyWeather[],
+  select: (hour: NormalizedHourlyWeather) => number | null | undefined,
+  digits: number,
+): number | null {
+  const values = hours
+    .map((hour) => select(hour))
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (values.length === 0) {
+    return null;
+  }
+  const factor = 10 ** digits;
+  return Math.round(Math.max(...values) * factor) / factor;
+}
+
+function clampScoreValue(value: number): number {
+  return Math.round(Math.min(100, Math.max(0, value)));
+}
+
+function transparencyGradeFromScoreValue(score: number): string {
+  if (score >= 82) {
+    return "excellent";
+  }
+  if (score >= 68) {
+    return "good";
+  }
+  if (score >= 48) {
+    return "fair";
+  }
+  return "poor";
+}
+
+function downgradeTransparencyGrade(grade: string, impact: AerosolTransparencyImpact): string {
+  const grades = ["excellent", "good", "fair", "poor"];
+  const index = grades.indexOf(grade);
+  if (index === -1) {
+    return grade;
+  }
+  return grades[Math.min(grades.length - 1, index + aerosolImpactRank(impact))] ?? grade;
+}
+
+function strongerCloudFogRisk(
+  current: string | undefined,
+  impact: AerosolTransparencyImpact,
+): string {
+  const risks = ["low", "medium", "high"];
+  const currentIndex = Math.max(0, risks.indexOf(current ?? "low"));
+  const impactIndex = impact === "poor" ? 2 : impact === "suppressed" ? 1 : currentIndex;
+  return risks[Math.max(currentIndex, impactIndex)] ?? "low";
 }
 
 function buildMissingDataNotes(

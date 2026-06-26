@@ -2263,13 +2263,26 @@ export type WeatherFusionSummary = {
   readonly professionalSourceStatus: string;
   readonly confidenceLevel: WeatherConfidenceLevel;
   readonly confidenceByTarget?: Partial<Record<ForecastTarget, number>>;
+  readonly transparencyPenaltyByTarget?: Partial<Record<ForecastTarget, number>>;
   readonly conflictStatusZh: string;
   readonly conflictFlagsCount?: number;
+  readonly aerosolConflictFlagsCount?: number;
   readonly dataStatusZh: string;
   readonly sourceSummaries?: readonly ForecastWeatherSourceSummary[];
   readonly missingDataNotes?: readonly string[];
   readonly multiSourceAgreementContext?: ForecastMultiSourceAgreementContext;
   readonly cloudLayerCoverage?: CloudLayerCoverageSummary;
+  readonly aerosolDiagnostics?: WeatherAerosolDiagnostics;
+};
+
+export type WeatherAerosolDiagnostics = {
+  readonly aerosolHoursAvailable: number;
+  readonly aerosolSuppressedHours: number;
+  readonly aerosolPoorHours: number;
+  readonly maxAerosolOpticalDepth550: number | null;
+  readonly maxPm25: number | null;
+  readonly maxPm10: number | null;
+  readonly maxDust: number | null;
 };
 
 export type CloudLayerFieldCoverageSummary = {

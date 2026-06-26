@@ -3,6 +3,8 @@ import type { NormalizedHourlyWeather } from "@photo-weather/shared";
 import {
   attachAirQualityToHourly,
   buildOpenMeteoAirQualityUrl,
+  getOpenMeteoAirQuality,
+  OpenMeteoAirQualityClient,
   normalizeOpenMeteoAirQuality,
 } from "../index";
 
@@ -91,10 +93,7 @@ describe("Open-Meteo air-quality aerosol normalization", () => {
       { providerCode: "open_meteo", forecastHours: 2 },
     );
     const rows = attachAirQualityToHourly(
-      [
-        hour("2026-05-20T08:00:00+08:00"),
-        hour("2026-05-20T09:00:00+08:00"),
-      ],
+      [hour("2026-05-20T08:00:00+08:00"), hour("2026-05-20T09:00:00+08:00")],
       airQuality,
     );
 
@@ -107,6 +106,31 @@ describe("Open-Meteo air-quality aerosol normalization", () => {
     });
     expect(rows[1]?.aerosolOpticalDepth550).toBeUndefined();
     expect(rows[1]?.pm25).toBeUndefined();
+  });
+
+  it("keeps weather calculation usable when the air-quality request fails", async () => {
+    const client = new OpenMeteoAirQualityClient({
+      retryCount: 0,
+      fetcher: async () => {
+        throw new Error("network unavailable");
+      },
+    });
+
+    const airQuality = await getOpenMeteoAirQuality(
+      {
+        coordinates,
+        forecastStart: "2026-05-20T08:00:00+08:00",
+        hours: 2,
+      },
+      { providerCode: "open_meteo", client },
+    );
+
+    expect(airQuality).toMatchObject({
+      provider: "open_meteo",
+      observedAt: "2026-05-20T08:00:00+08:00",
+      category: "good",
+      hourly: [],
+    });
   });
 });
 

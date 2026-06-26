@@ -16,6 +16,7 @@ import {
   type ExposureType,
   type TransparencyGrade,
   type TripodStabilityRisk,
+  assessAerosolTransparency,
 } from "@photo-weather/shared";
 import { clampScore } from "./helpers.js";
 
@@ -47,6 +48,12 @@ type TransparencyWeatherInput = {
   readonly rainAmountMm?: number | null;
   readonly snowAmountMm?: number | null;
   readonly precipitationProbability?: number | null;
+  readonly aerosolOpticalDepth550?: number | null;
+  readonly pm25?: number | null;
+  readonly pm10?: number | null;
+  readonly dust?: number | null;
+  readonly aerosolAvailability?: "available" | "partial" | "unavailable";
+  readonly aerosolConfidence?: "high" | "medium" | "low";
 };
 
 const defaultLapseRateCelsiusPer100m = 0.6;
@@ -215,7 +222,9 @@ function precipitationRecommendationZh(input: {
     input.probability === null && input.amount !== null
       ? "降水概率暂无，按预计降水量判断风险。"
       : "";
-  const weatherText = input.weatherTextZh ? `${simplifyWeatherSummaryZh(input.weatherTextZh)}，` : "";
+  const weatherText = input.weatherTextZh
+    ? `${simplifyWeatherSummaryZh(input.weatherTextZh)}，`
+    : "";
   const affectedText =
     input.affectedWindows.length > 0
       ? `可能影响${input.affectedWindows.join("、")}。`
@@ -276,7 +285,7 @@ export function calculatePhotographyTransparencyScore(
   const dewPointScore = clampScore(42 + Math.min(10, dewPointSpread) * 4.8);
   const cloudScore = clampScore(100 - Math.max(0, cloudTotal - 55) * 0.65);
 
-  return clampScore(
+  const baseScore = clampScore(
     visibilityScore * 0.32 +
       lowCloudScore * 0.22 +
       humidityScore * 0.16 +
@@ -284,6 +293,9 @@ export function calculatePhotographyTransparencyScore(
       cloudScore * 0.08 +
       (100 - precipitationRisk) * 0.14,
   );
+  const aerosolAssessment = assessAerosolTransparency(weather);
+
+  return clampScore(baseScore - aerosolAssessment.scorePenalty);
 }
 
 export function exposedRidgeWindRisk(input: {
@@ -510,7 +522,8 @@ function buildTemperatureAdjustment(
   if (input.existing?.correctionApplied) {
     return {
       rawTemperature: input.existing.rawTemperature ?? rawTemperature,
-      rawTemperatureC: input.existing.rawTemperatureC ?? input.existing.rawTemperature ?? rawTemperature,
+      rawTemperatureC:
+        input.existing.rawTemperatureC ?? input.existing.rawTemperature ?? rawTemperature,
       elevationAdjustedTemperature: input.existing.elevationAdjustedTemperature ?? rawTemperature,
       terrainAdjustedTemperatureC:
         input.existing.terrainAdjustedTemperatureC ??
@@ -609,11 +622,7 @@ function buildTemperatureAdjustment(
     : unknownProviderDayCorrectionRatio;
   const correctionCelsius = Math.min(
     maxCooling,
-    round1(
-      (unknownDeltaMeters / 100) *
-        defaultLapseRateCelsiusPer100m *
-        correctionRatio,
-    ),
+    round1((unknownDeltaMeters / 100) * defaultLapseRateCelsiusPer100m * correctionRatio),
   );
   const correctionMeters =
     correctionCelsius > 0
@@ -681,6 +690,7 @@ function annotateDecisionWeather(
     ? terrainProfile.locationElevation
     : undefined;
   const transparencyScore = calculatePhotographyTransparencyScore(hour);
+  const aerosolTransparency = assessAerosolTransparency(hour);
   const windRisk = exposedRidgeWindRisk({
     elevationMeters: selectedElevation,
     windSpeed: hour.windSpeed,
@@ -723,6 +733,10 @@ function annotateDecisionWeather(
     photographyTransparencyScore: transparencyScore,
     transparencyGrade: transparencyGradeFromScore(transparencyScore),
     cloudFogObstructionRisk: cloudFogRiskFromScore(transparencyScore, hour.cloudLow, hour.humidity),
+    sourceNotes:
+      aerosolTransparency.available && aerosolTransparency.scorePenalty > 0
+        ? unique([...(hour.sourceNotes ?? []), ...aerosolTransparency.reasonsZh])
+        : hour.sourceNotes,
     exposedRidgeWindRisk: windRisk,
     mountainFeelsLikeC: comfort.mountainFeelsLikeC,
     tripodStabilityRisk: comfort.tripodStabilityRisk,
@@ -755,6 +769,12 @@ function annotateDecisionCurrent(
     rainAmountMm: weather.rainAmountMm ?? null,
     snowAmountMm: weather.snowAmountMm ?? null,
     precipitationProbability: weather.precipitationProbability ?? null,
+    aerosolOpticalDepth550: weather.aerosolOpticalDepth550 ?? null,
+    pm25: weather.pm25 ?? null,
+    pm10: weather.pm10 ?? null,
+    dust: weather.dust ?? null,
+    aerosolAvailability: weather.aerosolAvailability,
+    aerosolConfidence: weather.aerosolConfidence,
   });
   const windRisk = exposedRidgeWindRisk({
     elevationMeters: selectedElevation,
@@ -858,7 +878,8 @@ function annotateDecisionDaily(
     terrainProfile,
     windRisk,
   });
-  const providerElevation = day.providerElevationMeters ?? day.temperatureAdjustment?.providerElevationMeters;
+  const providerElevation =
+    day.providerElevationMeters ?? day.temperatureAdjustment?.providerElevationMeters;
   const elevationDifference =
     typeof providerElevation === "number" && selectedElevation !== undefined
       ? Math.round(selectedElevation - providerElevation)

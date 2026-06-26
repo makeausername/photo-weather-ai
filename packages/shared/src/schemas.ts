@@ -143,6 +143,8 @@ const ridgeWindRiskSchema = z.enum(["low", "medium", "high"]);
 const tripodStabilityRiskSchema = z.enum(["low", "medium", "high"]);
 const transparencyGradeSchema = z.enum(["excellent", "good", "fair", "poor"]);
 const cloudFogObstructionRiskSchema = z.enum(["low", "medium", "high"]);
+const aerosolAvailabilitySchema = z.enum(["available", "partial", "unavailable"]);
+const aerosolConfidenceSchema = z.enum(["high", "medium", "low"]);
 const precipitationRiskSchema = z.object({
   precipitationProbabilityPercent: nullablePercentSchema,
   precipitationAmountMm: nullableFiniteNumberSchema,
@@ -233,6 +235,17 @@ export const normalizedHourlyWeatherSchema = z.object({
   cloudLow: nullablePercentSchema,
   cloudMid: nullablePercentSchema,
   cloudHigh: nullablePercentSchema,
+  aerosolOpticalDepth550: nullableFiniteNumberSchema.optional(),
+  pm25: nullableFiniteNumberSchema.optional(),
+  pm10: nullableFiniteNumberSchema.optional(),
+  dust: nullableFiniteNumberSchema.optional(),
+  aerosolObservedAt: z.string().datetime({ offset: true }).optional(),
+  aerosolValidTime: z.string().datetime({ offset: true }).optional(),
+  aerosolSourceResolution: z.string().trim().min(1).optional(),
+  aerosolSourceResolutionHours: z.number().finite().positive().optional(),
+  aerosolAvailability: aerosolAvailabilitySchema.optional(),
+  aerosolConfidence: aerosolConfidenceSchema.optional(),
+  aerosolSourceNoteZh: z.string().trim().min(1).optional(),
   exposedRidgeWindRisk: ridgeWindRiskSchema.optional(),
   mountainFeelsLikeC: nullableFiniteNumberSchema.optional(),
   tripodStabilityRisk: tripodStabilityRiskSchema.optional(),

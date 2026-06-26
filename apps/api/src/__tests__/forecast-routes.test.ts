@@ -165,6 +165,25 @@ function buildOpenMeteoPayload(
   };
 }
 
+function buildOpenMeteoAirQualityPayload(
+  options: { readonly start?: string; readonly hours?: number } = {},
+) {
+  const start = options.start ?? "2026-05-20T00:00:00+08:00";
+  const hours = options.hours ?? 48;
+  const times = Array.from({ length: hours }, (_, index) => isoHourFrom(start, index).slice(0, 16));
+
+  return {
+    utc_offset_seconds: 28800,
+    hourly: {
+      time: times,
+      pm10: times.map((_, index) => (index >= 16 && index <= 20 ? 118 : 30)),
+      pm2_5: times.map((_, index) => (index >= 16 && index <= 20 ? 52 : 16)),
+      aerosol_optical_depth: times.map((_, index) => (index >= 16 && index <= 20 ? 0.46 : 0.12)),
+      dust: times.map((_, index) => (index >= 16 && index <= 20 ? 105 : 8)),
+    },
+  };
+}
+
 function buildMeteobluePayload(
   options: { readonly start?: string; readonly hours?: number; readonly days?: number } = {},
 ) {
@@ -1091,6 +1110,9 @@ describe("forecast query validation route", () => {
       if (url.includes("api.open-meteo.com/v1/forecast")) {
         return new Response(JSON.stringify(buildOpenMeteoPayload()));
       }
+      if (url.includes("air-quality-api.open-meteo.com/v1/air-quality")) {
+        return new Response(JSON.stringify(buildOpenMeteoAirQualityPayload()));
+      }
       if (url.includes("my.meteoblue.com/packages/basic-1h_clouds-1h")) {
         return new Response(JSON.stringify(buildMeteobluePayload()));
       }
@@ -1159,12 +1181,30 @@ describe("forecast query validation route", () => {
     );
     expect(body.weatherFusionSummary).toMatchObject({
       professionalSourceStatus: "专业增强：meteoblue 通过",
-      confidenceLevel: "high",
+      confidenceLevel: "medium",
       confidenceByTarget: expect.objectContaining({
         general: expect.any(Number),
         cloud_sea: expect.any(Number),
       }),
+      transparencyPenaltyByTarget: expect.objectContaining({
+        general: expect.any(Number),
+        glow: expect.any(Number),
+        astro: expect.any(Number),
+        cloud_sea: expect.any(Number),
+      }),
+      aerosolDiagnostics: expect.objectContaining({
+        aerosolHoursAvailable: expect.any(Number),
+        aerosolSuppressedHours: expect.any(Number),
+        aerosolPoorHours: expect.any(Number),
+        maxAerosolOpticalDepth550: expect.any(Number),
+        maxPm25: expect.any(Number),
+        maxPm10: expect.any(Number),
+        maxDust: expect.any(Number),
+      }),
     });
+    expect(body.weatherFusionSummary.aerosolDiagnostics.aerosolHoursAvailable).toBeGreaterThan(0);
+    expect(body.weatherFusionSummary.aerosolDiagnostics.aerosolSuppressedHours).toBeGreaterThan(0);
+    expect(body.weatherFusionSummary.aerosolConflictFlagsCount).toBeGreaterThan(0);
     expect(body.weatherProviderRuntimeSnapshot).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

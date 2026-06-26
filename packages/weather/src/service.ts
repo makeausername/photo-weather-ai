@@ -525,10 +525,9 @@ function buildProviderTerrainMetadata(input: {
   };
 }
 
-function terrainSummaryFields(metadata: WeatherProviderTerrainMetadata): Omit<
-  WeatherProviderTerrainMetadata,
-  "providerCode"
-> {
+function terrainSummaryFields(
+  metadata: WeatherProviderTerrainMetadata,
+): Omit<WeatherProviderTerrainMetadata, "providerCode"> {
   const {
     providerElevationMeters,
     providerElevationSource,
@@ -647,9 +646,7 @@ export function attachAirQualityToHourly(
   hourly: readonly NormalizedHourlyWeather[],
   airQuality: WeatherDataBundle["airQuality"] | undefined,
 ): readonly NormalizedHourlyWeather[] {
-  const references = (airQuality?.hourly ?? []).filter(
-    (reference) => reference.aerosolAvailability !== "unavailable",
-  );
+  const references = airQuality?.hourly ?? [];
   if (references.length === 0) {
     return hourly;
   }
@@ -681,17 +678,24 @@ function selectAerosolReferenceForHour(
   hourTime: string,
   references: NonNullable<NonNullable<WeatherDataBundle["airQuality"]>["hourly"]>,
 ) {
+  const exact = references.find(
+    (reference) => (reference.aerosolValidTime ?? reference.aerosolObservedAt) === hourTime,
+  );
+  if (exact) {
+    return exact.aerosolAvailability === "unavailable" ? undefined : exact;
+  }
+
   const hourMs = Date.parse(hourTime);
   if (!Number.isFinite(hourMs)) {
-    return references.find((reference) => reference.aerosolValidTime === hourTime);
+    return undefined;
   }
 
   const candidates = references
+    .filter((reference) => reference.aerosolAvailability !== "unavailable")
     .map((reference) => {
       const validTime = reference.aerosolValidTime ?? reference.aerosolObservedAt;
       const validMs = validTime ? Date.parse(validTime) : Number.NaN;
-      const resolutionMs =
-        (reference.aerosolSourceResolutionHours ?? 1) * 60 * 60 * 1000;
+      const resolutionMs = (reference.aerosolSourceResolutionHours ?? 1) * 60 * 60 * 1000;
       const maxDistanceMs = Math.max(60 * 60 * 1000, resolutionMs / 2 + 30 * 60 * 1000);
 
       return {
@@ -722,18 +726,14 @@ function normalizeCurrentAirQuality(
         ? true
         : airQuality?.pm10 !== null && airQuality?.pm10 !== undefined;
   const hasReferenceSignal =
-    reference?.aerosolOpticalDepth550 !== null &&
-    reference?.aerosolOpticalDepth550 !== undefined
+    reference?.aerosolOpticalDepth550 !== null && reference?.aerosolOpticalDepth550 !== undefined
       ? true
       : reference?.pm25 !== null && reference?.pm25 !== undefined
         ? true
         : reference?.pm10 !== null && reference?.pm10 !== undefined
           ? true
           : reference?.dust !== null && reference?.dust !== undefined;
-  if (
-    !hasEnvelopeSignal &&
-    !hasReferenceSignal
-  ) {
+  if (!hasEnvelopeSignal && !hasReferenceSignal) {
     return null;
   }
 
@@ -991,7 +991,9 @@ function collectWeatherFields(
 }
 
 function firstFinite(values: readonly (number | undefined | null)[]): number | undefined {
-  return values.find((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return values.find(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
 }
 
 function generatedAt(input: WeatherRequestInput, fallback?: string): string {

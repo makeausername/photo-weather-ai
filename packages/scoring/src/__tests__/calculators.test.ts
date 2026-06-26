@@ -182,9 +182,7 @@ describe("forecast score calculators", () => {
     const windowText = result.bestWindows
       .map((window) => `${window.label} ${window.subjectPriorityLabel ?? ""}`)
       .join(" ");
-    const riskText = result.riskFlags
-      .map((risk) => `${risk.label} ${risk.description}`)
-      .join(" ");
+    const riskText = result.riskFlags.map((risk) => `${risk.label} ${risk.description}`).join(" ");
     const adviceText = result.photographyAdvice.join(" ");
 
     expect(classifyTerrainMode(lowlandInput.terrainAnalysis.terrainProfile)).toBe("lowland");
@@ -197,9 +195,9 @@ describe("forecast score calculators", () => {
     expect(adviceText).toContain("晨雾");
     expect(adviceText).not.toContain("高点");
     expect(adviceText).not.toContain("白墙风险");
-    expect(result.dailySummaries.some((summary) => summary.weather?.temperatureCorrectionApplied)).toBe(
-      false,
-    );
+    expect(
+      result.dailySummaries.some((summary) => summary.weather?.temperatureCorrectionApplied),
+    ).toBe(false);
   });
 
   it("keeps high mountain seed spots on mountain cloud-sea semantics", () => {
@@ -358,7 +356,10 @@ describe("forecast score calculators", () => {
   });
 
   it("uses terrain-adjusted temperature and matching dew point spread in professional hourly data", () => {
-    const baseInput = buildMockForecastInput({ ...baseQuery, target: "cloud_sea" }, { now: fixedNow });
+    const baseInput = buildMockForecastInput(
+      { ...baseQuery, target: "cloud_sea" },
+      { now: fixedNow },
+    );
     const rawHour: NormalizedHourlyWeather = {
       ...baseInput.hourlyWeather[0]!,
       providerCode: "qweather",
@@ -399,7 +400,10 @@ describe("forecast score calculators", () => {
   });
 
   it("keeps missing professional cloud layers empty instead of filling them from total cloud", () => {
-    const baseInput = buildMockForecastInput({ ...baseQuery, target: "cloud_sea" }, { now: fixedNow });
+    const baseInput = buildMockForecastInput(
+      { ...baseQuery, target: "cloud_sea" },
+      { now: fixedNow },
+    );
     const result = calculateForecast(
       withHourlyWeather(baseInput, (hour) => ({
         ...hour,
@@ -429,7 +433,10 @@ describe("forecast score calculators", () => {
   });
 
   it("requires low-cloud evidence before professional hourly whiteout labels", () => {
-    const baseInput = buildMockForecastInput({ ...baseQuery, target: "cloud_sea" }, { now: fixedNow });
+    const baseInput = buildMockForecastInput(
+      { ...baseQuery, target: "cloud_sea" },
+      { now: fixedNow },
+    );
     const humidityOnly = calculateForecast(
       withHourlyWeather(baseInput, (hour) => ({
         ...hour,
@@ -479,7 +486,10 @@ describe("forecast score calculators", () => {
   });
 
   it("does not turn high cloud alone into cloud sea windows or professional cloud sea labels", () => {
-    const baseInput = buildMockForecastInput({ ...baseQuery, target: "cloud_sea" }, { now: fixedNow });
+    const baseInput = buildMockForecastInput(
+      { ...baseQuery, target: "cloud_sea" },
+      { now: fixedNow },
+    );
     const result = calculateForecast(
       withHourlyWeather(baseInput, (hour) => ({
         ...hour,
@@ -510,7 +520,10 @@ describe("forecast score calculators", () => {
   });
 
   it("does not turn mid cloud alone into cloud sea windows or professional cloud sea labels", () => {
-    const baseInput = buildMockForecastInput({ ...baseQuery, target: "cloud_sea" }, { now: fixedNow });
+    const baseInput = buildMockForecastInput(
+      { ...baseQuery, target: "cloud_sea" },
+      { now: fixedNow },
+    );
     const result = calculateForecast(
       withHourlyWeather(baseInput, (hour) => ({
         ...hour,
@@ -757,6 +770,42 @@ describe("forecast score calculators", () => {
     expect(clearScore).toBeGreaterThan(obstructedScore);
     expect(transparencyGradeFromScore(clearScore)).toMatch(/excellent|good/);
     expect(transparencyGradeFromScore(obstructedScore)).toMatch(/fair|poor/);
+  });
+
+  it("lowers photography transparency when aerosol, PM, and dust are suppressive", () => {
+    const cleanScore = calculatePhotographyTransparencyScore({
+      rawVisibilityKm: 24,
+      cloudLow: 18,
+      cloudTotal: 35,
+      humidity: 58,
+      dewPointSpread: 8,
+      precipitationAmountMm: 0,
+      precipitationProbability: null,
+      aerosolOpticalDepth550: 0.12,
+      pm25: 16,
+      pm10: 30,
+      dust: 8,
+      aerosolAvailability: "available",
+      aerosolConfidence: "high",
+    });
+    const hazyScore = calculatePhotographyTransparencyScore({
+      rawVisibilityKm: 24,
+      cloudLow: 18,
+      cloudTotal: 35,
+      humidity: 58,
+      dewPointSpread: 8,
+      precipitationAmountMm: 0,
+      precipitationProbability: null,
+      aerosolOpticalDepth550: 0.72,
+      pm25: 88,
+      pm10: 180,
+      dust: 130,
+      aerosolAvailability: "available",
+      aerosolConfidence: "high",
+    });
+
+    expect(hazyScore).toBeLessThan(cleanScore);
+    expect(transparencyGradeFromScore(hazyScore)).not.toBe("excellent");
   });
 
   it("uses gust and mountain exposure as risk labels without changing sustained wind", () => {
@@ -1035,7 +1084,7 @@ describe("forecast score calculators", () => {
     expect(calculateGlowAnalysis(highObstruction).lowCloudObstructionRisk).toBeGreaterThan(
       calculateGlowAnalysis(lowObstruction).lowCloudObstructionRisk,
     );
-    expect(calculateGlowAnalysis(highObstruction).riskReasons.join("")).toContain("低云遮挡");
+    expect(calculateGlowAnalysis(highObstruction).riskReasons.join("")).toContain("低云/雾墙");
   });
 
   it("reduces glow scores when visibility is low", () => {
