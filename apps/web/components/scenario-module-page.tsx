@@ -73,6 +73,9 @@ type GlowAnalysisForDecision = ForecastCalculationResult["glowAnalysis"];
 type GlowWindowForDecision = GlowAnalysisForDecision["bestGlowWindows"][number];
 type GlowTerrainObstructionForDecision =
   GlowAnalysisForDecision["terrainObstructionAssessments"][number];
+type AstroDecisionCard = CloudSeaDecisionCard;
+type AstroAnalysisForDecision = ForecastCalculationResult["astroAnalysis"];
+type AstroWindowForDecision = AstroAnalysisForDecision["bestAstroWindows"][number];
 
 function isSubjectScenarioEntryTarget(target: ForecastTarget): boolean {
   return target === "cloud_sea" || target === "glow" || target === "astro";
@@ -136,7 +139,8 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
   const pageMode = "search";
   const isCloudSea = config.target === "cloud_sea";
   const isGlow = config.target === "glow";
-  const isInlineDecisionTarget = isCloudSea || isGlow;
+  const isAstro = config.target === "astro";
+  const isInlineDecisionTarget = isCloudSea || isGlow || isAstro;
   const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
   const [selectedHorizon, setSelectedHorizon] = useState<ForecastHorizon>(config.defaultHorizon);
   const [subjectLayerState, setSubjectLayerState] = useState<SubjectForecastLayerState>({
@@ -161,13 +165,14 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
     }
 
     const location = selectedLocation;
+    const inlineForecastTarget = isAstro ? "astro" : config.target;
     const controller = new AbortController();
     setSubjectLayerState({ status: "loading", result: null });
 
     async function loadSubjectForecast() {
       try {
         const result = await requestForecastCalculation(
-          buildForecastRequestPayload(location, selectedHorizon, config.target),
+          buildForecastRequestPayload(location, selectedHorizon, inlineForecastTarget),
           {
             signal: controller.signal,
           },
@@ -194,7 +199,7 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
     return () => {
       controller.abort();
     };
-  }, [config.target, isInlineDecisionTarget, selectedHorizon, selectedLocation]);
+  }, [config.target, isAstro, isInlineDecisionTarget, selectedHorizon, selectedLocation]);
 
   return (
     <PublicShell contentClassName="grid gap-6 pb-14">
@@ -235,6 +240,12 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
           />
         ) : isGlow && selectedLocation ? (
           <GlowDecisionPanel
+            location={selectedLocation}
+            state={subjectLayerState}
+            horizon={selectedHorizon}
+          />
+        ) : isAstro && selectedLocation ? (
+          <AstroDecisionPanel
             location={selectedLocation}
             state={subjectLayerState}
             horizon={selectedHorizon}
@@ -862,6 +873,576 @@ function buildGlowPendingCards(state: SubjectForecastLayerState): readonly GlowD
     },
   ];
 }
+
+export function AstroDecisionPanel({
+  location,
+  state,
+  horizon,
+}: {
+  readonly location: SelectedLocation;
+  readonly state: SubjectForecastLayerState;
+  readonly horizon: ForecastHorizon;
+}) {
+  const result = state.result;
+  const hasGeneratedResult = Boolean(
+    result && state.status !== "fallback" && state.status !== "error",
+  );
+  const cards =
+    result && hasGeneratedResult ? buildAstroResultCards(result) : buildAstroPendingCards(state);
+
+  return (
+    <section
+      className={cn(
+        "grid min-w-0 gap-4",
+        hasGeneratedResult && "min-[900px]:h-full min-[900px]:grid-rows-[auto_minmax(0,1fr)]",
+      )}
+      data-astro-decision-panel="true"
+      data-astro-decision-status={state.status}
+      data-astro-generated-result={hasGeneratedResult ? "true" : "false"}
+    >
+      <Card className="p-5" data-astro-decision-intro="true">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="accent">星空银河判断</Badge>
+          <Badge variant="muted">{forecastHorizonLabels[horizon]}</Badge>
+          <Badge variant="muted">{location.displayName}</Badge>
+          {state.status === "partial" ? <Badge variant="warning">部分可用</Badge> : null}
+          {state.status === "fallback" || state.status === "error" ? (
+            <Badge variant="warning">暂不可用</Badge>
+          ) : null}
+        </div>
+        <h2 className="mt-3 text-xl font-bold leading-tight text-card-foreground">
+          {astroPanelTitle(location, state, hasGeneratedResult)}
+        </h2>
+        <p className="mt-3 max-w-4xl text-sm leading-6 text-muted-foreground sm:text-[15px] sm:leading-7">
+          {astroPanelDescription(state, hasGeneratedResult)}
+        </p>
+      </Card>
+
+      <div
+        className={cn(
+          "grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3",
+          hasGeneratedResult && "min-[900px]:h-full min-[900px]:auto-rows-fr",
+        )}
+        data-astro-decision-card-grid="true"
+      >
+        {cards.map((card, index) => (
+          <AstroDecisionCardView
+            key={card.title}
+            card={card}
+            index={index}
+            fillHeight={hasGeneratedResult}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AstroDecisionCardView({
+  card,
+  index,
+  fillHeight,
+}: {
+  readonly card: AstroDecisionCard;
+  readonly index: number;
+  readonly fillHeight?: boolean;
+}) {
+  return (
+    <article
+      className={cn(
+        "grid min-w-0 content-start gap-3 overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm",
+        fillHeight && "min-[900px]:h-full",
+      )}
+      data-astro-decision-card={card.title}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <span
+          className={cn(
+            "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
+            index % 2 === 0
+              ? "border-primary bg-secondary text-primary"
+              : "border-accent bg-card text-accent",
+          )}
+        >
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        {card.badge ? <Badge variant={astroBadgeVariant(card.tone)}>{card.badge}</Badge> : null}
+      </div>
+      <div className="min-w-0">
+        <h3 className="text-base font-bold leading-6 text-card-foreground">{card.title}</h3>
+        {card.value ? (
+          <p
+            className={cn(
+              "mt-2 break-words text-lg font-bold leading-7",
+              card.tone === "danger"
+                ? "text-danger"
+                : card.tone === "warning"
+                  ? "text-warning"
+                  : card.tone === "muted"
+                    ? "text-muted-foreground"
+                    : "text-primary",
+            )}
+          >
+            {card.value}
+          </p>
+        ) : null}
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{card.description}</p>
+      </div>
+    </article>
+  );
+}
+
+export function buildAstroResultCards(
+  result: ForecastCalculationResult,
+): readonly AstroDecisionCard[] {
+  const analysis = result.astroAnalysis;
+  const milkyWayWindow = astroMilkyWayDecisionWindow(analysis);
+  const bestWindow = milkyWayWindow ?? astroBestDecisionWindow(analysis);
+  const firstBackupPlan = analysis.backupPlans[0];
+  const actionText = firstAstroPublicText(
+    [
+      analysis.travelRecommendations[0],
+      firstBackupPlan ? `${firstBackupPlan.action}：${firstBackupPlan.detail}` : undefined,
+    ],
+    "出发前复核暗夜窗口、月光、云量通透度、光污染方向和地平线遮挡，再决定专程、附近蹲守或临近复核。",
+  );
+
+  return [
+    {
+      title: "星空指数",
+      value: formatAstroScore(analysis.starsScore ?? result.finalScore ?? result.overallScore),
+      description: joinAstroPublicText(
+        [
+          analysis.astronomicalNightWindows[0]?.noteZh,
+          analysis.moonlessNightWindows[0]?.noteZh,
+          analysis.cloudEvidence[0]?.noteZh,
+          analysis.visibilityEvidence[0]?.noteZh,
+        ],
+        "结合天文黑夜、云量与通透度、月光影响和现场天气风险后的星空参考。",
+        3,
+      ),
+      badge: "星空",
+    },
+    {
+      title: "银河机会",
+      value: formatAstroScoreWithLabel(analysis.milkyWayScore, analysis.labels.milkyWayShootability),
+      description: joinAstroPublicText(
+        [
+          milkyWayWindow?.noteZh,
+          astroWindowDirectionText(milkyWayWindow),
+          astroMilkyWayGeometryText(analysis, milkyWayWindow),
+        ],
+        "重点看银河核心是否进入天文黑夜、银心高度与方向是否可用，以及月光和地形是否压低可拍性。",
+        3,
+      ),
+      badge: "银河",
+    },
+    {
+      title: "最佳银河窗口",
+      value: bestWindow
+        ? `${formatAstroTime(bestWindow.start)} - ${formatAstroTime(bestWindow.end)}`
+        : "暂无明确银河窗口",
+      description: joinAstroPublicText(
+        [
+          bestWindow?.noteZh,
+          astroWindowDirectionText(bestWindow),
+          bestWindow?.riskTags.slice(0, 2).join("、"),
+        ],
+        "本轮预报没有明确银河窗口，可保留星空、夜景或月色题材作为备选，并临近复核云量与月光。",
+        3,
+      ),
+      badge: bestWindow ? "窗口" : "备选",
+      tone: bestWindow ? undefined : "muted",
+    },
+    {
+      title: "月光影响",
+      value: formatAstroScoreWithLabel(
+        analysis.moonlightImpactScore ?? analysis.moonImpactScore,
+        analysis.labels.moonlightImpact,
+      ),
+      description: joinAstroPublicText(
+        [
+          analysis.moonEvidence[0]?.noteZh,
+          astroMoonInfoText(analysis),
+          analysis.riskReasons.find((reason) => reason.includes("月")),
+          analysis.opportunityReasons.find((reason) => reason.includes("月")),
+        ],
+        "重点复核月相、月亮照明、月出月落和无月黑夜长度，强月光会压低银河对比度。",
+        3,
+      ),
+      badge: "月光",
+      tone: astroMoonImpactTone(analysis),
+    },
+    {
+      title: "云量与通透",
+      value: `天况 ${formatAstroScore(analysis.skyConditionScore)} · 通透 ${formatAstroScore(
+        analysis.transparencyScore,
+      )}`,
+      description: joinAstroPublicText(
+        [
+          analysis.cloudEvidence[0]?.noteZh,
+          analysis.visibilityEvidence[0]?.noteZh,
+          analysis.weatherBlockers[0],
+          analysis.weatherBlockers[1],
+        ],
+        "总云量、低云、中高云、能见度、风和露水风险都会影响是否值得等待。",
+        3,
+      ),
+      badge: "天气",
+      tone: astroWeatherTone(analysis),
+    },
+    {
+      title: "光污染与地形",
+      value: safeAstroPublicText(
+        analysis.finalPhotographyDecision?.recommendationLabel ??
+          result.finalTripDecisionLabel ??
+          result.finalRecommendationLabel ??
+          analysis.recommendationLabel,
+        "临近复核",
+      ),
+      description: joinAstroPublicText(
+        [
+          analysis.finalPhotographyDecision?.summaryZh,
+          astroSkyDarknessText(analysis),
+          analysis.lightPollution.lightPollutionNoteZh,
+          analysis.targetDirectionLightPollution?.warningZh,
+          analysis.terrainEvidence[0]?.noteZh,
+          astroTerrainHorizonText(analysis.terrainHorizonAssessment),
+          analysis.finalPhotographyDecision?.reasonsZh[0],
+          analysis.lightPollutionEvidence[0]?.noteZh,
+          actionText,
+        ],
+        "复核整体暗空、银河方向光污染、地平线遮挡和机位前景后，再决定专程、附近蹲守或改拍备选题材。",
+        5,
+      ),
+      badge: analysis.finalPhotographyDecision ? "行动" : "地平线",
+      tone: astroLightTerrainTone(analysis),
+    },
+  ];
+}
+
+function buildAstroPendingCards(state: SubjectForecastLayerState): readonly AstroDecisionCard[] {
+  if (state.status === "idle") {
+    return [
+      {
+        title: "准备生成星空银河判断",
+        value: "等待计算",
+        description: "已接收地点选择，接下来会生成星空指数、银河机会、暗夜窗口、月光影响和现场复核重点。",
+        badge: "准备中",
+      },
+      {
+        title: "右侧将生成星空卡片",
+        description: "判断会围绕天文黑夜、无月黑夜、银河核心窗口、云量通透、光污染和地平线遮挡展开。",
+        badge: "预览",
+      },
+    ];
+  }
+
+  if (state.status === "loading") {
+    return [
+      {
+        title: "正在生成星空银河判断",
+        value: "天文黑夜 / 月光 / 银河",
+        description: "正在结合天文黑夜、无月时段、银河核心高度与方向、月光影响和云量通透度。",
+        badge: "生成中",
+      },
+      {
+        title: "银河窗口会单独评估",
+        description: "银河窗口会同时看银心高度、方向、月光、光污染和目标方向地平线遮挡。",
+        badge: "银河",
+      },
+      {
+        title: "光污染与天气同步复核",
+        description: "云量、通透度、露水风险、风和光污染方向会影响是否值得专程，结果返回后会单独标出。",
+        badge: "复核",
+        tone: "warning",
+      },
+    ];
+  }
+
+  return [
+    {
+      title: "星空银河判断暂不可用",
+      value: "保留已选地点",
+      description: safeAstroPublicText(
+        state.errorMessage,
+        "本次星空银河数据暂时不可用；先按天文黑夜、月出月落、云量通透、光污染和地平线遮挡做临近复核。",
+      ),
+      badge: "稍后重试",
+      tone: "muted",
+    },
+    {
+      title: "现场复核重点",
+      description: "优先看无月黑夜是否覆盖银河窗口、云量是否打开、银河方向光污染是否偏高，以及地形是否挡住地平线。",
+      badge: "复核",
+    },
+  ];
+}
+
+function astroPanelTitle(
+  location: SelectedLocation,
+  state: SubjectForecastLayerState,
+  hasGeneratedResult: boolean,
+): string {
+  if (hasGeneratedResult) {
+    return `${location.displayName} 星空银河拍摄判断`;
+  }
+  if (state.status === "loading") {
+    return "正在生成星空银河判断";
+  }
+  if (state.status === "fallback" || state.status === "error") {
+    return "星空银河判断暂不可用";
+  }
+  return "准备生成星空银河判断";
+}
+
+function astroPanelDescription(
+  state: SubjectForecastLayerState,
+  hasGeneratedResult: boolean,
+): string {
+  if (state.status === "loading") {
+    return "正在生成星空银河判断：会拆分星空指数、银河机会、最佳银河窗口、月光影响、云量通透和光污染地形。";
+  }
+  if (state.status === "fallback" || state.status === "error") {
+    return "本次星空银河判断暂不可用；已保留地点和预报范围，可稍后重试或先按现场复核重点判断。";
+  }
+  if (state.status === "partial") {
+    return "已生成星空银河判断；部分辅助数据可能缺失，建议把月光、云量通透、光污染方向和地形遮挡作为现场复核重点。";
+  }
+  if (hasGeneratedResult) {
+    return "已根据当前预报生成星空指数、银河机会、最佳银河窗口、月光影响、云量通透和光污染地形建议。";
+  }
+  return "选择地点后会在右侧生成星空银河专用判断卡片，不会自动离开当前页面。";
+}
+
+function astroBadgeVariant(tone: AstroDecisionCard["tone"]): "accent" | "danger" | "muted" | "warning" {
+  if (tone === "danger") {
+    return "danger";
+  }
+  if (tone === "warning") {
+    return "warning";
+  }
+  if (tone === "muted") {
+    return "muted";
+  }
+  return "accent";
+}
+
+function astroMilkyWayDecisionWindow(
+  analysis: AstroAnalysisForDecision,
+): AstroWindowForDecision | undefined {
+  return (
+    analysis.recommendedMilkyWayWindow ??
+    analysis.recommendedMilkyWayWindows[0] ??
+    analysis.bestAstroWindows.find(
+      (window) =>
+        window.type === "recommended_milky_way" || window.type === "milky_way_candidate",
+    )
+  );
+}
+
+function astroBestDecisionWindow(
+  analysis: AstroAnalysisForDecision,
+): AstroWindowForDecision | undefined {
+  return (
+    astroMilkyWayDecisionWindow(analysis) ??
+    analysis.bestAstroWindows[0] ??
+    analysis.moonlessNightWindows[0] ??
+    analysis.astronomicalNightWindows[0]
+  );
+}
+
+function astroWindowDirectionText(window: AstroWindowForDecision | undefined): string | undefined {
+  if (!window) {
+    return undefined;
+  }
+
+  const parts = [
+    window.directionZh ? `银河核心方向 ${window.directionZh}` : undefined,
+    typeof window.galacticCenterAltitude === "number" && Number.isFinite(window.galacticCenterAltitude)
+      ? `银心高度约 ${Math.round(window.galacticCenterAltitude)}°`
+      : undefined,
+  ].filter(Boolean);
+
+  return parts.length > 0 ? `${parts.join("，")}。` : undefined;
+}
+
+function astroMilkyWayGeometryText(
+  analysis: AstroAnalysisForDecision,
+  window: AstroWindowForDecision | undefined,
+): string | undefined {
+  const windowText = astroWindowDirectionText(window);
+  if (windowText) {
+    return windowText;
+  }
+  return typeof analysis.milkyWayGeometryScore === "number" &&
+    Number.isFinite(analysis.milkyWayGeometryScore)
+    ? `银心高度与方向 ${formatAstroScore(analysis.milkyWayGeometryScore)}。`
+    : undefined;
+}
+
+function astroMoonInfoText(analysis: AstroAnalysisForDecision): string | undefined {
+  const moon = analysis.moonInfo;
+  if (!moon) {
+    return undefined;
+  }
+
+  const parts = [
+    moon.moonPhaseNameZh ? `月相${moon.moonPhaseNameZh}` : undefined,
+    typeof moon.moonIllumination === "number" && Number.isFinite(moon.moonIllumination)
+      ? `月亮照明${formatAstroIllumination(moon.moonIllumination)}`
+      : undefined,
+    moon.moonrise ? `月出${formatAstroTime(moon.moonrise)}` : undefined,
+    moon.moonset ? `月落${formatAstroTime(moon.moonset)}` : undefined,
+  ].filter(Boolean);
+
+  return parts.length > 0 ? `${parts.join("，")}。` : undefined;
+}
+
+function astroSkyDarknessText(analysis: AstroAnalysisForDecision): string | undefined {
+  const darkness = analysis.overallSkyDarkness;
+  if (darkness?.available) {
+    return `整体暗空 ${darkness.rangeLabelZh}，${darkness.skyQualityLabelZh}。`;
+  }
+
+  const estimatedRange = analysis.lightPollution.estimatedBortleRange;
+  if (estimatedRange?.available) {
+    return `暗空参考 ${estimatedRange.rangeLabelZh}，${estimatedRange.skyQualityLabelZh}。`;
+  }
+
+  return undefined;
+}
+
+function astroTerrainHorizonText(
+  assessment: AstroAnalysisForDecision["terrainHorizonAssessment"],
+): string | undefined {
+  if (!assessment) {
+    return undefined;
+  }
+
+  const qualitativeSummary = safeAstroPublicText(
+    assessment.qualitativeFallback?.summaryZh,
+    "",
+  );
+  if (qualitativeSummary) {
+    return qualitativeSummary;
+  }
+
+  if (assessment.obstructionLevel === "clear") {
+    return "目标方向地平线遮挡较低，仍需到点位复核前景和实际视线。";
+  }
+  if (assessment.obstructionLevel === "marginal") {
+    return "目标方向地平线余量偏窄，银河核心低高度时需要提前复核遮挡。";
+  }
+  if (assessment.obstructionLevel === "obstructed") {
+    return "目标方向存在地形遮挡，低高度银河核心可能被山体或建筑挡住。";
+  }
+  return undefined;
+}
+
+function astroMoonImpactTone(analysis: AstroAnalysisForDecision): AstroDecisionCard["tone"] {
+  const moonImpactLevel = analysis.assessment.moonImpactLevel;
+  if (
+    moonImpactLevel === "high" ||
+    analysis.labels.moonlightImpact === "高" ||
+    analysis.moonlightImpactScore >= 70
+  ) {
+    return "danger";
+  }
+  if (moonImpactLevel === "medium" || analysis.moonlightImpactScore >= 55) {
+    return "warning";
+  }
+  return undefined;
+}
+
+function astroWeatherTone(analysis: AstroAnalysisForDecision): AstroDecisionCard["tone"] {
+  if (analysis.cloudBlockerLevel === "high" || analysis.weatherBlockers.length >= 2) {
+    return "danger";
+  }
+  if (analysis.cloudBlockerLevel === "medium" || analysis.weatherBlockers.length > 0) {
+    return "warning";
+  }
+  return undefined;
+}
+
+function astroLightTerrainTone(analysis: AstroAnalysisForDecision): AstroDecisionCard["tone"] {
+  const lightRisk = analysis.targetDirectionLightPollution?.riskLevel;
+  const terrainLevel = analysis.terrainHorizonAssessment?.obstructionLevel;
+  if (lightRisk === "high" || lightRisk === "very_high" || terrainLevel === "obstructed") {
+    return "danger";
+  }
+  if (lightRisk === "medium" || terrainLevel === "marginal") {
+    return "warning";
+  }
+  return undefined;
+}
+
+function formatAstroScoreWithLabel(value: number | null | undefined, label: string): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${Math.round(value)} / 100 · ${label}`
+    : label;
+}
+
+function formatAstroScore(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${Math.round(value)} / 100`
+    : "待计算";
+}
+
+function formatAstroIllumination(value: number): string {
+  const normalized = value <= 1 ? value * 100 : value;
+  return `${Math.round(normalized)}%`;
+}
+
+function formatAstroTime(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestamp));
+}
+
+function firstAstroPublicText(
+  values: readonly (string | null | undefined)[],
+  fallback: string,
+): string {
+  for (const value of values) {
+    const safeValue = safeAstroPublicText(value, "");
+    if (safeValue) {
+      return safeValue;
+    }
+  }
+  return fallback;
+}
+
+function joinAstroPublicText(
+  values: readonly (string | null | undefined)[],
+  fallback: string,
+  maxItems = 2,
+): string {
+  const safeValues = values
+    .map((value) => safeAstroPublicText(value, ""))
+    .filter((value, index, allValues) => value && allValues.indexOf(value) === index);
+
+  return safeValues.length > 0 ? safeValues.slice(0, maxItems).join(" ") : fallback;
+}
+
+function safeAstroPublicText(value: string | null | undefined, fallback: string): string {
+  const text = value?.trim();
+  if (!text || unsafeAstroPublicTextPattern.test(text)) {
+    return fallback;
+  }
+  return text;
+}
+
+const unsafeAstroPublicTextPattern =
+  /\b(?:AI|GFS|DEM|VRT)\b|Open-Meteo|meteoblue|Copernicus|GLO-30|provider|debug|synthetic|fixture|weatherProvider|dataSource|providerCode|dataset|sourceCode|sourceLabel|sourceName|VIIRS|milkyWayGeometryScore|targetDirectionLightPollution|terrainHorizonAssessment|scoreBreakdown|diagnostic|diagnostics|fieldMetadata|astroAnalysis|cloudEvidence|visibilityEvidence|moonEvidence|terrainEvidence|lightPollutionEvidence|rawValue|checksum|model|模型/i;
 
 function glowPanelTitle(
   location: SelectedLocation,
