@@ -125,7 +125,7 @@ export function HomepageWorkbench() {
       id="analysis"
       ref={workspaceRef}
       tabIndex={-1}
-      className="grid scroll-mt-24 gap-5 outline-none min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)] min-[1200px]:items-start"
+      className="grid scroll-mt-24 gap-5 outline-none min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[900px]:items-stretch min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)]"
       data-homepage-workbench-layout="scenario-two-column"
     >
       <HomepageSearchPanel
@@ -172,12 +172,19 @@ export function HomepageGuidancePanel({
   readonly horizon: ForecastHorizon;
 }) {
   const result = state.result;
+  const hasResult = Boolean(result);
   const cards = result
     ? buildHomepageResultCards(location, state, result)
     : buildHomepageGuidanceCards(location, state);
 
   return (
-    <section className="grid min-w-0 gap-4" data-homepage-guidance-panel="true">
+    <section
+      className={cn(
+        "grid min-w-0 gap-4",
+        hasResult && "min-[900px]:h-full min-[900px]:grid-rows-[auto_minmax(0,1fr)]",
+      )}
+      data-homepage-guidance-panel="true"
+    >
       <Card className="p-5" data-homepage-guidance-intro="true">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="accent">综合判断</Badge>
@@ -194,11 +201,19 @@ export function HomepageGuidancePanel({
       </Card>
 
       <div
-        className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+        className={cn(
+          "grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3",
+          hasResult && "min-[900px]:h-full min-[900px]:auto-rows-fr",
+        )}
         data-homepage-card-grid="true"
       >
         {cards.map((card, index) => (
-          <HomepageInsightCardView key={card.title} card={card} index={index} />
+          <HomepageInsightCardView
+            key={card.title}
+            card={card}
+            index={index}
+            fillHeight={hasResult}
+          />
         ))}
       </div>
     </section>
@@ -208,13 +223,18 @@ export function HomepageGuidancePanel({
 function HomepageInsightCardView({
   card,
   index,
+  fillHeight,
 }: {
   readonly card: HomepageInsightCard;
   readonly index: number;
+  readonly fillHeight?: boolean;
 }) {
   return (
     <article
-      className="grid min-w-0 content-start gap-3 overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm"
+      className={cn(
+        "grid min-w-0 content-start gap-3 overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm",
+        fillHeight && "min-[900px]:h-full",
+      )}
       data-homepage-guidance-card={card.title}
     >
       <div className="flex items-start justify-between gap-3">
