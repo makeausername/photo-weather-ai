@@ -50,13 +50,15 @@ export type ScenarioPageConfig = {
   readonly learningItems?: readonly ScenarioLearningItem[];
 };
 
-type CloudSeaLayerStatus = "idle" | "loading" | "ready" | "partial" | "fallback" | "error";
+type SubjectForecastLayerStatus = "idle" | "loading" | "ready" | "partial" | "fallback" | "error";
 
-export type CloudSeaForecastLayerState = {
-  readonly status: CloudSeaLayerStatus;
+export type SubjectForecastLayerState = {
+  readonly status: SubjectForecastLayerStatus;
   readonly result: ForecastCalculationResult | null;
   readonly errorMessage?: string;
 };
+
+export type CloudSeaForecastLayerState = SubjectForecastLayerState;
 
 type CloudSeaDecisionCard = {
   readonly title: string;
@@ -65,6 +67,12 @@ type CloudSeaDecisionCard = {
   readonly badge?: string;
   readonly tone?: "default" | "danger" | "muted" | "warning";
 };
+
+type GlowDecisionCard = CloudSeaDecisionCard;
+type GlowAnalysisForDecision = ForecastCalculationResult["glowAnalysis"];
+type GlowWindowForDecision = GlowAnalysisForDecision["bestGlowWindows"][number];
+type GlowTerrainObstructionForDecision =
+  GlowAnalysisForDecision["terrainObstructionAssessments"][number];
 
 function isSubjectScenarioEntryTarget(target: ForecastTarget): boolean {
   return target === "cloud_sea" || target === "glow" || target === "astro";
@@ -127,9 +135,11 @@ export function ScenarioModulePage({ config }: { readonly config: ScenarioPageCo
 function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageConfig }) {
   const pageMode = "search";
   const isCloudSea = config.target === "cloud_sea";
+  const isGlow = config.target === "glow";
+  const isInlineDecisionTarget = isCloudSea || isGlow;
   const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
   const [selectedHorizon, setSelectedHorizon] = useState<ForecastHorizon>(config.defaultHorizon);
-  const [cloudSeaLayerState, setCloudSeaLayerState] = useState<CloudSeaForecastLayerState>({
+  const [subjectLayerState, setSubjectLayerState] = useState<SubjectForecastLayerState>({
     status: "idle",
     result: null,
   });
@@ -141,29 +151,29 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
   );
 
   useEffect(() => {
-    if (!isCloudSea) {
+    if (!isInlineDecisionTarget) {
       return;
     }
 
     if (!selectedLocation) {
-      setCloudSeaLayerState({ status: "idle", result: null });
+      setSubjectLayerState({ status: "idle", result: null });
       return;
     }
 
     const location = selectedLocation;
     const controller = new AbortController();
-    setCloudSeaLayerState({ status: "loading", result: null });
+    setSubjectLayerState({ status: "loading", result: null });
 
-    async function loadCloudSeaForecast() {
+    async function loadSubjectForecast() {
       try {
         const result = await requestForecastCalculation(
-          buildForecastRequestPayload(location, selectedHorizon, "cloud_sea"),
+          buildForecastRequestPayload(location, selectedHorizon, config.target),
           {
             signal: controller.signal,
           },
         );
-        setCloudSeaLayerState({
-          status: buildCloudSeaLayerStatus(result),
+        setSubjectLayerState({
+          status: buildSubjectForecastLayerStatus(result),
           result,
         });
       } catch (error) {
@@ -171,7 +181,7 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
           return;
         }
 
-        setCloudSeaLayerState({
+        setSubjectLayerState({
           status: "error",
           result: null,
           errorMessage: normalizeForecastClientErrorMessage(error),
@@ -179,12 +189,12 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
       }
     }
 
-    void loadCloudSeaForecast();
+    void loadSubjectForecast();
 
     return () => {
       controller.abort();
     };
-  }, [isCloudSea, selectedHorizon, selectedLocation]);
+  }, [config.target, isInlineDecisionTarget, selectedHorizon, selectedLocation]);
 
   return (
     <PublicShell contentClassName="grid gap-6 pb-14">
@@ -203,7 +213,7 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
       <section
         className={cn(
           "grid gap-5 min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)]",
-          isCloudSea ? "min-[900px]:items-stretch" : "min-[1200px]:items-start",
+          isInlineDecisionTarget ? "min-[900px]:items-stretch" : "min-[1200px]:items-start",
         )}
         data-cloud-sea-page-mode={isCloudSea ? pageMode : undefined}
         data-subject-scenario-page-mode={pageMode}
@@ -212,15 +222,21 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
         {pageMode === "search" ? (
           <ScenarioSearchPanel
             config={config}
-            selectedLocation={isCloudSea ? selectedLocation : undefined}
-            onSelectedLocationChange={isCloudSea ? setSelectedLocation : undefined}
+            selectedLocation={isInlineDecisionTarget ? selectedLocation : undefined}
+            onSelectedLocationChange={isInlineDecisionTarget ? setSelectedLocation : undefined}
             onForecastOptionsChange={handleForecastOptionsChange}
           />
         ) : null}
         {isCloudSea && selectedLocation ? (
           <CloudSeaDecisionPanel
             location={selectedLocation}
-            state={cloudSeaLayerState}
+            state={subjectLayerState}
+            horizon={selectedHorizon}
+          />
+        ) : isGlow && selectedLocation ? (
+          <GlowDecisionPanel
+            location={selectedLocation}
+            state={subjectLayerState}
             horizon={selectedHorizon}
           />
         ) : (
@@ -231,7 +247,9 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
   );
 }
 
-export function buildCloudSeaLayerStatus(result: ForecastCalculationResult): CloudSeaLayerStatus {
+export function buildSubjectForecastLayerStatus(
+  result: ForecastCalculationResult,
+): SubjectForecastLayerStatus {
   const summaries = result.weatherSourceSummaries ?? [];
   const activeSummaries = summaries.filter((summary) => summary.providerCode !== "mock");
   const successfulRealSources = summaries.filter(
@@ -249,6 +267,12 @@ export function buildCloudSeaLayerStatus(result: ForecastCalculationResult): Clo
   }
 
   return failedOrSkippedSources.length > 0 ? "partial" : "ready";
+}
+
+export function buildCloudSeaLayerStatus(
+  result: ForecastCalculationResult,
+): SubjectForecastLayerStatus {
+  return buildSubjectForecastLayerStatus(result);
 }
 
 export function CloudSeaDecisionPanel({
@@ -531,6 +555,503 @@ function buildCloudSeaPendingCards(
     },
   ];
 }
+
+export function GlowDecisionPanel({
+  location,
+  state,
+  horizon,
+}: {
+  readonly location: SelectedLocation;
+  readonly state: SubjectForecastLayerState;
+  readonly horizon: ForecastHorizon;
+}) {
+  const result = state.result;
+  const hasGeneratedResult = Boolean(
+    result && state.status !== "fallback" && state.status !== "error",
+  );
+  const cards =
+    result && hasGeneratedResult ? buildGlowResultCards(result) : buildGlowPendingCards(state);
+
+  return (
+    <section
+      className={cn(
+        "grid min-w-0 gap-4",
+        hasGeneratedResult && "min-[900px]:h-full min-[900px]:grid-rows-[auto_minmax(0,1fr)]",
+      )}
+      data-glow-decision-panel="true"
+      data-glow-decision-status={state.status}
+      data-glow-generated-result={hasGeneratedResult ? "true" : "false"}
+    >
+      <Card className="p-5" data-glow-decision-intro="true">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="accent">朝霞晚霞判断</Badge>
+          <Badge variant="muted">{forecastHorizonLabels[horizon]}</Badge>
+          <Badge variant="muted">{location.displayName}</Badge>
+          {state.status === "partial" ? <Badge variant="warning">部分可用</Badge> : null}
+          {state.status === "fallback" || state.status === "error" ? (
+            <Badge variant="warning">暂不可用</Badge>
+          ) : null}
+        </div>
+        <h2 className="mt-3 text-xl font-bold leading-tight text-card-foreground">
+          {glowPanelTitle(location, state, hasGeneratedResult)}
+        </h2>
+        <p className="mt-3 max-w-4xl text-sm leading-6 text-muted-foreground sm:text-[15px] sm:leading-7">
+          {glowPanelDescription(state, hasGeneratedResult)}
+        </p>
+      </Card>
+
+      <div
+        className={cn(
+          "grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3",
+          hasGeneratedResult && "min-[900px]:h-full min-[900px]:auto-rows-fr",
+        )}
+        data-glow-decision-card-grid="true"
+      >
+        {cards.map((card, index) => (
+          <GlowDecisionCardView
+            key={card.title}
+            card={card}
+            index={index}
+            fillHeight={hasGeneratedResult}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function GlowDecisionCardView({
+  card,
+  index,
+  fillHeight,
+}: {
+  readonly card: GlowDecisionCard;
+  readonly index: number;
+  readonly fillHeight?: boolean;
+}) {
+  return (
+    <article
+      className={cn(
+        "grid min-w-0 content-start gap-3 overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm",
+        fillHeight && "min-[900px]:h-full",
+      )}
+      data-glow-decision-card={card.title}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <span
+          className={cn(
+            "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
+            index % 2 === 0
+              ? "border-primary bg-secondary text-primary"
+              : "border-accent bg-card text-accent",
+          )}
+        >
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        {card.badge ? <Badge variant={glowBadgeVariant(card.tone)}>{card.badge}</Badge> : null}
+      </div>
+      <div className="min-w-0">
+        <h3 className="text-base font-bold leading-6 text-card-foreground">{card.title}</h3>
+        {card.value ? (
+          <p
+            className={cn(
+              "mt-2 break-words text-lg font-bold leading-7",
+              card.tone === "danger"
+                ? "text-danger"
+                : card.tone === "warning"
+                  ? "text-warning"
+                  : card.tone === "muted"
+                    ? "text-muted-foreground"
+                    : "text-primary",
+            )}
+          >
+            {card.value}
+          </p>
+        ) : null}
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{card.description}</p>
+      </div>
+    </article>
+  );
+}
+
+export function buildGlowResultCards(
+  result: ForecastCalculationResult,
+): readonly GlowDecisionCard[] {
+  const analysis = result.glowAnalysis;
+  const bestWindow =
+    analysis.bestGlowWindow ?? analysis.bestGlowWindows[0] ?? analysis.watchableGlowWindows[0];
+  const sunriseWindow = glowWindowForPhase(analysis, "sunrise");
+  const sunsetWindow = glowWindowForPhase(analysis, "sunset");
+  const sunriseDay = glowDailyForPhase(analysis, "sunrise");
+  const sunsetDay = glowDailyForPhase(analysis, "sunset");
+  const obstructionAssessment = prioritizedGlowTerrainObstruction(analysis);
+  const obstructionScore = Math.max(
+    analysis.lowCloudObstructionRisk,
+    analysis.glowLightPathObstructionRisk,
+    analysis.cloudSuppressionRisk,
+  );
+  const firstBackupPlan = analysis.backupPlans[0];
+  const rainWindowText = glowRainWindowText(analysis);
+  const actionText = firstGlowPublicText(
+    [
+      analysis.travelRecommendations[0],
+      firstBackupPlan ? `${firstBackupPlan.action}：${firstBackupPlan.detail}` : undefined,
+    ],
+    "出发前复核日出日落窗口、低云遮挡、通透度、降水打断和现场风况，再决定专程、附近蹲守或临近复核。",
+  );
+
+  return [
+    {
+      title: "朝霞机会",
+      value: formatGlowScoreWithLabel(
+        analysis.sunriseGlowScore,
+        analysis.labels.sunriseGlowOpportunity,
+      ),
+      description: firstGlowPublicText(
+        [
+          sunriseWindow?.noteZh,
+          sunriseDay?.keyReason,
+          analysis.opportunityReasons.find((reason) => reason.includes("朝霞")),
+          analysis.opportunityReasons[0],
+        ],
+        "重点看日出前后的东方低角度光线、中高云色彩载体、低云遮挡和降水是否打断窗口。",
+      ),
+      badge: "朝霞",
+    },
+    {
+      title: "晚霞机会",
+      value: formatGlowScoreWithLabel(analysis.sunsetGlowScore, analysis.labels.sunsetGlowOpportunity),
+      description: firstGlowPublicText(
+        [
+          sunsetWindow?.noteZh,
+          sunsetDay?.keyReason,
+          analysis.opportunityReasons.find((reason) => reason.includes("晚霞")),
+          analysis.opportunityReasons[1],
+        ],
+        "重点看日落前后的西向云缝、通透度、中高云层次以及低云是否压住太阳方向。",
+      ),
+      badge: "晚霞",
+    },
+    {
+      title: "最佳霞光窗口",
+      value: bestWindow
+        ? `${formatGlowTime(bestWindow.start)} - ${formatGlowTime(bestWindow.end)}`
+        : "暂无明确窗口",
+      description: joinGlowPublicText(
+        [
+          bestWindow?.noteZh,
+          bestWindow?.recommendationLabel,
+          bestWindow?.riskTags.slice(0, 2).join("、"),
+        ],
+        "本轮预报没有明确霞光窗口，建议只保留临近复核，并关注短时云缝和降水结束后的转机。",
+      ),
+      badge: bestWindow ? "窗口" : "临近复核",
+      tone: bestWindow ? undefined : "muted",
+    },
+    {
+      title: "色彩载体",
+      value: `${analysis.labels.colorCarrier} · ${formatGlowScore(analysis.glowCarrierScore ?? analysis.colorCarrierScore)}`,
+      description: firstGlowPublicText(
+        [
+          analysis.cloudLayerEvidence[0]?.noteZh,
+          analysis.opportunityReasons.find(
+            (reason) => reason.includes("中高云") || reason.includes("色彩"),
+          ),
+        ],
+        "适量中高云更容易承载日出日落暖色层次；过厚低云或完全空天都可能削弱霞光表现。",
+      ),
+      badge: "中高云",
+    },
+    {
+      title: "遮挡与光路",
+      value: obstructionAssessment
+        ? obstructionAssessment.labelZh
+        : `低云${analysis.labels.lowCloudObstruction} / 光路${analysis.labels.glowLightPathObstructionRisk}`,
+      description: joinGlowPublicText(
+        [
+          obstructionAssessment?.noteZh,
+          `低云遮挡${analysis.labels.lowCloudObstruction}，地形光路遮挡${analysis.labels.glowLightPathObstructionRisk}，云层压制${analysis.labels.cloudSuppressionRisk}。`,
+          analysis.riskReasons.find(
+            (reason) =>
+              reason.includes("低云") || reason.includes("遮挡") || reason.includes("地形"),
+          ),
+        ],
+        "需要同时复核低云是否压住太阳方向、地形是否挡住光路，以及云层厚度是否削弱霞光。",
+      ),
+      badge: "遮挡",
+      tone: glowObstructionTone(obstructionScore, obstructionAssessment),
+    },
+    {
+      title: "通透与现场建议",
+      value: safeGlowPublicText(
+        result.finalTripDecisionLabel ??
+          result.finalRecommendationLabel ??
+          analysis.recommendationLabel ??
+          formatGlowConfidence(analysis.confidence),
+        "临近复核",
+      ),
+      description: joinGlowPublicText(
+        [analysis.aerosolAssessment.implicationZh, rainWindowText, actionText],
+        "复核通透度、气溶胶影响、降水打断、风与现场稳定性后，再决定是否专程、附近蹲守或改拍备选题材。",
+        3,
+      ),
+      badge: "行动",
+      tone:
+        analysis.precipitationDisruptionRisk >= 70 ||
+        analysis.aerosolAssessment.state === "hazy" ||
+        analysis.aerosolAssessment.state === "dusty"
+          ? "warning"
+          : undefined,
+    },
+  ];
+}
+
+function buildGlowPendingCards(state: SubjectForecastLayerState): readonly GlowDecisionCard[] {
+  if (state.status === "idle") {
+    return [
+      {
+        title: "准备生成朝霞晚霞判断",
+        value: "等待计算",
+        description: "已接收地点选择，接下来会生成朝霞机会、晚霞机会、霞光窗口、色彩载体和现场建议。",
+        badge: "准备中",
+      },
+      {
+        title: "右侧将生成霞光卡片",
+        description: "判断会围绕日出日落窗口、中高云色彩载体、低云遮挡、地形光路、通透度和降水打断展开。",
+        badge: "预览",
+      },
+    ];
+  }
+
+  if (state.status === "loading") {
+    return [
+      {
+        title: "正在生成朝霞晚霞判断",
+        value: "日出 / 日落 / 云层",
+        description: "正在结合日出日落窗口、中高云色彩载体、低云遮挡、地形光路、通透度和降水打断。",
+        badge: "生成中",
+      },
+      {
+        title: "朝霞晚霞会分开评估",
+        description: "朝霞和晚霞的太阳方位、云缝和降水时段不同，结果返回后会分别给出机会判断。",
+        badge: "双窗口",
+      },
+      {
+        title: "遮挡与通透同步复核",
+        description: "低云、地形光路、气溶胶和降水会影响是否值得专程，结果返回后会单独标出。",
+        badge: "复核",
+        tone: "warning",
+      },
+    ];
+  }
+
+  return [
+    {
+      title: "朝霞晚霞判断暂不可用",
+      value: "保留已选地点",
+      description:
+        state.errorMessage ??
+        "本次霞光数据暂时不可用；先按日出日落时间、中高云、低云遮挡、通透度、降水和风况做临近复核。",
+      badge: "稍后重试",
+      tone: "muted",
+    },
+    {
+      title: "现场复核重点",
+      description: "优先看太阳方向是否有云缝、低云是否遮挡光路、透明度是否足够，以及降水是否打断关键窗口。",
+      badge: "复核",
+    },
+  ];
+}
+
+function glowPanelTitle(
+  location: SelectedLocation,
+  state: SubjectForecastLayerState,
+  hasGeneratedResult: boolean,
+): string {
+  if (hasGeneratedResult) {
+    return `${location.displayName} 朝霞晚霞拍摄判断`;
+  }
+  if (state.status === "loading") {
+    return "正在生成朝霞晚霞判断";
+  }
+  if (state.status === "fallback" || state.status === "error") {
+    return "朝霞晚霞判断暂不可用";
+  }
+  return "准备生成朝霞晚霞判断";
+}
+
+function glowPanelDescription(
+  state: SubjectForecastLayerState,
+  hasGeneratedResult: boolean,
+): string {
+  if (state.status === "loading") {
+    return "正在生成朝霞晚霞判断：会分别拆分朝霞机会、晚霞机会、霞光窗口、中高云色彩载体、遮挡光路和现场建议。";
+  }
+  if (state.status === "fallback" || state.status === "error") {
+    return "本次朝霞晚霞判断暂不可用；已保留地点和预报范围，可稍后重试或先按现场复核重点判断。";
+  }
+  if (state.status === "partial") {
+    return "已生成朝霞晚霞判断；部分辅助数据可能缺失，建议把低云遮挡、地形光路、通透度和降水打断作为现场复核重点。";
+  }
+  if (hasGeneratedResult) {
+    return "已根据当前预报生成朝霞机会、晚霞机会、最佳霞光窗口、色彩载体、遮挡光路和现场行动建议。";
+  }
+  return "选择地点后会在右侧生成朝霞晚霞专用判断卡片，不会自动离开当前页面。";
+}
+
+function glowBadgeVariant(tone: GlowDecisionCard["tone"]): "accent" | "danger" | "muted" | "warning" {
+  if (tone === "danger") {
+    return "danger";
+  }
+  if (tone === "warning") {
+    return "warning";
+  }
+  if (tone === "muted") {
+    return "muted";
+  }
+  return "accent";
+}
+
+function glowWindowForPhase(
+  analysis: GlowAnalysisForDecision,
+  phase: GlowWindowForDecision["phase"],
+): GlowWindowForDecision | undefined {
+  return glowDecisionWindows(analysis).find((window) => window.phase === phase);
+}
+
+function glowDecisionWindows(
+  analysis: GlowAnalysisForDecision,
+): readonly GlowWindowForDecision[] {
+  const windows = [
+    analysis.bestGlowWindow,
+    ...analysis.bestGlowWindows,
+    ...analysis.watchableGlowWindows,
+  ];
+
+  return windows.filter((window): window is GlowWindowForDecision => Boolean(window));
+}
+
+function glowDailyForPhase(
+  analysis: GlowAnalysisForDecision,
+  phase: NonNullable<GlowWindowForDecision["phase"]>,
+): GlowAnalysisForDecision["dailyGlow"][number] | undefined {
+  return analysis.dailyGlow.find((day) =>
+    phase === "sunrise" ? day.sunriseScore >= day.sunsetScore : day.sunsetScore >= day.sunriseScore,
+  );
+}
+
+function prioritizedGlowTerrainObstruction(
+  analysis: GlowAnalysisForDecision,
+): GlowTerrainObstructionForDecision | undefined {
+  return (
+    analysis.terrainObstructionAssessments.find(
+      (assessment) => assessment.obstructionStatus === "blocked",
+    ) ??
+    analysis.terrainObstructionAssessments.find(
+      (assessment) => assessment.obstructionStatus === "marginal",
+    ) ??
+    analysis.terrainObstructionAssessments.find(
+      (assessment) => assessment.dataAvailable && assessment.obstructionStatus !== "clear",
+    )
+  );
+}
+
+function glowObstructionTone(
+  obstructionScore: number,
+  assessment: GlowTerrainObstructionForDecision | undefined,
+): GlowDecisionCard["tone"] {
+  if (assessment?.obstructionStatus === "blocked" || obstructionScore >= 70) {
+    return "danger";
+  }
+  if (assessment?.obstructionStatus === "marginal" || obstructionScore >= 45) {
+    return "warning";
+  }
+  return undefined;
+}
+
+function glowRainWindowText(analysis: GlowAnalysisForDecision): string | undefined {
+  if (analysis.rainOverlapsSunriseWindow && analysis.rainOverlapsSunsetWindow) {
+    return "降水可能打断朝霞和晚霞关键窗口，临近出发前需要复核短临变化。";
+  }
+  if (analysis.rainOverlapsSunriseWindow) {
+    return "降水可能打断朝霞窗口，日出前需要重点复核短临变化。";
+  }
+  if (analysis.rainOverlapsSunsetWindow) {
+    return "降水可能打断晚霞窗口，日落前需要重点复核短临变化。";
+  }
+  if (analysis.precipitationDisruptionRisk >= 55) {
+    return "降水打断风险偏高，关键窗口前后需要保留备选题材。";
+  }
+  return undefined;
+}
+
+function formatGlowScoreWithLabel(value: number | null | undefined, label: string): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${Math.round(value)} / 100 · ${label}`
+    : label;
+}
+
+function formatGlowScore(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${Math.round(value)} / 100`
+    : "待计算";
+}
+
+function formatGlowConfidence(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `置信度 ${Math.round(value)} / 100`
+    : "临近复核";
+}
+
+function formatGlowTime(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestamp));
+}
+
+function firstGlowPublicText(
+  values: readonly (string | null | undefined)[],
+  fallback: string,
+): string {
+  for (const value of values) {
+    const safeValue = safeGlowPublicText(value, "");
+    if (safeValue) {
+      return safeValue;
+    }
+  }
+  return fallback;
+}
+
+function joinGlowPublicText(
+  values: readonly (string | null | undefined)[],
+  fallback: string,
+  maxItems = 2,
+): string {
+  const safeValues = values
+    .map((value) => safeGlowPublicText(value, ""))
+    .filter((value, index, allValues) => value && allValues.indexOf(value) === index);
+
+  return safeValues.length > 0 ? safeValues.slice(0, maxItems).join(" ") : fallback;
+}
+
+function safeGlowPublicText(value: string | null | undefined, fallback: string): string {
+  const text = value?.trim();
+  if (!text || unsafeGlowPublicTextPattern.test(text)) {
+    return fallback;
+  }
+  return text;
+}
+
+const unsafeGlowPublicTextPattern =
+  /\b(?:AI|GFS|DEM|VRT)\b|Open-Meteo|meteoblue|Copernicus|GLO-30|provider|debug|synthetic|fixture|weatherProvider|dataSource|glowLightPathObstructionRisk|aerosolOpticalDepth550|providerAgreement|scoreBreakdown|diagnostic|diagnostics|fieldMetadata/i;
 
 function cloudSeaPanelTitle(
   location: SelectedLocation,
