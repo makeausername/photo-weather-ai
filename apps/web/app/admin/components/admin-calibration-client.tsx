@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -21,6 +21,11 @@ import type {
   AdminGeoSearchResult,
   AdminObservedOutcome,
 } from "../admin-api";
+import {
+  AdminActionToast,
+  type AdminActionFeedback,
+  type AdminActionFeedbackInput,
+} from "./admin-action-feedback";
 
 type CalibrationOverviewResponse = {
   readonly overview: {
@@ -327,6 +332,13 @@ export function AdminCalibrationClient() {
   const [endDate, setEndDate] = useState(todayDate());
   const [outcomeForm, setOutcomeForm] = useState<OutcomeForm>(emptyOutcomeForm);
   const [status, setStatus] = useState("正在加载历史校准数据...");
+  const [actionToast, setActionToast] = useState<AdminActionFeedback | null>(null);
+  const actionToastId = useRef(0);
+
+  function showActionToast(feedback: AdminActionFeedbackInput) {
+    actionToastId.current += 1;
+    setActionToast({ id: actionToastId.current, ...feedback });
+  }
 
   const selectedLocationKey = useMemo(() => manualLocationKey(manualLocation), [manualLocation]);
   const filteredStats = stats.filter(
@@ -383,7 +395,13 @@ export function AdminCalibrationClient() {
   }
 
   async function fetchHistory() {
-    setStatus("正在拉取历史天气...");
+    const loadingMessage = "正在拉取历史天气...";
+    setStatus(loadingMessage);
+    showActionToast({
+      variant: "saving",
+      title: "历史天气",
+      message: loadingMessage,
+    });
     try {
       const locationPayload = manualLocationPayload(manualLocation);
       const response = await adminApiFetch<{
@@ -396,16 +414,32 @@ export function AdminCalibrationClient() {
         body: JSON.stringify({ ...locationPayload, startDate, endDate }),
       });
       setManualLocation((current) => formFromReturnedLocation(current, response.location));
-      setStatus(
-        `历史天气已入库：新增 ${response.insertedCount} 条，跳过重复 ${response.skippedDuplicateCount} 条。`,
-      );
+      const message = `历史天气已入库：新增 ${response.insertedCount} 条，跳过重复 ${response.skippedDuplicateCount} 条。`;
+      setStatus(message);
+      showActionToast({
+        variant: "success",
+        title: "历史天气",
+        message,
+      });
     } catch (error) {
-      setStatus((error as Error).message);
+      const message = (error as Error).message;
+      setStatus(message);
+      showActionToast({
+        variant: "error",
+        title: "历史天气",
+        message,
+      });
     }
   }
 
   async function runReplay() {
-    setStatus("正在执行历史回放...");
+    const loadingMessage = "正在执行历史回放...";
+    setStatus(loadingMessage);
+    showActionToast({
+      variant: "saving",
+      title: "历史回放",
+      message: loadingMessage,
+    });
     try {
       const locationPayload = manualLocationPayload(manualLocation);
       const locationKey = buildWgs84LocationKey(
@@ -425,14 +459,32 @@ export function AdminCalibrationClient() {
         },
       );
       await loadReplayResults(locationKey, target);
-      setStatus(`历史回放完成：生成 ${response.resultCount} 条预测结果。`);
+      const message = `历史回放完成：生成 ${response.resultCount} 条预测结果。`;
+      setStatus(message);
+      showActionToast({
+        variant: "success",
+        title: "历史回放",
+        message,
+      });
     } catch (error) {
-      setStatus((error as Error).message);
+      const message = (error as Error).message;
+      setStatus(message);
+      showActionToast({
+        variant: "error",
+        title: "历史回放",
+        message,
+      });
     }
   }
 
   async function rebuildStats() {
-    setStatus("正在计算校准统计...");
+    const loadingMessage = "正在计算校准统计...";
+    setStatus(loadingMessage);
+    showActionToast({
+      variant: "saving",
+      title: "校准统计",
+      message: loadingMessage,
+    });
     try {
       const locationPayload = manualLocationPayload(manualLocation);
       const response = await adminApiFetch<{ readonly stats: AdminCalibrationStats }>(
@@ -453,14 +505,32 @@ export function AdminCalibrationClient() {
             ),
         ),
       ]);
-      setStatus("校准统计已更新。");
+      const message = "校准统计已更新。";
+      setStatus(message);
+      showActionToast({
+        variant: "success",
+        title: "校准统计",
+        message,
+      });
     } catch (error) {
-      setStatus((error as Error).message);
+      const message = (error as Error).message;
+      setStatus(message);
+      showActionToast({
+        variant: "error",
+        title: "校准统计",
+        message,
+      });
     }
   }
 
   async function saveOutcome() {
-    setStatus("正在保存观测标注...");
+    const loadingMessage = "正在保存观测标注...";
+    setStatus(loadingMessage);
+    showActionToast({
+      variant: "saving",
+      title: "保存观测标注",
+      message: loadingMessage,
+    });
     try {
       const locationPayload = manualLocationPayload(manualLocation);
       const locationKey = buildWgs84LocationKey(
@@ -508,9 +578,21 @@ export function AdminCalibrationClient() {
         );
       }
       await loadReplayResults(locationKey, target);
-      setStatus("观测标注已保存。");
+      const message = "观测标注已保存。";
+      setStatus(message);
+      showActionToast({
+        variant: "success",
+        title: "保存观测标注",
+        message,
+      });
     } catch (error) {
-      setStatus((error as Error).message);
+      const message = (error as Error).message;
+      setStatus(message);
+      showActionToast({
+        variant: "error",
+        title: "保存观测标注",
+        message,
+      });
     }
   }
 
@@ -540,20 +622,45 @@ export function AdminCalibrationClient() {
   async function searchGeoLocation() {
     const query = geoSearchQuery.trim();
     if (!query) {
-      setStatus("请输入要搜索的地点名称。");
+      const message = "请输入要搜索的地点名称。";
+      setStatus(message);
+      showActionToast({
+        variant: "warning",
+        title: "地点搜索",
+        message,
+      });
       return;
     }
 
-    setStatus("正在搜索地点...");
+    const loadingMessage = "正在搜索地点...";
+    setStatus(loadingMessage);
+    showActionToast({
+      variant: "saving",
+      title: "地点搜索",
+      message: loadingMessage,
+    });
     try {
       const response = await adminApiFetch<GeoSearchResponse>(
         `/admin/geo/search?q=${encodeURIComponent(query)}`,
       );
       setGeoSearchResults(response.results);
-      setStatus(response.results.length > 0 ? "地点搜索结果已加载。" : "未找到地点，请手动填写 WGS84 坐标。");
+      const message =
+        response.results.length > 0 ? "地点搜索结果已加载。" : "未找到地点，请手动填写 WGS84 坐标。";
+      setStatus(message);
+      showActionToast({
+        variant: response.results.length > 0 ? "success" : "warning",
+        title: "地点搜索",
+        message,
+      });
     } catch (error) {
       setGeoSearchResults([]);
-      setStatus(`${(error as Error).message}。可继续手动填写 WGS84 坐标。`);
+      const message = `${(error as Error).message}。可继续手动填写 WGS84 坐标。`;
+      setStatus(message);
+      showActionToast({
+        variant: "error",
+        title: "地点搜索",
+        message,
+      });
     }
   }
 
@@ -566,11 +673,18 @@ export function AdminCalibrationClient() {
     }));
     setGeoSearchQuery(result.name);
     setGeoSearchResults([]);
-    setStatus("已填入搜索结果，可按需校正 WGS84 坐标。");
+    const message = "已填入搜索结果，可按需校正 WGS84 坐标。";
+    setStatus(message);
+    showActionToast({
+      variant: "info",
+      title: "地点搜索",
+      message,
+    });
   }
 
   return (
     <div className="grid gap-5">
+      <AdminActionToast feedback={actionToast} onDismiss={() => setActionToast(null)} />
       <Card className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
           <div>

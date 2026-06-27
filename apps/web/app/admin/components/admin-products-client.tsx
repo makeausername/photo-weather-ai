@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listAdminProducts, updateAdminProduct, type AdminBillingProduct } from "../admin-api";
 import {
   Badge,
@@ -13,6 +13,11 @@ import {
   Textarea,
   cn,
 } from "../../../components/ui";
+import {
+  AdminActionToast,
+  type AdminActionFeedback,
+  type AdminActionFeedbackInput,
+} from "./admin-action-feedback";
 import { getAdaptiveGridClassName, getAdaptiveGridItemClassName } from "./admin-adaptive-grid";
 
 type LoadState = "loading" | "ready" | "saving" | "error";
@@ -44,6 +49,13 @@ export function AdminProductsClient({
   );
   const [state, setState] = useState<LoadState>(initialProducts ? "ready" : "loading");
   const [message, setMessage] = useState("");
+  const [actionToast, setActionToast] = useState<AdminActionFeedback | null>(null);
+  const actionToastId = useRef(0);
+
+  function showActionToast(feedback: AdminActionFeedbackInput) {
+    actionToastId.current += 1;
+    setActionToast({ id: actionToastId.current, ...feedback });
+  }
 
   useEffect(() => {
     if (initialProducts) {
@@ -92,21 +104,39 @@ export function AdminProductsClient({
     if (!selectedProduct || !draft) {
       return;
     }
+    const productName = draft.name.trim() || selectedProduct.name;
     const amountCents = Math.round(Number(draft.amountYuan) * 100);
     if (!Number.isFinite(amountCents) || amountCents < 0) {
+      const errorMessage = "价格必须是有效的非负金额。";
       setState("error");
-      setMessage("价格必须是有效的非负金额。");
+      setMessage(errorMessage);
+      showActionToast({
+        variant: "error",
+        title: "保存套餐定价",
+        message: errorMessage,
+      });
       return;
     }
     const sortOrder = Number(draft.sortOrder);
     if (!Number.isInteger(sortOrder) || sortOrder < 0) {
+      const errorMessage = "排序值必须是非负整数。";
       setState("error");
-      setMessage("排序值必须是非负整数。");
+      setMessage(errorMessage);
+      showActionToast({
+        variant: "error",
+        title: "保存套餐定价",
+        message: errorMessage,
+      });
       return;
     }
 
     setState("saving");
     setMessage("");
+    showActionToast({
+      variant: "saving",
+      title: "保存套餐定价",
+      message: `正在保存「${productName}」...`,
+    });
     try {
       const updated = await updateAdminProduct(selectedProduct.code, {
         name: draft.name.trim(),
@@ -131,14 +161,26 @@ export function AdminProductsClient({
       setDraft(draftFromProduct(updated));
       setState("ready");
       setMessage("套餐定价已保存。");
+      showActionToast({
+        variant: "success",
+        title: "保存套餐定价",
+        message: `「${updated.name}」已保存。`,
+      });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "套餐定价保存失败。";
       setState("error");
-      setMessage(error instanceof Error ? error.message : "套餐定价保存失败。");
+      setMessage(errorMessage);
+      showActionToast({
+        variant: "error",
+        title: "保存套餐定价",
+        message: `套餐保存失败：${errorMessage}`,
+      });
     }
   }
 
   return (
     <div className="grid gap-5" data-admin-products="pricing-management">
+      <AdminActionToast feedback={actionToast} onDismiss={() => setActionToast(null)} />
       {message ? (
         <p
           role={state === "error" ? "alert" : "status"}

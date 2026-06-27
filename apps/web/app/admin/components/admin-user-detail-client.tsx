@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -28,6 +28,11 @@ import {
   updateAdminUserRoles,
   type AdminUserDetail,
 } from "../admin-api";
+import {
+  AdminActionToast,
+  type AdminActionFeedback,
+  type AdminActionFeedbackInput,
+} from "./admin-action-feedback";
 import { getAdaptiveGridClassName } from "./admin-adaptive-grid";
 
 type TabKey = "overview" | "orders" | "credits" | "history" | "sessions" | "audit";
@@ -89,6 +94,13 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
   const [profileForm, setProfileForm] = useState({ email: "", phone: "", displayName: "" });
   const [roleCodes, setRoleCodes] = useState<readonly string[]>([]);
+  const [actionToast, setActionToast] = useState<AdminActionFeedback | null>(null);
+  const actionToastId = useRef(0);
+
+  function showActionToast(feedback: AdminActionFeedbackInput) {
+    actionToastId.current += 1;
+    setActionToast({ id: actionToastId.current, ...feedback });
+  }
 
   async function loadUser() {
     try {
@@ -111,6 +123,12 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
   }, [userId]);
 
   async function saveProfile() {
+    const userLabel = user ? safeDisplayNameFromUser(user.profile) : "用户";
+    showActionToast({
+      variant: "saving",
+      title: "保存用户资料",
+      message: `正在保存「${userLabel}」资料...`,
+    });
     try {
       const next = await updateAdminUser(userId, {
         email: profileForm.email || null,
@@ -119,19 +137,47 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
       });
       setUser(next);
       setStatus("资料已保存。");
+      showActionToast({
+        variant: "success",
+        title: "保存用户资料",
+        message: "资料已保存。",
+      });
     } catch (error) {
-      setStatus((error as Error).message);
+      const message = (error as Error).message;
+      setStatus(message);
+      showActionToast({
+        variant: "error",
+        title: "保存用户资料",
+        message,
+      });
     }
   }
 
   async function saveRoles() {
+    const userLabel = user ? safeDisplayNameFromUser(user.profile) : "用户";
+    showActionToast({
+      variant: "saving",
+      title: "保存用户角色",
+      message: `正在保存「${userLabel}」角色...`,
+    });
     try {
       const next = await updateAdminUserRoles(userId, roleCodes);
       setUser(next);
       setRoleCodes(next.roleCodes);
       setStatus("角色已更新。");
+      showActionToast({
+        variant: "success",
+        title: "保存用户角色",
+        message: "角色已更新。",
+      });
     } catch (error) {
-      setStatus((error as Error).message);
+      const message = (error as Error).message;
+      setStatus(message);
+      showActionToast({
+        variant: "error",
+        title: "保存用户角色",
+        message,
+      });
     }
   }
 
@@ -139,29 +185,61 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
     if (!pendingAction) {
       return;
     }
+    const userLabel = user ? safeDisplayNameFromUser(user.profile) : "用户";
+    showActionToast({
+      variant: "saving",
+      title: "用户操作",
+      message: `正在处理「${userLabel}」...`,
+    });
     try {
       if (pendingAction === "disable") {
         const result = await disableAdminUser(userId);
         setUser(result.user);
         setStatus("用户已禁用，活跃会话已撤销。");
+        showActionToast({
+          variant: "success",
+          title: "用户操作",
+          message: "用户已禁用，活跃会话已撤销。",
+        });
       }
       if (pendingAction === "enable") {
         setUser(await enableAdminUser(userId));
         setStatus("用户已启用。");
+        showActionToast({
+          variant: "success",
+          title: "用户操作",
+          message: "用户已启用。",
+        });
       }
       if (pendingAction === "reset") {
         const result = await resetAdminUserPassword(userId);
         setUser(result.user);
         setTemporaryPassword(result.generatedPassword);
         setStatus("临时密码已生成，会话已撤销。");
+        showActionToast({
+          variant: "success",
+          title: "用户操作",
+          message: "临时密码已生成，请查看页面提示。",
+        });
       }
       if (pendingAction === "revoke") {
         const result = await revokeAdminUserSessions(userId);
         setStatus(`已撤销 ${result.revokedSessionCount} 个会话。`);
+        showActionToast({
+          variant: "success",
+          title: "用户操作",
+          message: `已撤销 ${result.revokedSessionCount} 个会话。`,
+        });
         await loadUser();
       }
     } catch (error) {
-      setStatus((error as Error).message);
+      const message = (error as Error).message;
+      setStatus(message);
+      showActionToast({
+        variant: "error",
+        title: "用户操作",
+        message,
+      });
     } finally {
       setPendingAction(null);
     }
@@ -191,6 +269,7 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
 
   return (
     <div className="grid gap-5">
+      <AdminActionToast feedback={actionToast} onDismiss={() => setActionToast(null)} />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Card className="grid gap-4 p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">

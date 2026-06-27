@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -27,6 +27,11 @@ import {
   type AdminPaymentOrderListItem,
   type AdminPaymentOrderListResponse,
 } from "../admin-api";
+import {
+  AdminActionToast,
+  type AdminActionFeedback,
+  type AdminActionFeedbackInput,
+} from "./admin-action-feedback";
 import { getAdaptiveGridClassName, getAdaptiveGridItemClassName } from "./admin-adaptive-grid";
 
 type PendingAction =
@@ -108,6 +113,13 @@ export function AdminOrdersClient() {
     createdTo: "",
   });
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [actionToast, setActionToast] = useState<AdminActionFeedback | null>(null);
+  const actionToastId = useRef(0);
+
+  function showActionToast(feedback: AdminActionFeedbackInput) {
+    actionToastId.current += 1;
+    setActionToast({ id: actionToastId.current, ...feedback });
+  }
 
   const query = useMemo(
     () => ({
@@ -144,25 +156,54 @@ export function AdminOrdersClient() {
     if (!pendingAction) {
       return;
     }
+    showActionToast({
+      variant: "saving",
+      title: "订单操作",
+      message: `正在处理订单 ${pendingAction.order.orderNo}...`,
+    });
     try {
       if (pendingAction.kind === "mark-paid") {
         const result = await markAdminOrderPaid(pendingAction.order.orderNo);
-        setStatus(
-          result.entitlementGranted ? "订单已手动标记支付并发放权益。" : "订单已是支付完成状态。",
-        );
+        const message = result.entitlementGranted
+          ? "订单已手动标记支付并发放权益。"
+          : "订单已是支付完成状态。";
+        setStatus(message);
+        showActionToast({
+          variant: "success",
+          title: "订单操作",
+          message,
+        });
       }
       if (pendingAction.kind === "cancel") {
         await cancelAdminOrder(pendingAction.order.orderNo);
-        setStatus("订单已取消。");
+        const message = "订单已取消。";
+        setStatus(message);
+        showActionToast({
+          variant: "success",
+          title: "订单操作",
+          message,
+        });
       }
       if (pendingAction.kind === "close") {
         await closeAdminOrder(pendingAction.order.orderNo);
-        setStatus("订单已关闭。");
+        const message = "订单已关闭。";
+        setStatus(message);
+        showActionToast({
+          variant: "success",
+          title: "订单操作",
+          message,
+        });
       }
       setPendingAction(null);
       await loadOrders();
     } catch (error) {
-      setStatus((error as Error).message);
+      const message = (error as Error).message;
+      setStatus(message);
+      showActionToast({
+        variant: "error",
+        title: "订单操作",
+        message,
+      });
       setPendingAction(null);
     }
   }
@@ -172,6 +213,7 @@ export function AdminOrdersClient() {
 
   return (
     <div className="grid gap-5">
+      <AdminActionToast feedback={actionToast} onDismiss={() => setActionToast(null)} />
       <div
         className={getAdaptiveGridClassName(summaryCardItems.length, {
           variant: "metric",

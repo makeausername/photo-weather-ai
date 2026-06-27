@@ -25,6 +25,11 @@ import {
   refreshCdnCache,
 } from "../admin-api";
 import { Badge, Button, EmptyState, FormField, Input, Select, cn } from "../../../components/ui";
+import {
+  AdminActionToast,
+  type AdminActionFeedback,
+  type AdminActionFeedbackInput,
+} from "./admin-action-feedback";
 import { getAdaptiveGridClassName, getAdaptiveGridItemClassName } from "./admin-adaptive-grid";
 import {
   isProviderSaveDisabled,
@@ -654,6 +659,14 @@ function createClearSecretDrafts(providers: readonly SafeProviderConfig[]): Clea
   return Object.fromEntries(providers.map((provider) => [provider.id, {}]));
 }
 
+function hasPendingSecretFieldDrafts(drafts: Record<string, string> | undefined): boolean {
+  return Object.values(drafts ?? {}).some((value) => value.trim().length > 0);
+}
+
+function hasPendingClearSecretDrafts(drafts: Record<string, boolean> | undefined): boolean {
+  return Object.values(drafts ?? {}).some(Boolean);
+}
+
 function createEnabledDrafts(providers: readonly SafeProviderConfig[]): Record<string, boolean> {
   return Object.fromEntries(providers.map((provider) => [provider.id, provider.enabled]));
 }
@@ -884,6 +897,39 @@ function FeedbackPill({ state, dirty }: { readonly state?: RowState; readonly di
     >
       {message}
     </span>
+  );
+}
+
+function ProviderSaveDetailMessage({
+  state,
+  dirty,
+}: {
+  readonly state?: RowState;
+  readonly dirty?: boolean;
+}) {
+  const message =
+    state?.status === "error"
+      ? "保存失败，请检查上方字段。"
+      : dirty
+        ? "有未保存修改。"
+        : state?.status === "saved"
+          ? "上次保存成功。"
+          : null;
+
+  if (!message) {
+    return null;
+  }
+
+  const status = state?.status === "error" ? "error" : dirty ? "testing" : "saved";
+
+  return (
+    <p
+      role={state?.status === "error" ? "alert" : "status"}
+      aria-live={state?.status === "error" ? "assertive" : "polite"}
+      className={cn("rounded-md border px-3 py-2 text-sm", stateClass(status))}
+    >
+      {message}
+    </p>
   );
 }
 
@@ -1247,7 +1293,13 @@ function CdnOperationResultSummary({ result }: { readonly result?: AdminCdnOpera
   );
 }
 
-function CdnOperationsPanel({ providers }: { readonly providers: readonly SafeProviderConfig[] }) {
+function CdnOperationsPanel({
+  providers,
+  onActionFeedback,
+}: {
+  readonly providers: readonly SafeProviderConfig[];
+  readonly onActionFeedback?: (feedback: AdminActionFeedbackInput) => void;
+}) {
   const [selectedProviderId, setSelectedProviderId] = useState<string>("");
   const [refreshUrlsInput, setRefreshUrlsInput] = useState("");
   const [refreshDirectoriesInput, setRefreshDirectoriesInput] = useState("");
@@ -1320,23 +1372,42 @@ function CdnOperationsPanel({ providers }: { readonly providers: readonly SafePr
     }
     if (!canRefresh) {
       setErrorMessage(readiness.message);
+      onActionFeedback?.({
+        variant: "warning",
+        message: readiness.message,
+      });
       return;
     }
 
     setBusyAction("refresh");
     setErrorMessage(null);
     setResult(undefined);
+    onActionFeedback?.({
+      variant: "saving",
+      title: "CDN 缓存刷新",
+      message: "正在提交 CDN 缓存刷新操作...",
+    });
     try {
-      setResult(
-        await refreshCdnCache({
-          providerCode: selectedProviderCode,
-          urls: refreshUrls,
-          directories: refreshDirectories,
-          refreshType,
-        }),
-      );
+      const nextResult = await refreshCdnCache({
+        providerCode: selectedProviderCode,
+        urls: refreshUrls,
+        directories: refreshDirectories,
+        refreshType,
+      });
+      setResult(nextResult);
+      onActionFeedback?.({
+        variant: nextResult.success ? "success" : "error",
+        title: "CDN 缓存刷新",
+        message: nextResult.messageZh,
+      });
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "CDN 缓存刷新失败。");
+      const message = error instanceof Error ? error.message : "CDN 缓存刷新失败。";
+      setErrorMessage(message);
+      onActionFeedback?.({
+        variant: "error",
+        title: "CDN 缓存刷新",
+        message,
+      });
     } finally {
       setBusyAction(null);
     }
@@ -1348,21 +1419,40 @@ function CdnOperationsPanel({ providers }: { readonly providers: readonly SafePr
     }
     if (!canPrefetch) {
       setErrorMessage(readiness.message);
+      onActionFeedback?.({
+        variant: "warning",
+        message: readiness.message,
+      });
       return;
     }
 
     setBusyAction("prefetch");
     setErrorMessage(null);
     setResult(undefined);
+    onActionFeedback?.({
+      variant: "saving",
+      title: "CDN URL 预热",
+      message: "正在提交 CDN URL 预热操作...",
+    });
     try {
-      setResult(
-        await prefetchCdnUrls({
-          providerCode: selectedProviderCode,
-          urls: prefetchUrls,
-        }),
-      );
+      const nextResult = await prefetchCdnUrls({
+        providerCode: selectedProviderCode,
+        urls: prefetchUrls,
+      });
+      setResult(nextResult);
+      onActionFeedback?.({
+        variant: nextResult.success ? "success" : "error",
+        title: "CDN URL 预热",
+        message: nextResult.messageZh,
+      });
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "CDN URL 预热失败。");
+      const message = error instanceof Error ? error.message : "CDN URL 预热失败。";
+      setErrorMessage(message);
+      onActionFeedback?.({
+        variant: "error",
+        title: "CDN URL 预热",
+        message,
+      });
     } finally {
       setBusyAction(null);
     }
@@ -1528,6 +1618,13 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   const savingProviderIds = useRef(new Set<string>());
   const testingProviderIds = useRef(new Set<string>());
   const sendingEmailTestProviderIds = useRef(new Set<string>());
+  const [actionToast, setActionToast] = useState<AdminActionFeedback | null>(null);
+  const actionToastId = useRef(0);
+
+  function showActionToast(feedback: AdminActionFeedbackInput) {
+    actionToastId.current += 1;
+    setActionToast({ id: actionToastId.current, ...feedback });
+  }
 
   const loadProviders = useCallback(async () => {
     setLoadState({ status: "saving", message: `正在刷新${moduleDefinition.title}状态...` });
@@ -1745,11 +1842,33 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       return;
     }
 
+    const pendingSecretChanges =
+      hasPendingSecretFieldDrafts(secretFieldDrafts[provider.id]) ||
+      hasPendingClearSecretDrafts(clearSecretDrafts[provider.id]);
+    if (!dirtyProviders[provider.id] && !pendingSecretChanges) {
+      const message = "当前配置已是最新。";
+      setSaveStateByProvider((current) => ({
+        ...current,
+        [provider.id]: { status: "saved", message },
+      }));
+      showActionToast({
+        variant: "info",
+        title: "保存配置",
+        message: `「${providerName(provider)}」${message}`,
+      });
+      return;
+    }
+
     savingProviderIds.current.add(provider.id);
     setSaveStateByProvider((current) => ({
       ...current,
       [provider.id]: { status: "saving", message: "正在保存..." },
     }));
+    showActionToast({
+      variant: "saving",
+      title: "保存配置",
+      message: `正在保存「${providerName(provider)}」配置...`,
+    });
 
     try {
       const configJson: Record<string, JsonValue> = {};
@@ -1813,18 +1932,30 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       setSecretFieldDrafts((current) => ({ ...current, [provider.id]: {} }));
       setClearSecretDrafts((current) => ({ ...current, [provider.id]: {} }));
       setDirtyProviders((current) => ({ ...current, [provider.id]: false }));
+      const successMessage = response.messageZh ?? providerSaveSuccessMessage(response.provider);
       setSaveStateByProvider((current) => ({
         ...current,
         [provider.id]: {
           status: "saved",
-          message: response.messageZh ?? providerSaveSuccessMessage(response.provider),
+          message: successMessage,
         },
       }));
+      showActionToast({
+        variant: "success",
+        title: "保存配置",
+        message: successMessage,
+      });
     } catch (error) {
+      const message = providerSaveErrorMessage(error);
       setSaveStateByProvider((current) => ({
         ...current,
-        [provider.id]: { status: "error", message: providerSaveErrorMessage(error) },
+        [provider.id]: { status: "error", message },
       }));
+      showActionToast({
+        variant: "error",
+        title: "保存配置",
+        message: `「${providerName(provider)}」${message}`,
+      });
     } finally {
       savingProviderIds.current.delete(provider.id);
     }
@@ -1840,32 +1971,52 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
 
     testingProviderIds.current.add(provider.id);
     const realEnabled = isRealDevCallEnabled(provider, realDevCallFlags);
+    const testingMessage = realEnabled
+      ? "测试中，正在请求真实服务..."
+      : "测试中，正在执行模拟测试...";
     setTestStateByProvider((current) => ({
       ...current,
       [provider.id]: {
         status: "testing",
-        message: realEnabled ? "测试中，正在请求真实服务..." : "测试中，正在执行模拟测试...",
+        message: testingMessage,
       },
     }));
+    showActionToast({
+      variant: "saving",
+      title: "测试连接",
+      message: `正在测试「${providerName(provider)}」连接...`,
+    });
 
     try {
       const result = await adminApiFetch<MockConnectionTestResult>(
         `/admin/providers/${provider.providerType}/${provider.providerCode}/test-connection`,
         createProviderConnectionTestRequestInit(),
       );
+      const message = providerTestSuccessMessage(provider, result);
       setTestResultByProvider((current) => ({ ...current, [provider.id]: result }));
       setTestStateByProvider((current) => ({
         ...current,
         [provider.id]: {
           status: result.success === false ? "error" : "saved",
-          message: providerTestSuccessMessage(provider, result),
+          message,
         },
       }));
+      showActionToast({
+        variant: result.success === false ? "error" : "success",
+        title: "测试连接",
+        message,
+      });
     } catch (error) {
+      const message = providerTestErrorMessage(provider, error);
       setTestStateByProvider((current) => ({
         ...current,
-        [provider.id]: { status: "error", message: providerTestErrorMessage(provider, error) },
+        [provider.id]: { status: "error", message },
       }));
+      showActionToast({
+        variant: "error",
+        title: "测试连接",
+        message,
+      });
     } finally {
       testingProviderIds.current.delete(provider.id);
     }
@@ -1892,10 +2043,16 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
 
     const to = (emailTestDrafts[provider.id] ?? "").trim();
     if (!to) {
+      const message = "请填写测试邮箱。";
       setEmailTestStateByProvider((current) => ({
         ...current,
-        [provider.id]: { status: "error", message: "请填写测试邮箱。" },
+        [provider.id]: { status: "error", message },
       }));
+      showActionToast({
+        variant: "error",
+        title: "发送测试邮件",
+        message,
+      });
       return;
     }
 
@@ -1904,6 +2061,11 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       ...current,
       [provider.id]: { status: "testing", message: "正在发送测试邮件..." },
     }));
+    showActionToast({
+      variant: "saving",
+      title: "发送测试邮件",
+      message: `正在通过「${providerName(provider)}」发送测试邮件...`,
+    });
 
     try {
       const result = await adminApiFetch<AdminEmailTestResult>(
@@ -1921,15 +2083,27 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           message: result.messageZh,
         },
       }));
+      showActionToast({
+        variant: result.success ? "success" : "error",
+        title: "发送测试邮件",
+        message: result.messageZh,
+      });
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "测试邮件发送失败，请检查配置后重试。";
       setEmailTestResultByProvider((current) => ({ ...current, [provider.id]: undefined }));
       setEmailTestStateByProvider((current) => ({
         ...current,
         [provider.id]: {
           status: "error",
-          message: error instanceof Error ? error.message : "测试邮件发送失败，请检查配置后重试。",
+          message,
         },
       }));
+      showActionToast({
+        variant: "error",
+        title: "发送测试邮件",
+        message,
+      });
     } finally {
       sendingEmailTestProviderIds.current.delete(provider.id);
     }
@@ -2332,6 +2506,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               </Button>
             </div>
           </div>
+          <ProviderSaveDetailMessage state={saveState} dirty={dirty} />
           <ProviderTestDetails result={testResultByProvider[provider.id]} />
         </footer>
       </article>
@@ -2357,6 +2532,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       data-provider-console
       data-provider-module={moduleDefinition.key}
     >
+      <AdminActionToast feedback={actionToast} onDismiss={() => setActionToast(null)} />
       <header className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-sm xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <h2 className="text-xl font-bold tracking-normal text-foreground">
@@ -2481,7 +2657,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         )}
       </section>
 
-      {moduleDefinition.key === "cdn" ? <CdnOperationsPanel providers={visibleProviders} /> : null}
+      {moduleDefinition.key === "cdn" ? (
+        <CdnOperationsPanel providers={visibleProviders} onActionFeedback={showActionToast} />
+      ) : null}
     </div>
   );
 }

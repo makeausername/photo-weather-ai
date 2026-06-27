@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -13,6 +13,11 @@ import {
 } from "../../../components/ui";
 import { adminApiFetch } from "../admin-api";
 import type { JsonValue, SafeSystemSetting } from "../admin-api";
+import {
+  AdminActionToast,
+  type AdminActionFeedback,
+  type AdminActionFeedbackInput,
+} from "./admin-action-feedback";
 import { getAdaptiveGridClassName } from "./admin-adaptive-grid";
 
 type SettingsResponse = {
@@ -130,6 +135,10 @@ function parseSettingValue(valueType: string, input: string): JsonValue {
   return input;
 }
 
+function settingDisplayName(setting: SafeSystemSetting): string {
+  return (settingText[setting.key]?.label ?? setting.label) || setting.key;
+}
+
 function stateClass(status: SaveState["status"]): string {
   if (status === "error") {
     return "border-danger bg-card text-danger";
@@ -147,6 +156,13 @@ export function AdminSettingsClient() {
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [statusByKey, setStatusByKey] = useState<Record<string, SaveState>>({});
   const [loadState, setLoadState] = useState<SaveState>({ status: "idle" });
+  const [actionToast, setActionToast] = useState<AdminActionFeedback | null>(null);
+  const actionToastId = useRef(0);
+
+  function showActionToast(feedback: AdminActionFeedbackInput) {
+    actionToastId.current += 1;
+    setActionToast({ id: actionToastId.current, ...feedback });
+  }
 
   async function loadSettings() {
     setLoadState({ status: "saving", message: "正在加载系统设置..." });
@@ -179,10 +195,16 @@ export function AdminSettingsClient() {
   }, [settings]);
 
   async function saveSetting(setting: SafeSystemSetting) {
+    const settingName = settingDisplayName(setting);
     setStatusByKey((current) => ({
       ...current,
       [setting.key]: { status: "saving", message: "正在保存..." },
     }));
+    showActionToast({
+      variant: "saving",
+      title: "保存系统设置",
+      message: `正在保存「${settingName}」...`,
+    });
 
     try {
       const valueJson = parseSettingValue(setting.valueType, editValues[setting.key] ?? "");
@@ -200,11 +222,22 @@ export function AdminSettingsClient() {
         ...current,
         [setting.key]: { status: "saved", message: "已保存。" },
       }));
+      showActionToast({
+        variant: "success",
+        title: "保存系统设置",
+        message: `「${settingName}」已保存。`,
+      });
     } catch (error) {
+      const message = (error as Error).message;
       setStatusByKey((current) => ({
         ...current,
-        [setting.key]: { status: "error", message: (error as Error).message },
+        [setting.key]: { status: "error", message },
       }));
+      showActionToast({
+        variant: "error",
+        title: "保存系统设置",
+        message: `「${settingName}」保存失败：${message}`,
+      });
     }
   }
 
@@ -221,6 +254,7 @@ export function AdminSettingsClient() {
 
   return (
     <div className="grid gap-6">
+      <AdminActionToast feedback={actionToast} onDismiss={() => setActionToast(null)} />
       {loadState.message ? (
         <div className={`rounded-lg border px-4 py-3 text-sm ${stateClass(loadState.status)}`}>
           {loadState.message}
@@ -333,7 +367,7 @@ export function AdminSettingsClient() {
                         }
                         onClick={() => void saveSetting(setting)}
                       >
-                        保存
+                        {statusByKey[setting.key]?.status === "saving" ? "保存中..." : "保存"}
                       </Button>
                       {saveState?.message ? (
                         <span

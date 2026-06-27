@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -25,6 +25,11 @@ import {
   type AdminUserListItem,
   type AdminUserListResponse,
 } from "../admin-api";
+import {
+  AdminActionToast,
+  type AdminActionFeedback,
+  type AdminActionFeedbackInput,
+} from "./admin-action-feedback";
 import { getAdaptiveGridClassName, getAdaptiveGridItemClassName } from "./admin-adaptive-grid";
 
 type PendingAction =
@@ -119,6 +124,13 @@ export function AdminUsersClient() {
   const [showCreate, setShowCreate] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+  const [actionToast, setActionToast] = useState<AdminActionFeedback | null>(null);
+  const actionToastId = useRef(0);
+
+  function showActionToast(feedback: AdminActionFeedbackInput) {
+    actionToastId.current += 1;
+    setActionToast({ id: actionToastId.current, ...feedback });
+  }
 
   const query = useMemo(
     () => ({
@@ -154,6 +166,11 @@ export function AdminUsersClient() {
   async function submitCreateUser() {
     const roleCodes =
       createForm.role === "user" ? ["user"] : ["user", createForm.role].filter(Boolean);
+    showActionToast({
+      variant: "saving",
+      title: "创建用户",
+      message: "正在创建用户...",
+    });
     try {
       const result = await createAdminUser({
         email: createForm.email || null,
@@ -165,6 +182,11 @@ export function AdminUsersClient() {
       });
       setTemporaryPassword(result.generatedPassword);
       setStatus("用户已创建。");
+      showActionToast({
+        variant: "success",
+        title: "创建用户",
+        message: "用户已创建。",
+      });
       setShowCreate(false);
       setCreateForm({
         email: "",
@@ -176,7 +198,13 @@ export function AdminUsersClient() {
       });
       await loadUsers();
     } catch (error) {
-      setStatus((error as Error).message);
+      const message = (error as Error).message;
+      setStatus(message);
+      showActionToast({
+        variant: "error",
+        title: "创建用户",
+        message,
+      });
     }
   }
 
@@ -184,28 +212,60 @@ export function AdminUsersClient() {
     if (!pendingAction) {
       return;
     }
+    const actionUserLabel = safeDisplayNameFromUser(pendingAction.user);
+    showActionToast({
+      variant: "saving",
+      title: "用户操作",
+      message: `正在处理「${actionUserLabel}」...`,
+    });
     try {
       if (pendingAction.kind === "disable") {
         await disableAdminUser(pendingAction.user.id);
         setStatus("用户已禁用，活跃会话已撤销。");
+        showActionToast({
+          variant: "success",
+          title: "用户操作",
+          message: "用户已禁用，活跃会话已撤销。",
+        });
       }
       if (pendingAction.kind === "enable") {
         await enableAdminUser(pendingAction.user.id);
         setStatus("用户已启用。");
+        showActionToast({
+          variant: "success",
+          title: "用户操作",
+          message: "用户已启用。",
+        });
       }
       if (pendingAction.kind === "reset") {
         const result = await resetAdminUserPassword(pendingAction.user.id);
         setTemporaryPassword(result.generatedPassword);
         setStatus("临时密码已生成，会话已撤销。");
+        showActionToast({
+          variant: "success",
+          title: "用户操作",
+          message: "临时密码已生成，请查看页面提示。",
+        });
       }
       if (pendingAction.kind === "revoke") {
         const result = await revokeAdminUserSessions(pendingAction.user.id);
         setStatus(`已撤销 ${result.revokedSessionCount} 个会话。`);
+        showActionToast({
+          variant: "success",
+          title: "用户操作",
+          message: `已撤销 ${result.revokedSessionCount} 个会话。`,
+        });
       }
       setPendingAction(null);
       await loadUsers();
     } catch (error) {
-      setStatus((error as Error).message);
+      const message = (error as Error).message;
+      setStatus(message);
+      showActionToast({
+        variant: "error",
+        title: "用户操作",
+        message,
+      });
       setPendingAction(null);
     }
   }
@@ -216,6 +276,7 @@ export function AdminUsersClient() {
 
   return (
     <div className="grid gap-5">
+      <AdminActionToast feedback={actionToast} onDismiss={() => setActionToast(null)} />
       <div
         className={getAdaptiveGridClassName(summaryCardItems.length, {
           variant: "metric",

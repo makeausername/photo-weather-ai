@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -31,6 +31,11 @@ import {
   type AdminOrderTimelineItem,
   type AdminPaymentOrderDetail,
 } from "../admin-api";
+import {
+  AdminActionToast,
+  type AdminActionFeedback,
+  type AdminActionFeedbackInput,
+} from "./admin-action-feedback";
 import { getAdaptiveGridClassName } from "./admin-adaptive-grid";
 
 type PendingAction = "mark-paid" | "cancel" | "close" | null;
@@ -91,6 +96,13 @@ export function AdminOrderDetailClient({ orderNo }: { readonly orderNo: string }
   const [status, setStatus] = useState("正在加载订单详情...");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [adminNote, setAdminNote] = useState("");
+  const [actionToast, setActionToast] = useState<AdminActionFeedback | null>(null);
+  const actionToastId = useRef(0);
+
+  function showActionToast(feedback: AdminActionFeedbackInput) {
+    actionToastId.current += 1;
+    setActionToast({ id: actionToastId.current, ...feedback });
+  }
 
   async function loadOrder() {
     try {
@@ -108,12 +120,28 @@ export function AdminOrderDetailClient({ orderNo }: { readonly orderNo: string }
   }, [orderNo]);
 
   async function saveNote() {
+    showActionToast({
+      variant: "saving",
+      title: "保存订单备注",
+      message: `正在保存订单 ${orderNo} 备注...`,
+    });
     try {
       const next = await updateAdminOrder(orderNo, { adminNote });
       setDetail(next);
       setStatus("订单备注已保存。");
+      showActionToast({
+        variant: "success",
+        title: "保存订单备注",
+        message: "订单备注已保存。",
+      });
     } catch (error) {
-      setStatus((error as Error).message);
+      const message = (error as Error).message;
+      setStatus(message);
+      showActionToast({
+        variant: "error",
+        title: "保存订单备注",
+        message,
+      });
     }
   }
 
@@ -121,24 +149,53 @@ export function AdminOrderDetailClient({ orderNo }: { readonly orderNo: string }
     if (!pendingAction) {
       return;
     }
+    showActionToast({
+      variant: "saving",
+      title: "订单操作",
+      message: `正在处理订单 ${orderNo}...`,
+    });
     try {
       if (pendingAction === "mark-paid") {
         const result = await markAdminOrderPaid(orderNo);
         setDetail(result.order);
-        setStatus(
-          result.entitlementGranted ? "订单已手动标记支付并发放权益。" : "订单已是支付完成状态。",
-        );
+        const message = result.entitlementGranted
+          ? "订单已手动标记支付并发放权益。"
+          : "订单已是支付完成状态。";
+        setStatus(message);
+        showActionToast({
+          variant: "success",
+          title: "订单操作",
+          message,
+        });
       }
       if (pendingAction === "cancel") {
         setDetail(await cancelAdminOrder(orderNo));
-        setStatus("订单已取消。");
+        const message = "订单已取消。";
+        setStatus(message);
+        showActionToast({
+          variant: "success",
+          title: "订单操作",
+          message,
+        });
       }
       if (pendingAction === "close") {
         setDetail(await closeAdminOrder(orderNo));
-        setStatus("订单已关闭。");
+        const message = "订单已关闭。";
+        setStatus(message);
+        showActionToast({
+          variant: "success",
+          title: "订单操作",
+          message,
+        });
       }
     } catch (error) {
-      setStatus((error as Error).message);
+      const message = (error as Error).message;
+      setStatus(message);
+      showActionToast({
+        variant: "error",
+        title: "订单操作",
+        message,
+      });
     } finally {
       setPendingAction(null);
     }
@@ -154,6 +211,7 @@ export function AdminOrderDetailClient({ orderNo }: { readonly orderNo: string }
 
   return (
     <div className="grid gap-5">
+      <AdminActionToast feedback={actionToast} onDismiss={() => setActionToast(null)} />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <Card className="grid gap-4 p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
