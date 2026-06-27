@@ -22,8 +22,28 @@ export type AlipayPagePayRequest = {
   readonly fields: Record<string, string>;
   readonly gatewayUrl: string;
   readonly method: "POST";
+  readonly resolvedMode: "page" | "wap";
   readonly safeDiagnostics: JsonValue;
 };
+
+export function resolveAlipayMode(
+  clientMode: string | null | undefined,
+  configuredMode: AlipayRuntimeConfig["mode"],
+): AlipayRuntimeConfig["mode"] {
+  if (
+    clientMode === "mobile_browser" ||
+    clientMode === "wechat_browser" ||
+    clientMode === "alipay_browser"
+  ) {
+    return "wap";
+  }
+
+  if (clientMode === "desktop") {
+    return "page";
+  }
+
+  return configuredMode;
+}
 
 export class AlipayProvider implements PaymentProvider {
   readonly providerCode: PaymentProviderCode = "alipay";
@@ -46,7 +66,7 @@ export class AlipayProvider implements PaymentProvider {
     const pagePayRequest = this.createPagePayRequest(input);
     return {
       provider: "alipay",
-      mode: this.config.mode,
+      mode: pagePayRequest.resolvedMode,
       realCall: true,
       providerPayloadJson: pagePayRequest.safeDiagnostics,
       publicPayload: {
@@ -73,11 +93,15 @@ export class AlipayProvider implements PaymentProvider {
       fields: Object.fromEntries(request.params.entries()),
       gatewayUrl: this.config.gatewayUrl,
       method: "POST",
+      resolvedMode: request.resolvedMode,
       safeDiagnostics: {
         provider: "alipay",
         method: request.method,
         productCode: request.productCode,
-        mode: this.config.mode,
+        mode: request.resolvedMode,
+        configuredMode: this.config.mode,
+        resolvedMode: request.resolvedMode,
+        clientMode: input.clientMode ?? null,
         orderNo: input.order.orderNo,
         gatewayHost: gatewayHostOf(this.config.gatewayUrl),
         charset: this.config.charset,
@@ -187,11 +211,13 @@ export class AlipayProvider implements PaymentProvider {
     readonly method: string;
     readonly params: Map<string, string>;
     readonly productCode: string;
+    readonly resolvedMode: "page" | "wap";
     readonly subject: string;
   } {
     const params = new Map<string, string>();
-    const method = this.config.mode === "wap" ? "alipay.trade.wap.pay" : "alipay.trade.page.pay";
-    const productCode = this.config.mode === "wap" ? "QUICK_WAP_WAY" : "FAST_INSTANT_TRADE_PAY";
+    const resolvedMode = resolveAlipayMode(input.clientMode, this.config.mode);
+    const method = resolvedMode === "wap" ? "alipay.trade.wap.pay" : "alipay.trade.page.pay";
+    const productCode = resolvedMode === "wap" ? "QUICK_WAP_WAY" : "FAST_INSTANT_TRADE_PAY";
     const subject = this.getProductSubject(input.product);
     params.set("app_id", this.config.appId);
     params.set("method", method);
@@ -212,7 +238,7 @@ export class AlipayProvider implements PaymentProvider {
         product_code: productCode,
       }),
     );
-    return { method, params, productCode, subject };
+    return { method, params, productCode, resolvedMode, subject };
   }
 
   private getProductSubject(product: PaymentCreateInput["product"]): string {

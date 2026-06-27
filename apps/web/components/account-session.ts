@@ -520,12 +520,16 @@ export async function listPublicBillingProducts(): Promise<readonly PublicBillin
 export async function createBillingOrder(input: {
   readonly productCode: string;
   readonly provider: BillingPaymentProvider;
+  readonly clientMode?: string;
+  readonly returnUrl?: string;
 }): Promise<CreateBillingOrderResponse> {
   return accountApiFetch<CreateBillingOrderResponse>("/billing/orders", {
     method: "POST",
     body: JSON.stringify({
       productCode: input.productCode,
       provider: input.provider,
+      ...(input.clientMode ? { clientMode: input.clientMode } : {}),
+      ...(input.returnUrl ? { returnUrl: input.returnUrl } : {}),
     }),
   });
 }

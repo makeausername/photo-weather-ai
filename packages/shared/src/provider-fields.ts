@@ -90,6 +90,10 @@ export const paymentDefaultTimeoutMs = 10000;
 
 export const wechatPayModeOptions = [
   {
+    value: "auto",
+    label: "自动模式",
+  },
+  {
     value: "native",
     label: "Native 扫码支付",
   },
@@ -459,7 +463,7 @@ export const providerFieldPresets = [
   {
     providerCode: "wechat_pay",
     helpText:
-      "微信支付用于国内订单收款。默认使用 Native 扫码支付；真实调用开启前，测试连接只做配置和密钥格式检查。",
+      "微信支付用于国内订单收款。自动模式会按设备选择 Native 扫码或 H5 支付；真实调用开启前，测试连接只做配置和密钥格式检查。",
     fields: [
       {
         key: "realCallEnabled",
@@ -475,7 +479,9 @@ export const providerFieldPresets = [
         target: "configJson",
         control: "select",
         options: wechatPayModeOptions,
-        defaultValue: "native",
+        defaultValue: "auto",
+        helpText:
+          "自动模式会在桌面使用 Native 扫码，在手机浏览器使用 H5 支付；微信内浏览器 JSAPI 需单独授权接入。",
       },
       {
         key: "appId",

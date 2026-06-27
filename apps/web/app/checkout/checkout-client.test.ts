@@ -5,12 +5,16 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { CheckoutPayloadView } from "../../components/billing-checkout-payload-view";
-import type { BillingPaymentProvider, PublicBillingProduct } from "../../components/account-session";
+import type {
+  BillingPaymentProvider,
+  PublicBillingProduct,
+} from "../../components/account-session";
 import {
   CheckoutClient,
   CheckoutPaymentMethods,
   checkoutClientLabels,
   checkoutPathForProduct,
+  detectPaymentClientMode,
   isCheckoutProductCode,
 } from "./checkout-client";
 
@@ -158,9 +162,12 @@ describe("checkout cashier client", () => {
       "确认支付",
       "选择支付方式",
       "支付宝支付",
-      "微信支付",
-      "正在唤起支付...",
-      "正在跳转支付宝收银台...",
+      "微信扫码支付",
+      "打开支付宝支付",
+      "打开微信支付",
+      "正在唤起支付宝...",
+      "正在唤起微信支付...",
+      "正在生成二维码...",
       "支付完成后，会员权益自动生效。",
       "返回定价",
     ]);
@@ -170,7 +177,7 @@ describe("checkout cashier client", () => {
     expect(html).toContain("30 天");
     expect(html).toContain("选择支付方式");
     expect(html).toContain("支付宝支付");
-    expect(html).toContain("微信支付");
+    expect(html).toContain("微信扫码支付");
     expect(html).toContain('data-checkout-payment-methods="primary"');
     expect(html).not.toContain("创建订单");
     expect(checkoutClientSource.indexOf("<CheckoutPaymentMethods")).toBeLessThan(
@@ -191,29 +198,60 @@ describe("checkout cashier client", () => {
     expect(html).toContain('href="/login?returnTo=%2Fcheckout%3Fproduct%3Dquarterly_full"');
     expect(html).toContain('href="/register?returnTo=%2Fcheckout%3Fproduct%3Dquarterly_full"');
     expect(html).not.toContain("支付宝支付");
-    expect(html).not.toContain("微信支付");
+    expect(html).not.toContain("微信扫码支付");
+  });
+
+  it("detects desktop, mobile, WeChat, and Alipay browser payment modes", () => {
+    expect(detectPaymentClientMode({ userAgent: "Mozilla/5.0", viewportWidth: 1280 })).toBe(
+      "desktop",
+    );
+    expect(
+      detectPaymentClientMode({
+        userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Mobile",
+        maxTouchPoints: 5,
+        viewportWidth: 390,
+        viewportHeight: 844,
+      }),
+    ).toBe("mobile_browser");
+    expect(
+      detectPaymentClientMode({
+        userAgent: "Mozilla/5.0 MicroMessenger/8.0.48 Mobile",
+        viewportWidth: 390,
+      }),
+    ).toBe("wechat_browser");
+    expect(
+      detectPaymentClientMode({
+        userAgent: "Mozilla/5.0 AlipayClient/10.5.0 Mobile",
+        viewportWidth: 390,
+      }),
+    ).toBe("alipay_browser");
   });
 
   it("wires payment buttons to the selected provider and disables duplicates while submitting", () => {
     const providers: BillingPaymentProvider[] = [];
     const paymentMethods = CheckoutPaymentMethods({
+      clientMode: "desktop",
       selectedProduct: products[0] ?? null,
       submittingProvider: null,
       onProviderPayment: (provider) => providers.push(provider),
     });
 
     findClickableByText(paymentMethods, "支付宝支付").props.onClick?.();
-    findClickableByText(paymentMethods, "微信支付").props.onClick?.();
+    findClickableByText(paymentMethods, "微信扫码支付").props.onClick?.();
 
     expect(providers).toEqual(["alipay", "wechat_pay"]);
     expect(checkoutClientSource).toContain(
-      "createBillingOrder({ productCode, provider: nextProvider })",
+      "createBillingOrder({\n        productCode,\n        provider: nextProvider,\n        clientMode: nextClientMode,\n        returnUrl,\n      })",
+    );
+    expect(checkoutClientSource).toContain(
+      "checkoutReturnPathForProvider(productCode, nextProvider)",
     );
     expect(checkoutClientSource).toMatch(/if \(checkoutSubmissionRef\.current\) \{\s*return;\s*\}/);
     expect(checkoutClientSource).toContain("checkoutSubmissionRef.current = true");
     expect(checkoutClientSource).toContain("checkoutSubmissionRef.current = false");
 
     const disabledMethods = CheckoutPaymentMethods({
+      clientMode: "desktop",
       selectedProduct: products[0] ?? null,
       submittingProvider: "alipay",
       onProviderPayment: () => undefined,
@@ -221,7 +259,20 @@ describe("checkout cashier client", () => {
     const buttons = collectClickableElements(disabledMethods);
     expect(buttons).toHaveLength(2);
     expect(buttons.every((button) => button.props.disabled === true)).toBe(true);
-    expect(nodeText(buttons[0]?.props.children)).toBe("正在唤起支付...");
+    expect(nodeText(buttons[0]?.props.children)).toBe("正在跳转支付宝...");
+
+    const mobileMethods = CheckoutPaymentMethods({
+      clientMode: "mobile_browser",
+      selectedProduct: products[0] ?? null,
+      submittingProvider: null,
+      onProviderPayment: () => undefined,
+    });
+    expect(nodeText(collectClickableElements(mobileMethods)[0]?.props.children)).toBe(
+      "打开支付宝支付",
+    );
+    expect(nodeText(collectClickableElements(mobileMethods)[1]?.props.children)).toBe(
+      "打开微信支付",
+    );
   });
 
   it("renders Alipay form_post as an auto-submitting POST form with a fallback button", () => {
@@ -254,7 +305,7 @@ describe("checkout cashier client", () => {
     expect(payloadViewSource).not.toContain("dangerouslySetInnerHTML");
   });
 
-  it("renders WeChat QR mode without faking H5 or JSAPI behavior", () => {
+  it("renders WeChat QR mode as a real QR image with a small raw-link fallback", () => {
     const html = renderToStaticMarkup(
       React.createElement(CheckoutPayloadView, {
         checkout: {
@@ -265,11 +316,31 @@ describe("checkout cashier client", () => {
       }),
     );
 
-    expect(html).toContain("微信扫码支付");
+    expect(html).toContain("请使用微信扫码支付");
+    expect(html).toContain('data-qr-code-image="wechat-native"');
+    expect(html).toContain('src="data:image/svg+xml');
     expect(html).toContain("weixin://wxpay/bizpayurl?pr=abc");
-    expect(html).toContain("当前微信支付为扫码模式，手机端可使用另一台设备扫码，或返回选择支付宝。");
-    expect(checkoutClientSource).not.toContain("WeChat H5");
-    expect(checkoutClientSource).not.toContain("JSAPI");
+    expect(html).toContain("当前为扫码模式，建议在电脑端打开，或返回选择支付宝。");
+  });
+
+  it("renders redirect_url as an auto-redirecting payment fallback", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CheckoutPayloadView, {
+        autoRedirect: true,
+        checkout: {
+          kind: "redirect_url",
+          redirectUrl: "https://wx.tenpay.com/cgi-bin/mmpayweb-bin/checkmweb?prepay_id=wx123",
+          message: "正在唤起微信支付...",
+        },
+      }),
+    );
+
+    expect(html).toContain("正在唤起微信支付...");
+    expect(html).toContain("继续完成支付");
+    expect(payloadViewSource).toContain("window.location.assign(checkout.redirectUrl)");
+    expect(checkoutClientSource).toContain(
+      'autoRedirect={checkout.kind === "redirect_url" && !submitting}',
+    );
   });
 
   it("shows a friendly payment-return notice and account link", () => {

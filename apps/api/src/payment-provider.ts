@@ -24,6 +24,7 @@ import { normalizeAlipayCharset, type AlipayCharset } from "./alipay-encoding.js
 export type PaymentCreateInput = {
   readonly order: PaymentOrderRecord;
   readonly product: BillingProductRecord;
+  readonly clientIp?: string | null;
   readonly clientMode?: string;
   readonly returnUrl?: string | null;
 };
@@ -104,7 +105,7 @@ export type WechatPayRuntimeConfig = {
   readonly providerCode: "wechat_pay";
   readonly enabled: boolean;
   readonly realCallEnabled: boolean;
-  readonly mode: "native" | "h5" | "jsapi";
+  readonly mode: "native" | "h5" | "jsapi" | "auto";
   readonly appId: string;
   readonly mchId: string;
   readonly notifyUrl: string;
@@ -163,8 +164,8 @@ function configJsonOf(value: unknown): Record<string, unknown> {
   return isPlainRecord(value) ? value : {};
 }
 
-function normalizeWechatMode(value: string): "native" | "h5" | "jsapi" {
-  return value === "h5" || value === "jsapi" ? value : "native";
+function normalizeWechatMode(value: string): "native" | "h5" | "jsapi" | "auto" {
+  return value === "native" || value === "h5" || value === "jsapi" ? value : "auto";
 }
 
 function normalizeAlipayMode(value: string): "page" | "wap" {

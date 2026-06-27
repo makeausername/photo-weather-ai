@@ -273,6 +273,24 @@ function firstHeaderValue(value: string | string[] | undefined): string | undefi
   return Array.isArray(value) ? value[0] : value;
 }
 
+function normalizeClientIpCandidate(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const withoutIpv4Port = trimmed.match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?$/)?.[1];
+  return (withoutIpv4Port ?? trimmed).slice(0, 64);
+}
+
+function resolveClientIp(request: FastifyRequest): string | null {
+  const forwarded = firstHeaderValue(request.headers["x-forwarded-for"])
+    ?.split(",")
+    .map((item) => normalizeClientIpCandidate(item))
+    .find((item): item is string => Boolean(item));
+  return forwarded ?? normalizeClientIpCandidate(request.ip);
+}
+
 function resolveApiActionUrl(
   request: FastifyRequest,
   env: NodeJS.ProcessEnv,
@@ -325,6 +343,12 @@ function readOrderReturnUrl(order: PaymentOrderRecord): string | null {
   const metadata = isPlainRecord(order.metadataJson) ? order.metadataJson : {};
   const returnUrl = metadata.returnUrl;
   return typeof returnUrl === "string" && returnUrl.trim() ? returnUrl.trim() : null;
+}
+
+function readOrderClientMode(order: PaymentOrderRecord): string | undefined {
+  const metadata = isPlainRecord(order.metadataJson) ? order.metadataJson : {};
+  const clientMode = metadata.clientMode;
+  return typeof clientMode === "string" && clientMode.trim() ? clientMode.trim() : undefined;
 }
 
 function htmlHeaders(charset: AlipayCharset): Record<string, string> {
@@ -660,6 +684,7 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
       const payment = await provider.createPayment({
         order,
         product,
+        clientIp: resolveClientIp(request),
         clientMode: parsedBody.data.clientMode,
         returnUrl,
       });
@@ -755,6 +780,7 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
       const pagePayRequest = (provider as AlipayProvider).createPagePayRequest({
         order,
         product,
+        clientMode: readOrderClientMode(order),
         returnUrl: readOrderReturnUrl(order) || config.returnUrl,
       });
       request.log.info(pagePayRequest.safeDiagnostics, "Created Alipay checkout request");

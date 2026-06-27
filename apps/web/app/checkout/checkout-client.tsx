@@ -28,11 +28,12 @@ const checkoutProductCodes: readonly CheckoutProductCode[] = [
 const checkoutProductCodeSet = new Set<string>(checkoutProductCodes);
 
 const paymentProviderOptions = [
-  { value: "alipay", label: "支付宝支付" },
-  { value: "wechat_pay", label: "微信支付" },
+  { value: "alipay", desktopLabel: "支付宝支付", mobileLabel: "打开支付宝支付" },
+  { value: "wechat_pay", desktopLabel: "微信扫码支付", mobileLabel: "打开微信支付" },
 ] as const satisfies readonly {
   readonly value: BillingPaymentProvider;
-  readonly label: string;
+  readonly desktopLabel: string;
+  readonly mobileLabel: string;
 }[];
 
 type CheckoutClientProps = {
@@ -44,24 +45,84 @@ type CheckoutClientProps = {
 
 type AuthState = "checking" | "authenticated" | "guest";
 type ProductState = "idle" | "loading" | "ready" | "error";
+export type PaymentClientMode = "desktop" | "mobile_browser" | "wechat_browser" | "alipay_browser";
+
+type PaymentClientModeDetectionInput = {
+  readonly maxTouchPoints?: number;
+  readonly userAgent?: string;
+  readonly viewportHeight?: number;
+  readonly viewportWidth?: number;
+};
 
 export const checkoutClientLabels = [
   "确认支付",
   "选择支付方式",
   "支付宝支付",
-  "微信支付",
-  "正在唤起支付...",
-  "正在跳转支付宝收银台...",
+  "微信扫码支付",
+  "打开支付宝支付",
+  "打开微信支付",
+  "正在唤起支付宝...",
+  "正在唤起微信支付...",
+  "正在生成二维码...",
   "支付完成后，会员权益自动生效。",
   "返回定价",
 ] as const;
 
-export function isCheckoutProductCode(value: string | null | undefined): value is CheckoutProductCode {
+export function isCheckoutProductCode(
+  value: string | null | undefined,
+): value is CheckoutProductCode {
   return Boolean(value && checkoutProductCodeSet.has(value));
 }
 
 export function checkoutPathForProduct(productCode: string): string {
   return `/checkout?product=${encodeURIComponent(productCode)}`;
+}
+
+export function detectPaymentClientMode(
+  input: PaymentClientModeDetectionInput = {},
+): PaymentClientMode {
+  const userAgent =
+    input.userAgent ??
+    (typeof navigator !== "undefined" && typeof navigator.userAgent === "string"
+      ? navigator.userAgent
+      : "");
+
+  if (/MicroMessenger/i.test(userAgent)) {
+    return "wechat_browser";
+  }
+
+  if (/AlipayClient/i.test(userAgent)) {
+    return "alipay_browser";
+  }
+
+  const maxTouchPoints =
+    input.maxTouchPoints ??
+    (typeof navigator !== "undefined" && typeof navigator.maxTouchPoints === "number"
+      ? navigator.maxTouchPoints
+      : 0);
+  const viewportWidth =
+    input.viewportWidth ?? (typeof window !== "undefined" ? window.innerWidth : undefined);
+  const viewportHeight =
+    input.viewportHeight ?? (typeof window !== "undefined" ? window.innerHeight : undefined);
+  const shortestViewportSide =
+    typeof viewportWidth === "number" && typeof viewportHeight === "number"
+      ? Math.min(viewportWidth, viewportHeight)
+      : undefined;
+  const mobileUserAgent = /Android|webOS|iPhone|iPad|iPod|Mobile|Windows Phone|HarmonyOS/i.test(
+    userAgent,
+  );
+  const touchSizedViewport =
+    maxTouchPoints > 0 && typeof shortestViewportSide === "number" && shortestViewportSide <= 900;
+  const narrowViewport = typeof viewportWidth === "number" && viewportWidth <= 760;
+
+  return mobileUserAgent || touchSizedViewport || narrowViewport ? "mobile_browser" : "desktop";
+}
+
+function checkoutReturnPathForProvider(
+  productCode: string,
+  provider: BillingPaymentProvider,
+): string {
+  return `${checkoutPathForProduct(productCode)}&payment_return=${encodeURIComponent(provider)}`;
 }
 
 function loginHrefForCheckout(checkoutPath: string): string {
@@ -129,6 +190,48 @@ function paymentStatusMessage(order: AccountBillingOrderRecord): string {
   return "支付完成后，会员权益自动生效。";
 }
 
+function isMobilePaymentClientMode(clientMode: PaymentClientMode): boolean {
+  return clientMode !== "desktop";
+}
+
+function paymentButtonLabel(
+  provider: BillingPaymentProvider,
+  clientMode: PaymentClientMode,
+): string {
+  const option = paymentProviderOptions.find((item) => item.value === provider);
+  if (!option) {
+    return "继续支付";
+  }
+  return isMobilePaymentClientMode(clientMode) ? option.mobileLabel : option.desktopLabel;
+}
+
+function paymentLoadingLabel(
+  provider: BillingPaymentProvider,
+  clientMode: PaymentClientMode,
+): string {
+  if (provider === "alipay") {
+    return isMobilePaymentClientMode(clientMode) ? "正在唤起支付宝..." : "正在跳转支付宝...";
+  }
+  return isMobilePaymentClientMode(clientMode) ? "正在唤起微信支付..." : "正在生成二维码...";
+}
+
+function paymentCheckoutReadyMessage(
+  provider: BillingPaymentProvider,
+  clientMode: PaymentClientMode,
+  checkout: BillingCheckoutPayload | null,
+): string {
+  if (!checkout) {
+    return "";
+  }
+  if (checkout.kind === "redirect_url") {
+    return paymentLoadingLabel(provider, clientMode);
+  }
+  if (provider === "alipay" && checkout.kind === "form_post") {
+    return paymentLoadingLabel(provider, clientMode);
+  }
+  return "";
+}
+
 export function CheckoutClient({
   initialLoggedIn = null,
   initialProducts,
@@ -137,7 +240,8 @@ export function CheckoutClient({
 }: CheckoutClientProps) {
   const selectedProductCode = isCheckoutProductCode(productCode) ? productCode : null;
   const initialCheckoutProducts = filterCheckoutProducts(initialProducts);
-  const [products, setProducts] = useState<readonly PublicBillingProduct[]>(initialCheckoutProducts);
+  const [products, setProducts] =
+    useState<readonly PublicBillingProduct[]>(initialCheckoutProducts);
   const [productState, setProductState] = useState<ProductState>(
     selectedProductCode ? (initialProducts ? "ready" : "loading") : "idle",
   );
@@ -147,11 +251,14 @@ export function CheckoutClient({
   const [checkout, setCheckout] = useState<BillingCheckoutPayload | null>(null);
   const [order, setOrder] = useState<AccountBillingOrderRecord | null>(null);
   const [submittingProvider, setSubmittingProvider] = useState<BillingPaymentProvider | null>(null);
+  const [clientMode, setClientMode] = useState<PaymentClientMode>("desktop");
   const [message, setMessage] = useState("");
   const checkoutSubmissionRef = useRef(false);
   const checkoutRequestIdRef = useRef(0);
 
-  const checkoutPath = selectedProductCode ? checkoutPathForProduct(selectedProductCode) : "/pricing";
+  const checkoutPath = selectedProductCode
+    ? checkoutPathForProduct(selectedProductCode)
+    : "/pricing";
   const selectedProduct = useMemo(
     () =>
       selectedProductCode
@@ -159,6 +266,10 @@ export function CheckoutClient({
         : null,
     [products, selectedProductCode],
   );
+
+  useEffect(() => {
+    setClientMode(detectPaymentClientMode());
+  }, []);
 
   useEffect(() => {
     checkoutRequestIdRef.current += 1;
@@ -259,27 +370,30 @@ export function CheckoutClient({
     }
 
     const productCode = selectedProduct.code;
+    const nextClientMode = detectPaymentClientMode();
+    const returnUrl = checkoutReturnPathForProvider(productCode, nextProvider);
     const requestId = checkoutRequestIdRef.current + 1;
     checkoutRequestIdRef.current = requestId;
     checkoutSubmissionRef.current = true;
+    setClientMode(nextClientMode);
     setSubmittingProvider(nextProvider);
     setCheckout(null);
     setOrder(null);
-    setMessage("正在唤起支付...");
+    setMessage(paymentLoadingLabel(nextProvider, nextClientMode));
     try {
-      const result = await createBillingOrder({ productCode, provider: nextProvider });
+      const result = await createBillingOrder({
+        productCode,
+        provider: nextProvider,
+        clientMode: nextClientMode,
+        returnUrl,
+      });
       if (checkoutRequestIdRef.current !== requestId) {
         return;
       }
       const nextCheckout = result.checkout ?? null;
       setOrder(result.order);
       setCheckout(nextCheckout);
-      setMessage(
-        nextProvider === "alipay" &&
-          (nextCheckout?.kind === "form_post" || nextCheckout?.kind === "redirect_url")
-          ? "正在跳转支付宝收银台..."
-          : "",
-      );
+      setMessage(paymentCheckoutReadyMessage(nextProvider, nextClientMode, nextCheckout));
     } catch (error) {
       if (checkoutRequestIdRef.current !== requestId) {
         return;
@@ -329,7 +443,9 @@ export function CheckoutClient({
             role="alert"
             className={cn(
               "rounded-lg border bg-card px-3 py-2 text-sm",
-              productState === "error" ? "border-danger text-danger" : "border-border text-foreground",
+              productState === "error"
+                ? "border-danger text-danger"
+                : "border-border text-foreground",
             )}
           >
             {message}
@@ -362,6 +478,7 @@ export function CheckoutClient({
 
             {!productUnavailable && authState === "authenticated" ? (
               <CheckoutPaymentMethods
+                clientMode={clientMode}
                 selectedProduct={selectedProduct}
                 submittingProvider={submittingProvider}
                 onProviderPayment={(nextProvider) => void handleProviderPayment(nextProvider)}
@@ -373,7 +490,11 @@ export function CheckoutClient({
             <PaymentActionPanel
               checkout={checkout}
               order={order}
-              provider={order.provider === "alipay" || order.provider === "wechat_pay" ? order.provider : null}
+              provider={
+                order.provider === "alipay" || order.provider === "wechat_pay"
+                  ? order.provider
+                  : null
+              }
               submitting={submitting}
             />
           ) : null}
@@ -467,10 +588,12 @@ function LoginPrompt({ checkoutPath }: { readonly checkoutPath: string }) {
 }
 
 export function CheckoutPaymentMethods({
+  clientMode,
   onProviderPayment,
   selectedProduct,
   submittingProvider,
 }: {
+  readonly clientMode: PaymentClientMode;
   readonly onProviderPayment: (provider: BillingPaymentProvider) => void;
   readonly selectedProduct: PublicBillingProduct | null;
   readonly submittingProvider: BillingPaymentProvider | null;
@@ -493,7 +616,9 @@ export function CheckoutPaymentMethods({
               disabled={!selectedProduct || submitting}
               onClick={() => onProviderPayment(item.value)}
             >
-              {loading ? "正在唤起支付..." : item.label}
+              {loading
+                ? paymentLoadingLabel(item.value, clientMode)
+                : paymentButtonLabel(item.value, clientMode)}
             </Button>
           );
         })}
@@ -536,7 +661,7 @@ function PaymentActionPanel({
       {checkout ? (
         <CheckoutPayloadView
           checkout={checkout}
-          autoRedirect={provider === "alipay" && checkout.kind === "redirect_url" && !submitting}
+          autoRedirect={checkout.kind === "redirect_url" && !submitting}
           autoSubmit={provider === "alipay" && checkout.kind === "form_post" && !submitting}
         />
       ) : null}
@@ -547,9 +672,7 @@ function PaymentActionPanel({
 function PaymentReturnNotice() {
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
-      <p className="leading-6 text-muted-foreground">
-        如果已经完成支付，权益会在稍后自动生效。
-      </p>
+      <p className="leading-6 text-muted-foreground">如果已经完成支付，权益会在稍后自动生效。</p>
       <Link
         href="/account"
         className="inline-flex h-9 w-fit items-center justify-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-card-foreground transition hover:border-primary hover:bg-secondary"

@@ -17,6 +17,30 @@ import type {
 } from "./payment-provider.js";
 
 type Fetcher = typeof fetch;
+type WechatPayResolvedMode = "native" | "h5" | "jsapi";
+
+const wechatJsapiUnsupportedMessage =
+  "微信内浏览器支付需要 JSAPI 授权，当前请在系统浏览器打开或使用支付宝。";
+const wechatH5RedirectMessage = "正在唤起微信支付...";
+
+export function resolveWechatPayMode(
+  clientMode: string | null | undefined,
+  configuredMode: WechatPayRuntimeConfig["mode"],
+): WechatPayResolvedMode {
+  if (clientMode === "wechat_browser") {
+    return "jsapi";
+  }
+
+  if (configuredMode !== "auto") {
+    return configuredMode;
+  }
+
+  if (clientMode === "mobile_browser" || clientMode === "alipay_browser") {
+    return "h5";
+  }
+
+  return "native";
+}
 
 export class WechatPayProvider implements PaymentProvider {
   readonly providerCode: PaymentProviderCode = "wechat_pay";
@@ -39,18 +63,34 @@ export class WechatPayProvider implements PaymentProvider {
       };
     }
 
-    if (this.config.mode !== "native") {
+    const resolvedMode = resolveWechatPayMode(input.clientMode, this.config.mode);
+    if (resolvedMode === "jsapi") {
       return {
         provider: "wechat_pay",
-        mode: this.config.mode,
+        mode: "jsapi",
         realCall: true,
+        providerPayloadJson: {
+          provider: "wechat_pay",
+          configuredMode: this.config.mode,
+          resolvedMode,
+          clientMode: input.clientMode ?? null,
+          transportMode: "wechat_jsapi_unsupported",
+        },
         publicPayload: {
           kind: "mock",
-          message: "当前前端仅支持微信 Native 扫码支付，请切换支付模式后重试。",
+          message: wechatJsapiUnsupportedMessage,
         },
       };
     }
 
+    if (resolvedMode === "h5") {
+      return this.createH5Payment(input);
+    }
+
+    return this.createNativePayment(input);
+  }
+
+  private async createNativePayment(input: PaymentCreateInput): Promise<PaymentCreateResult> {
     const path = "/v3/pay/transactions/native";
     const url = new URL(path, this.config.apiBaseUrl);
     const body = JSON.stringify({
@@ -89,13 +129,88 @@ export class WechatPayProvider implements PaymentProvider {
         mode: "native",
         realCall: true,
         providerPayloadJson: {
+          provider: "wechat_pay",
+          configuredMode: this.config.mode,
+          resolvedMode: "native",
+          clientMode: input.clientMode ?? null,
+          endpoint: path,
+          transportMode: "wechat_native_qr",
           statusCode: response.status,
           codeUrl: payload.code_url,
         },
         publicPayload: {
           kind: "qr_code",
           codeUrl: payload.code_url,
-          message: "请使用微信扫描支付链接完成付款。",
+          message: "请使用微信扫码完成支付。",
+        },
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async createH5Payment(input: PaymentCreateInput): Promise<PaymentCreateResult> {
+    const path = "/v3/pay/transactions/h5";
+    const url = new URL(path, this.config.apiBaseUrl);
+    const appUrl = this.resolveSiteBaseUrl(input);
+    const body = JSON.stringify({
+      appid: this.config.appId,
+      mchid: this.config.mchId,
+      description: input.product.name,
+      out_trade_no: input.order.orderNo,
+      notify_url: this.config.notifyUrl,
+      amount: {
+        total: input.order.amountCents,
+        currency: input.order.currency,
+      },
+      scene_info: {
+        payer_client_ip: input.clientIp || "127.0.0.1",
+        h5_info: {
+          type: "Wap",
+          app_name: "逐光天气",
+          app_url: appUrl,
+        },
+      },
+    });
+    const authorization = this.createAuthorizationHeader("POST", path, body);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    try {
+      const response = await this.fetcher(url, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+        body,
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      const payload = text ? (JSON.parse(text) as unknown) : {};
+      if (!response.ok || !isPlainRecord(payload) || typeof payload.mweb_url !== "string") {
+        throw new Error(`WeChat Pay create H5 payment failed with status ${response.status}.`);
+      }
+
+      return {
+        provider: "wechat_pay",
+        mode: "h5",
+        realCall: true,
+        providerPayloadJson: {
+          provider: "wechat_pay",
+          configuredMode: this.config.mode,
+          resolvedMode: "h5",
+          clientMode: input.clientMode ?? null,
+          endpoint: path,
+          transportMode: "wechat_h5_redirect",
+          statusCode: response.status,
+          appUrlHost: hostOf(appUrl),
+          mwebUrlHost: hostOf(payload.mweb_url),
+        },
+        publicPayload: {
+          kind: "redirect_url",
+          redirectUrl: payload.mweb_url,
+          message: wechatH5RedirectMessage,
         },
       };
     } finally {
@@ -185,6 +300,16 @@ export class WechatPayProvider implements PaymentProvider {
     ].join(" ");
   }
 
+  private resolveSiteBaseUrl(input: PaymentCreateInput): string {
+    const base = this.config.returnUrl || this.config.notifyUrl;
+    const candidate = input.returnUrl || this.config.returnUrl || this.config.notifyUrl;
+    try {
+      return new URL(candidate, base).origin;
+    } catch {
+      return new URL(this.config.notifyUrl).origin;
+    }
+  }
+
   private verifyWechatSignature(input: PaymentNotificationInput): boolean {
     const timestamp = input.headers["wechatpay-timestamp"];
     const nonce = input.headers["wechatpay-nonce"];
@@ -227,5 +352,13 @@ export class WechatPayProvider implements PaymentProvider {
       throw new Error("WeChat Pay decrypted resource is not an object.");
     }
     return parsed;
+  }
+}
+
+function hostOf(value: string): string {
+  try {
+    return new URL(value).host;
+  } catch {
+    return "invalid";
   }
 }

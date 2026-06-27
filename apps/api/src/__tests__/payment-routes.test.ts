@@ -39,14 +39,22 @@ function stripPemEnvelope(value: string): string {
     .replace(/\s+/g, "");
 }
 
-function enableWechatProvider(state: any, pair = createPemPair()) {
+function enableWechatProvider(
+  state: any,
+  pair = createPemPair(),
+  options: {
+    readonly mode?: "native" | "h5" | "jsapi" | "auto";
+    readonly realCallEnabled?: boolean;
+  } = {},
+) {
   const current = state.providers.get("billing:wechat_pay");
   state.providers.set("billing:wechat_pay", {
     ...current,
     enabled: true,
     configJson: {
       ...(current.configJson ?? {}),
-      realCallEnabled: false,
+      realCallEnabled: options.realCallEnabled ?? false,
+      mode: options.mode ?? current.configJson?.mode ?? "auto",
       appId: "wx-app-id",
       mchId: "mch-1000",
       notifyUrl: "https://example.com/billing/wechat-pay/notify",
@@ -111,16 +119,24 @@ async function createBillingOrder(
   app: FastifyInstance,
   provider: "wechat_pay" | "alipay",
   productCode = "monthly_full",
+  options: {
+    readonly clientMode?: string;
+    readonly headers?: Record<string, string>;
+    readonly returnUrl?: string;
+  } = {},
 ) {
   const response = await app.inject({
     method: "POST",
     url: "/billing/orders",
-    headers: adminAuthorizationHeader("plain-user"),
+    headers: {
+      ...adminAuthorizationHeader("plain-user"),
+      ...(options.headers ?? {}),
+    },
     payload: {
       productCode,
       provider,
-      clientMode: provider === "wechat_pay" ? "native" : "page",
-      returnUrl: "/pricing",
+      clientMode: options.clientMode ?? "desktop",
+      returnUrl: options.returnUrl ?? "/pricing",
     },
   });
 
@@ -626,6 +642,9 @@ describe("payment routes", () => {
       method: "alipay.trade.page.pay",
       productCode: "FAST_INSTANT_TRADE_PAY",
       mode: "page",
+      configuredMode: "page",
+      resolvedMode: "page",
+      clientMode: "desktop",
       orderNo: body.order.orderNo,
       gatewayHost: "openapi.alipay.com",
       charset: "GBK",
@@ -679,11 +698,11 @@ describe("payment routes", () => {
     expect(JSON.stringify(pageFields)).not.toContain(pair.publicKeyPem);
   });
 
-  it("creates real Alipay wap payments as POST form payloads", async () => {
+  it("creates real Alipay wap payments for mobile client mode as POST form payloads", async () => {
     const { client, state } = await createFakeDatabaseClient();
     enableAlipayProvider(state, createPemPair(), {
       realCallEnabled: true,
-      mode: "wap",
+      mode: "page",
     });
     app = buildApiServer({
       dbClient: client,
@@ -696,7 +715,9 @@ describe("payment routes", () => {
       logger: false,
     });
 
-    const body = await createBillingOrder(app, "alipay", "quarterly_full");
+    const body = await createBillingOrder(app, "alipay", "quarterly_full", {
+      clientMode: "mobile_browser",
+    });
     const pagePayResponse = await postAlipayPagePay(app, body.checkout);
     const html = decodeHtmlResponse(pagePayResponse);
     const fields = extractHiddenFields(html);
@@ -710,6 +731,15 @@ describe("payment routes", () => {
     });
     expect(pagePayResponse.statusCode).toBe(200);
     expect(html).toContain('accept-charset="GBK"');
+    expect(state.paymentOrders.get(body.order.orderNo)?.providerPayloadJson).toMatchObject({
+      provider: "alipay",
+      method: "alipay.trade.wap.pay",
+      productCode: "QUICK_WAP_WAY",
+      mode: "wap",
+      configuredMode: "page",
+      resolvedMode: "wap",
+      clientMode: "mobile_browser",
+    });
     expect(fields.method).toBe("alipay.trade.wap.pay");
     expect(bizContent.product_code).toBe("QUICK_WAP_WAY");
   });
@@ -745,6 +775,172 @@ describe("payment routes", () => {
     expect(html).toContain('<meta charset="UTF-8">');
     expect(html).toContain('accept-charset="UTF-8"');
     expect(fields.charset).toBe("UTF-8");
+  });
+
+  it("creates WeChat Native QR payments for desktop auto mode", async () => {
+    const fetcher = vi.fn(async () => {
+      return new Response(JSON.stringify({ code_url: "weixin://wxpay/bizpayurl?pr=desktop" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+    const { client, state } = await createFakeDatabaseClient();
+    enableWechatProvider(state, createPemPair(), {
+      realCallEnabled: true,
+      mode: "auto",
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...testEnv,
+        NODE_ENV: "production",
+      },
+      paymentFetcher: fetcher,
+      logger: false,
+    });
+
+    const body = await createBillingOrder(app, "wechat_pay", "monthly_full", {
+      clientMode: "desktop",
+    });
+    const [, init] = (fetcher as any).mock.calls[0] ?? [];
+    const requestBody = JSON.parse(String((init as RequestInit).body));
+
+    expect(String((fetcher as any).mock.calls[0]?.[0])).toBe(
+      "https://api.mch.weixin.qq.com/v3/pay/transactions/native",
+    );
+    expect(requestBody).toMatchObject({
+      appid: "wx-app-id",
+      mchid: "mch-1000",
+      out_trade_no: body.order.orderNo,
+      notify_url: "https://example.com/billing/wechat-pay/notify",
+      amount: {
+        total: 1900,
+        currency: "CNY",
+      },
+    });
+    expect(body.checkout).toMatchObject({
+      kind: "qr_code",
+      codeUrl: "weixin://wxpay/bizpayurl?pr=desktop",
+    });
+    expect(state.paymentOrders.get(body.order.orderNo)?.providerPayloadJson).toMatchObject({
+      provider: "wechat_pay",
+      configuredMode: "auto",
+      resolvedMode: "native",
+      clientMode: "desktop",
+      endpoint: "/v3/pay/transactions/native",
+      transportMode: "wechat_native_qr",
+    });
+  });
+
+  it("creates WeChat H5 redirect payments for mobile browser auto mode", async () => {
+    const fetcher = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          mweb_url: "https://wx.tenpay.com/cgi-bin/mmpayweb-bin/checkmweb?prepay_id=wx-h5",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }) as unknown as typeof fetch;
+    const { client, state } = await createFakeDatabaseClient();
+    enableWechatProvider(state, createPemPair(), {
+      realCallEnabled: true,
+      mode: "auto",
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...testEnv,
+        NODE_ENV: "production",
+      },
+      paymentFetcher: fetcher,
+      logger: false,
+    });
+
+    const body = await createBillingOrder(app, "wechat_pay", "monthly_full", {
+      clientMode: "mobile_browser",
+      headers: { "x-forwarded-for": "203.0.113.9, 10.0.0.2" },
+      returnUrl: "/checkout?product=monthly_full&payment_return=wechat_pay",
+    });
+    const [, init] = (fetcher as any).mock.calls[0] ?? [];
+    const requestBody = JSON.parse(String((init as RequestInit).body));
+
+    expect(String((fetcher as any).mock.calls[0]?.[0])).toBe(
+      "https://api.mch.weixin.qq.com/v3/pay/transactions/h5",
+    );
+    expect(requestBody).toMatchObject({
+      appid: "wx-app-id",
+      mchid: "mch-1000",
+      out_trade_no: body.order.orderNo,
+      scene_info: {
+        payer_client_ip: "203.0.113.9",
+        h5_info: {
+          type: "Wap",
+          app_name: "逐光天气",
+          app_url: "https://example.com",
+        },
+      },
+    });
+    expect(body.checkout).toMatchObject({
+      kind: "redirect_url",
+      redirectUrl: "https://wx.tenpay.com/cgi-bin/mmpayweb-bin/checkmweb?prepay_id=wx-h5",
+      message: "正在唤起微信支付...",
+    });
+    expect(state.paymentOrders.get(body.order.orderNo)?.providerPayloadJson).toMatchObject({
+      provider: "wechat_pay",
+      configuredMode: "auto",
+      resolvedMode: "h5",
+      clientMode: "mobile_browser",
+      endpoint: "/v3/pay/transactions/h5",
+      transportMode: "wechat_h5_redirect",
+      appUrlHost: "example.com",
+      mwebUrlHost: "wx.tenpay.com",
+    });
+    expect(
+      JSON.stringify(state.paymentOrders.get(body.order.orderNo)?.providerPayloadJson),
+    ).not.toContain("prepay_id=wx-h5");
+  });
+
+  it("does not fake WeChat JSAPI inside the WeChat browser", async () => {
+    const fetcher = vi.fn(async () => {
+      throw new Error("JSAPI unsupported path must not call WeChat H5 or Native APIs");
+    }) as unknown as typeof fetch;
+    const { client, state } = await createFakeDatabaseClient();
+    enableWechatProvider(state, createPemPair(), {
+      realCallEnabled: true,
+      mode: "auto",
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      env: {
+        ...testEnv,
+        NODE_ENV: "production",
+      },
+      paymentFetcher: fetcher,
+      logger: false,
+    });
+
+    const body = await createBillingOrder(app, "wechat_pay", "monthly_full", {
+      clientMode: "wechat_browser",
+    });
+
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(body.checkout).toMatchObject({
+      kind: "mock",
+      message: "微信内浏览器支付需要 JSAPI 授权，当前请在系统浏览器打开或使用支付宝。",
+    });
+    expect(state.paymentOrders.get(body.order.orderNo)?.providerPayloadJson).toMatchObject({
+      provider: "wechat_pay",
+      configuredMode: "auto",
+      resolvedMode: "jsapi",
+      clientMode: "wechat_browser",
+      transportMode: "wechat_jsapi_unsupported",
+    });
   });
 
   it("rejects invalid WeChat signatures and processes valid notifications idempotently", async () => {
