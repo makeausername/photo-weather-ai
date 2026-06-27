@@ -1,18 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  createBillingOrder,
-  getBillingOrder,
   getCurrentAccountSession,
   listPublicBillingProducts,
-  type AccountBillingOrderRecord,
-  type BillingCheckoutPayload,
-  type BillingPaymentProvider,
   type PublicBillingProduct,
 } from "../../components/account-session";
-import { Badge, Button, Card, cn } from "../../components/ui";
+import { Badge, Card, cn } from "../../components/ui";
 import { PublicShell } from "../../components/public-shell";
 
 export type BillingProduct = PublicBillingProduct;
@@ -123,28 +118,13 @@ const legacyPlanFeatureKeys: Partial<Record<string, readonly string[]>> = {
   ],
 };
 
-const paymentProviderOptions = [
-  { value: "alipay", label: "支付宝支付" },
-  { value: "wechat_pay", label: "微信支付" },
-] as const satisfies readonly {
-  readonly value: BillingPaymentProvider;
-  readonly label: string;
-}[];
+export function checkoutPathForProduct(productCode: string): string {
+  return `/checkout?product=${encodeURIComponent(productCode)}`;
+}
 
-export const pricingCheckoutIntroCopy =
-  "选择支付方式后将跳转到对应支付页面。支付完成后，会员权益自动生效。";
-
-export const pricingCheckoutLabels = [
-  "月卡",
-  "季卡",
-  "年卡",
-  "选择支付方式",
-  "支付宝支付",
-  "微信支付",
-  "扫码支付",
-  "前往支付宝支付",
-  "支付成功，会员权益已生效。",
-] as const;
+function loginHrefForProduct(productCode: string): string {
+  return `/login?returnTo=${encodeURIComponent(checkoutPathForProduct(productCode))}`;
+}
 
 function formatPrice(product: PublicBillingProduct): string {
   return product.priceText || formatPriceCents(product.amountCents);
@@ -156,19 +136,6 @@ function formatPriceCents(amountCents: number): string {
     currency: "CNY",
     minimumFractionDigits: 2,
   }).format(amountCents / 100);
-}
-
-function statusLabel(status: AccountBillingOrderRecord["status"]): string {
-  const labels: Record<AccountBillingOrderRecord["status"], string> = {
-    created: "已创建",
-    pending: "待支付",
-    paid: "已支付",
-    closed: "已关闭",
-    canceled: "已取消",
-    failed: "支付失败",
-    refunded: "已退款",
-  };
-  return labels[status];
 }
 
 function planOrder(code: string): number {
@@ -257,22 +224,11 @@ export function PricingClient({
   const [products, setProducts] = useState<readonly PublicBillingProduct[]>(
     initialPaidProducts ?? [],
   );
-  const [selectedProductCode, setSelectedProductCode] = useState(
-    initialPaidProducts?.[0]?.code ?? "",
-  );
-  const [checkoutStarted, setCheckoutStarted] = useState(false);
-  const [checkout, setCheckout] = useState<BillingCheckoutPayload | null>(null);
-  const [order, setOrder] = useState<AccountBillingOrderRecord | null>(null);
-  const [submittingProvider, setSubmittingProvider] = useState<BillingPaymentProvider | null>(
-    null,
-  );
   const [loggedIn, setLoggedIn] = useState(initialLoggedIn);
-  const [state, setState] = useState<"loading" | "ready" | "submitting" | "error">(
+  const [state, setState] = useState<"loading" | "ready" | "error">(
     initialProducts ? "ready" : "loading",
   );
   const [message, setMessage] = useState("");
-  const checkoutSubmissionRef = useRef(false);
-  const checkoutRequestIdRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -309,7 +265,6 @@ export function PricingClient({
           .filter((product) => paidPlanCodes.has(product.code))
           .sort((left, right) => planOrder(left.code) - planOrder(right.code));
         setProducts(paidProducts);
-        setSelectedProductCode((current) => current || paidProducts[0]?.code || "");
         setState("ready");
         setMessage("");
       })
@@ -324,102 +279,6 @@ export function PricingClient({
       cancelled = true;
     };
   }, [initialProducts]);
-
-  useEffect(() => {
-    if (!order || order.status !== "pending") {
-      return;
-    }
-
-    let active = true;
-    const timer = window.setInterval(() => {
-      void getBillingOrder(order.orderNo)
-        .then((nextOrder) => {
-          if (active) {
-            setOrder(nextOrder);
-          }
-        })
-        .catch(() => undefined);
-    }, 4000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [order]);
-
-  const selectedProduct = useMemo(
-    () => products.find((product) => product.code === selectedProductCode) ?? products[0] ?? null,
-    [products, selectedProductCode],
-  );
-
-  const checkoutActive = checkoutStarted && loggedIn;
-
-  function clearOrderState() {
-    setCheckout(null);
-    setOrder(null);
-  }
-
-  function handleStartCheckout(productCode: string) {
-    setSelectedProductCode(productCode);
-    checkoutRequestIdRef.current += 1;
-    checkoutSubmissionRef.current = false;
-    setSubmittingProvider(null);
-    clearOrderState();
-    if (!loggedIn) {
-      setMessage("请先登录或注册后再购买套餐。注册即送 7 天完整权限。");
-      return;
-    }
-
-    if (state !== "loading") {
-      setState("ready");
-    }
-    setCheckoutStarted(true);
-    setMessage("");
-  }
-
-  async function handleCreateOrder(nextProvider: BillingPaymentProvider) {
-    if (checkoutSubmissionRef.current) {
-      return;
-    }
-    if (!selectedProduct) {
-      setMessage("请选择套餐后再选择支付方式。");
-      return;
-    }
-    if (!loggedIn) {
-      setCheckoutStarted(false);
-      setMessage("请先登录或注册后再购买套餐。注册即送 7 天完整权限。");
-      return;
-    }
-
-    const productCode = selectedProduct.code;
-    const requestId = checkoutRequestIdRef.current + 1;
-    checkoutRequestIdRef.current = requestId;
-    checkoutSubmissionRef.current = true;
-    setSubmittingProvider(nextProvider);
-    setCheckoutStarted(true);
-    setState("submitting");
-    setMessage("");
-    clearOrderState();
-    try {
-      const result = await createBillingOrder({ productCode, provider: nextProvider });
-      if (checkoutRequestIdRef.current !== requestId) {
-        return;
-      }
-      setOrder(result.order);
-      setCheckout(result.checkout ?? null);
-      setState("ready");
-    } catch (error) {
-      if (checkoutRequestIdRef.current !== requestId) {
-        return;
-      }
-      setState("error");
-      setMessage(error instanceof Error ? error.message : "生成支付请求失败，请稍后重试。");
-    } finally {
-      if (checkoutRequestIdRef.current === requestId) {
-        checkoutSubmissionRef.current = false;
-        setSubmittingProvider(null);
-      }
-    }
-  }
 
   return (
     <PublicShell contentClassName="pb-14">
@@ -457,17 +316,9 @@ export function PricingClient({
 
         <section
           id="paid-plans"
-          className={cn(
-            "grid min-w-0 max-w-full gap-4",
-            checkoutActive ? "lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start" : "",
-          )}
+          className="grid min-w-0 max-w-full gap-4"
         >
-          <div
-            className={cn(
-              "grid min-w-0 max-w-full gap-3 sm:grid-cols-2",
-              checkoutActive ? "xl:grid-cols-3" : "lg:grid-cols-3",
-            )}
-          >
+          <div className="grid min-w-0 max-w-full gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {state === "loading" ? (
               <Card className="min-w-0 max-w-full p-5 text-sm text-muted-foreground">
                 正在读取套餐...
@@ -477,23 +328,10 @@ export function PricingClient({
               <PaidPlanCard
                 key={product.code}
                 product={product}
-                selected={checkoutActive && selectedProduct?.code === product.code}
                 loggedIn={loggedIn}
-                submitting={state === "submitting" && selectedProductCode === product.code}
-                onStartCheckout={() => handleStartCheckout(product.code)}
               />
             ))}
           </div>
-
-          {checkoutActive ? (
-            <CheckoutPanel
-              selectedProduct={selectedProduct}
-              order={order}
-              checkout={checkout}
-              submittingProvider={submittingProvider}
-              onProviderPayment={(nextProvider) => void handleCreateOrder(nextProvider)}
-            />
-          ) : null}
         </section>
       </div>
     </PublicShell>
@@ -502,26 +340,17 @@ export function PricingClient({
 
 function PaidPlanCard({
   product,
-  selected,
   loggedIn,
-  submitting,
-  onStartCheckout,
 }: {
   readonly product: PublicBillingProduct;
-  readonly selected: boolean;
   readonly loggedIn: boolean;
-  readonly submitting: boolean;
-  readonly onStartCheckout: () => void;
 }) {
   const badgeText = displayProductBadgeText(product);
   const description = displayProductDescription(product);
 
   return (
     <Card
-      className={cn(
-        "grid min-w-0 max-w-full grid-rows-[auto_auto_1fr_auto] gap-4 p-5 transition",
-        selected ? "border-primary shadow-soft" : "border-border",
-      )}
+      className="grid min-w-0 max-w-full grid-rows-[auto_auto_1fr_auto] gap-4 border-border p-5 transition"
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
@@ -548,12 +377,15 @@ function PaidPlanCard({
       </ul>
       <div>
         {loggedIn ? (
-          <Button type="button" className="w-full" disabled={submitting} onClick={onStartCheckout}>
-            {submitting ? "正在唤起支付..." : "立即购买"}
-          </Button>
+          <Link
+            href={checkoutPathForProduct(product.code)}
+            className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+          >
+            立即购买
+          </Link>
         ) : (
           <Link
-            href="/login?returnTo=%2Fpricing"
+            href={loginHrefForProduct(product.code)}
             className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
           >
             登录后购买
@@ -561,176 +393,5 @@ function PaidPlanCard({
         )}
       </div>
     </Card>
-  );
-}
-
-export function CheckoutPanel({
-  selectedProduct,
-  order,
-  checkout,
-  submittingProvider,
-  onProviderPayment,
-}: {
-  readonly selectedProduct: PublicBillingProduct | null;
-  readonly order: AccountBillingOrderRecord | null;
-  readonly checkout: BillingCheckoutPayload | null;
-  readonly submittingProvider: BillingPaymentProvider | null;
-  readonly onProviderPayment: (provider: BillingPaymentProvider) => void;
-}) {
-  const submitting = Boolean(submittingProvider);
-
-  return (
-    <Card className="grid min-w-0 max-w-full gap-4 p-5 shadow-sm">
-      <div className="min-w-0">
-        <h2 className="text-lg font-bold text-card-foreground">选择支付方式</h2>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">{pricingCheckoutIntroCopy}</p>
-      </div>
-
-      <dl className="grid gap-2 rounded-lg border border-border bg-muted/30 p-3 text-sm">
-        <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">已选套餐</dt>
-          <dd className="font-semibold text-card-foreground">
-            {selectedProduct ? displayProductName(selectedProduct) : "请选择套餐"}
-          </dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">套餐金额</dt>
-          <dd className="font-semibold text-card-foreground">
-            {selectedProduct ? formatPrice(selectedProduct) : "-"}
-          </dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">有效期</dt>
-          <dd className="font-semibold text-card-foreground">
-            {selectedProduct?.durationText ?? "-"}
-          </dd>
-        </div>
-      </dl>
-
-      <div className="grid gap-2">
-        <p className="text-sm font-semibold text-card-foreground">支付方式</p>
-        <div className="grid grid-cols-2 gap-2">
-          {paymentProviderOptions.map((item) => {
-            const loading = submittingProvider === item.value;
-            return (
-              <Button
-                key={item.value}
-                type="button"
-                variant={item.value === "alipay" ? "primary" : "secondary"}
-                size="lg"
-                className="w-full"
-                disabled={!selectedProduct || submitting}
-                onClick={() => onProviderPayment(item.value)}
-              >
-                {loading ? "正在唤起支付..." : item.label}
-              </Button>
-            );
-          })}
-        </div>
-      </div>
-
-      {order ? <PaymentActionPanel order={order} checkout={checkout} /> : null}
-    </Card>
-  );
-}
-
-function paymentStatusMessage(order: AccountBillingOrderRecord): string {
-  if (order.status === "paid") {
-    return "支付成功，会员权益已生效。";
-  }
-  if (order.status === "failed") {
-    return "支付请求未完成，请重新选择支付方式。";
-  }
-  if (order.status === "closed" || order.status === "canceled") {
-    return "支付未完成，请重新选择支付方式。";
-  }
-  if (order.status === "refunded") {
-    return "支付已退款，权益状态以账户中心为准。";
-  }
-  return "支付完成后权益会自动生效。";
-}
-
-function PaymentActionPanel({
-  order,
-  checkout,
-}: {
-  readonly order: AccountBillingOrderRecord;
-  readonly checkout: BillingCheckoutPayload | null;
-}) {
-  const pending = order.status === "pending" || order.status === "created";
-  const paid = order.status === "paid";
-
-  return (
-    <div className="grid gap-3 border-t border-border pt-4">
-      <div className="grid gap-2 rounded-lg border border-border bg-muted/30 p-3">
-        <div className="flex items-start justify-between gap-3">
-          <p className="text-sm font-semibold leading-6 text-card-foreground">
-            {paymentStatusMessage(order)}
-          </p>
-          <Badge variant={paid ? "success" : "muted"} className="shrink-0">
-            {statusLabel(order.status)}
-          </Badge>
-        </div>
-        {pending ? (
-          <p className="text-xs leading-5 text-muted-foreground">
-            如已支付，请稍候刷新账户权益。
-          </p>
-        ) : null}
-      </div>
-      {checkout ? <CheckoutPayloadView checkout={checkout} /> : null}
-    </div>
-  );
-}
-
-export function CheckoutPayloadView({ checkout }: { readonly checkout: BillingCheckoutPayload }) {
-  if (checkout.kind === "qr_code") {
-    return (
-      <div className="rounded-lg border border-border bg-muted/30 p-3">
-        <p className="text-sm font-bold text-card-foreground">扫码支付</p>
-        <p className="mt-2 break-all rounded-md bg-card px-3 py-2 text-xs leading-5 text-muted-foreground">
-          {checkout.codeUrl}
-        </p>
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">{checkout.message}</p>
-      </div>
-    );
-  }
-
-  if (checkout.kind === "redirect_url") {
-    return (
-      <a
-        href={checkout.redirectUrl}
-        className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
-      >
-        继续完成支付
-      </a>
-    );
-  }
-
-  if (checkout.kind === "form_post") {
-    return (
-      <form
-        action={checkout.actionUrl}
-        method={checkout.method}
-        acceptCharset={checkout.charset}
-        className="grid gap-2"
-      >
-        {Object.entries(checkout.fields).map(([name, value]) => (
-          <input key={name} type="hidden" name={name} value={value} />
-        ))}
-        <Button type="submit">前往支付宝支付</Button>
-        <p className="text-xs leading-5 text-muted-foreground">
-          支付页面已生成，请继续完成支付。
-        </p>
-        {checkout.message ? (
-          <p className="text-xs leading-5 text-muted-foreground">{checkout.message}</p>
-        ) : null}
-      </form>
-    );
-  }
-
-  return (
-    <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
-      {checkout.message}
-    </p>
   );
 }
