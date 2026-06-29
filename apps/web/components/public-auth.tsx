@@ -18,7 +18,7 @@ export function PublicAuthLayout({
     <section
       data-auth-layout="centered-public-auth"
       className={cn(
-        "mx-auto grid w-full min-w-0 justify-items-center gap-5 pt-2 sm:pt-4 lg:pt-6",
+        "mx-auto grid w-full max-w-full min-w-0 justify-items-center gap-5 pt-2 sm:pt-4 lg:pt-6",
         maxWidthClassName,
         className,
       )}
@@ -37,14 +37,14 @@ type AuthCardProps = {
 
 export function AuthCard({ eyebrow, title, description, children }: AuthCardProps) {
   return (
-    <Card data-auth-card="centered-form-card" className="w-full p-5 shadow-sm sm:p-6">
-      <div className="mb-5 border-b border-border pb-4">
+    <Card data-auth-card="centered-form-card" className="w-full max-w-full min-w-0 p-5 shadow-sm sm:p-6">
+      <div className="mb-5 min-w-0 border-b border-border pb-4">
         <p className="text-xs font-bold text-primary">{eyebrow}</p>
         <h1 className="mt-1.5 text-xl font-bold leading-tight text-card-foreground sm:text-2xl">
           {title}
         </h1>
         {description ? (
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">{description}</p>
         ) : null}
       </div>
       {children}
@@ -67,7 +67,7 @@ export function AuthStatusMessage({ message, tone = "info" }: AuthStatusMessageP
       role={tone === "error" ? "alert" : "status"}
       aria-live={tone === "error" ? "assertive" : "polite"}
       className={cn(
-        "rounded-lg border px-3 py-2.5 text-sm font-medium leading-6",
+        "rounded-lg border px-3 py-2.5 text-sm font-medium leading-6 [overflow-wrap:anywhere]",
         tone === "success" && "border-success bg-card text-success",
         tone === "error" && "border-danger bg-card text-danger",
         tone === "info" && "border-info bg-card text-info",

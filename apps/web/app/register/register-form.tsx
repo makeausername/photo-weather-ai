@@ -39,11 +39,34 @@ function isTargetValid(channel: RegisterVerificationChannel, target: string): bo
 
 type AuthFormStatusTone = "success" | "error" | "info";
 
-export function buildRegisteredLoginHref(identifier: string): string {
+function safePublicRegisterReturnTo(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed || !trimmed.startsWith("/") || trimmed.startsWith("//")) {
+    return null;
+  }
+  if (trimmed === "/admin" || trimmed.startsWith("/admin/")) {
+    return null;
+  }
+  return trimmed;
+}
+
+function loginHrefWithReturnTo(returnTo: string | null): string {
+  if (!returnTo) {
+    return "/login";
+  }
+  const params = new URLSearchParams({ returnTo });
+  return `/login?${params.toString()}`;
+}
+
+export function buildRegisteredLoginHref(identifier: string, returnTo?: string | null): string {
   const params = new URLSearchParams({
     registered: "1",
     identifier,
   });
+  const safeReturnTo = safePublicRegisterReturnTo(returnTo);
+  if (safeReturnTo) {
+    params.set("returnTo", safeReturnTo);
+  }
   return `/login?${params.toString()}`;
 }
 
@@ -85,8 +108,9 @@ export function canSubmitRegisterForm({
   );
 }
 
-export function RegisterForm() {
+export function RegisterForm({ returnTo = null }: { readonly returnTo?: string | null } = {}) {
   const router = useRouter();
+  const safeReturnTo = safePublicRegisterReturnTo(returnTo);
   const [channel, setChannel] = useState<RegisterVerificationChannel>("email");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -227,7 +251,7 @@ export function RegisterForm() {
         ...(displayName.trim() ? { displayName: displayName.trim() } : {}),
       });
 
-      router.replace(buildRegisteredLoginHref(target));
+      router.replace(buildRegisteredLoginHref(target, safeReturnTo));
     } catch (error) {
       setStatusTone("error");
       setStatus((error as Error).message || "验证码错误或已过期，请重新获取。");
@@ -352,7 +376,7 @@ export function RegisterForm() {
             {isSubmitting ? "正在注册..." : "注册"}
           </Button>
           <Link
-            href="/login"
+            href={loginHrefWithReturnTo(safeReturnTo)}
             className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-foreground"
           >
             已有账户，去登录

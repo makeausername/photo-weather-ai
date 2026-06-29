@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE=".env.production"
 COMPOSE_FILE="docker-compose.prod.yml"
+CADDY_TEMPLATE="${PROJECT_ROOT}/deploy/Caddyfile.template"
+CADDY_FILE="${PROJECT_ROOT}/deploy/Caddyfile"
 INSTALLER_INPUT_LIB="${SCRIPT_DIR}/lib/installer-input.sh"
 
 cd "${PROJECT_ROOT}"
@@ -28,6 +30,22 @@ docker_cmd() {
 
 compose() {
   docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
+render_caddyfile() {
+  if [[ -z "${DOMAIN:-}" ]]; then
+    echo "DOMAIN is missing in .env.production; cannot render deploy/Caddyfile."
+    exit 1
+  fi
+
+  if [[ ! -f "${CADDY_TEMPLATE}" ]]; then
+    echo "Missing deploy/Caddyfile.template; run this script from the project checkout."
+    exit 1
+  fi
+
+  mkdir -p "${PROJECT_ROOT}/deploy"
+  sed "s/DOMAIN_PLACEHOLDER/${DOMAIN}/g" "${CADDY_TEMPLATE}" > "${CADDY_FILE}"
+  echo "Rendered deploy/Caddyfile from deploy/Caddyfile.template."
 }
 
 mask_database_url() {
@@ -235,6 +253,8 @@ if [[ -d .git ]]; then
     echo "Git upstream is not configured; skipping git pull."
   fi
 fi
+
+render_caddyfile
 
 echo "Rebuilding production images..."
 build_production_images

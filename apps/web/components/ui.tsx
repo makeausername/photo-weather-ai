@@ -169,6 +169,7 @@ export function ResponsiveDataScroller({
         "w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain rounded-lg border border-border bg-card [-webkit-overflow-scrolling:touch]",
         className,
       )}
+      data-responsive-data-scroller="true"
       {...props}
     >
       {children}
@@ -181,9 +182,10 @@ export function Table({ className, ...props }: TableHTMLAttributes<HTMLTableElem
     <ResponsiveDataScroller>
       <table
         className={cn(
-          "w-full min-w-[760px] border-collapse text-left text-[13px] leading-5",
+          "w-full min-w-[760px] border-separate border-spacing-0 text-left text-[13px] leading-5",
           className,
         )}
+        data-responsive-table="true"
         {...props}
       />
     </ResponsiveDataScroller>
@@ -277,7 +279,7 @@ export function PageHeader({ eyebrow, title, description, action, className }: P
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
         ) : null}
       </div>
-      {action ? <div className="shrink-0">{action}</div> : null}
+      {action ? <div className="min-w-0 sm:shrink-0">{action}</div> : null}
     </header>
   );
 }
@@ -329,22 +331,22 @@ export function ConfirmDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#17231F]/50 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#17231F]/50 p-4 backdrop-blur-sm">
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="grid w-full max-w-md gap-5 rounded-lg border border-border bg-card p-6 shadow-soft"
+        className="grid max-h-[calc(100dvh-2rem)] w-full max-w-md gap-5 overflow-y-auto rounded-lg border border-border bg-card p-5 shadow-soft sm:p-6"
       >
         <div>
           <h2 className="text-lg font-bold text-foreground">{title}</h2>
           <div className="mt-2 text-sm leading-6 text-muted-foreground">{description}</div>
         </div>
-        <div className="flex flex-wrap justify-end gap-3">
-          <Button variant="secondary" onClick={onCancel}>
+        <div className="grid gap-3 sm:flex sm:flex-wrap sm:justify-end">
+          <Button variant="secondary" className="w-full sm:w-auto" onClick={onCancel}>
             {cancelLabel}
           </Button>
-          <Button variant={confirmVariant} onClick={onConfirm}>
+          <Button variant={confirmVariant} className="w-full sm:w-auto" onClick={onConfirm}>
             {confirmLabel}
           </Button>
         </div>

@@ -319,6 +319,24 @@ describe("admin provider module source", () => {
     expect(providerDetailSource).not.toContain("{provider.providerCode}");
   });
 
+  it("keeps provider config and action panels mobile-safe for long values", () => {
+    for (const snippet of [
+      "[overflow-wrap:anywhere]",
+      "grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap",
+      "className=\"w-full sm:w-auto\"",
+      "grid min-w-0 gap-1 text-xs leading-5",
+      "grid min-w-0 max-w-full gap-4 rounded-lg",
+      "min-w-0 w-full resize-y rounded-md",
+      "w-full sm:w-fit",
+      "data-cdn-operation-panel",
+    ]) {
+      expect(source).toContain(snippet);
+    }
+
+    expect(providerListRowSource).not.toContain("flex shrink-0 flex-wrap gap-2");
+    expect(providerDetailSource).not.toContain("className=\"self-end\"");
+  });
+
   it("preserves selected-provider save, test, enable, real-call, secret, and detail actions", () => {
     for (const snippet of [
       "saveProvider(provider)",

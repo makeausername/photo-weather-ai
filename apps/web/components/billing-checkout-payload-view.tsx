@@ -266,12 +266,12 @@ function WechatQrCodeImage({ codeUrl }: { readonly codeUrl: string }) {
         height={192}
         alt="微信支付二维码"
         data-qr-code-image="wechat-native"
-        className="h-48 w-48 rounded-md border border-border bg-white p-2"
+        className="h-48 w-48 max-w-full rounded-md border border-border bg-white p-2"
       />
     );
   } catch {
     return (
-      <p className="rounded-md border border-danger/40 bg-card px-3 py-2 text-xs leading-5 text-danger">
+      <p className="rounded-md border border-danger/40 bg-card px-3 py-2 text-xs leading-5 text-danger [overflow-wrap:anywhere]">
         二维码暂时无法生成，请使用下方支付链接。
       </p>
     );
@@ -305,24 +305,24 @@ export function CheckoutPayloadView({
 
   if (checkout.kind === "qr_code") {
     return (
-      <div className={cn("rounded-lg border border-border bg-muted/30 p-4", className)}>
-        <p className="text-sm font-bold text-card-foreground">请使用微信扫码支付</p>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+      <div className={cn("min-w-0 max-w-full rounded-lg border border-border bg-muted/30 p-4", className)}>
+        <p className="text-sm font-bold text-card-foreground [overflow-wrap:anywhere]">请使用微信扫码支付</p>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
           请使用微信扫码完成支付。支付完成后，会员权益自动生效。
         </p>
-        <div className="mt-3 flex justify-center">
+        <div className="mt-3 flex min-w-0 justify-center">
           <WechatQrCodeImage codeUrl={checkout.codeUrl} />
         </div>
-        <details className="mt-3 rounded-md border border-border bg-card px-3 py-2 text-xs leading-5 text-muted-foreground">
+        <details className="mt-3 min-w-0 rounded-md border border-border bg-card px-3 py-2 text-xs leading-5 text-muted-foreground">
           <summary className="cursor-pointer font-semibold text-card-foreground">
             查看支付链接
           </summary>
           <p className="mt-2 break-all">{checkout.codeUrl}</p>
         </details>
         {checkout.message ? (
-          <p className="mt-2 text-xs leading-5 text-muted-foreground">{checkout.message}</p>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{checkout.message}</p>
         ) : null}
-        <p className="mt-3 rounded-md border border-border bg-card px-3 py-2 text-xs leading-5 text-muted-foreground">
+        <p className="mt-3 rounded-md border border-border bg-card px-3 py-2 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
           当前为扫码模式，建议在电脑端打开，或返回选择支付宝。
         </p>
       </div>
@@ -331,20 +331,20 @@ export function CheckoutPayloadView({
 
   if (checkout.kind === "redirect_url") {
     return (
-      <div className={cn("grid gap-2", className)}>
+      <div className={cn("grid min-w-0 gap-2", className)}>
         {autoRedirect ? (
-          <p className="text-sm font-semibold text-card-foreground">
+          <p className="text-sm font-semibold text-card-foreground [overflow-wrap:anywhere]">
             {checkout.message || "正在唤起支付..."}
           </p>
         ) : null}
         <a
           href={checkout.redirectUrl}
-          className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+          className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)] sm:w-fit"
         >
           继续完成支付
         </a>
         {checkout.message ? (
-          <p className="text-xs leading-5 text-muted-foreground">{checkout.message}</p>
+          <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{checkout.message}</p>
         ) : null}
       </div>
     );
@@ -357,22 +357,22 @@ export function CheckoutPayloadView({
         action={checkout.actionUrl}
         method={checkout.method}
         acceptCharset={checkout.charset}
-        className={cn("grid gap-2", className)}
+        className={cn("grid min-w-0 gap-2", className)}
       >
         {Object.entries(checkout.fields).map(([name, value]) => (
           <input key={name} type="hidden" name={name} value={value} />
         ))}
         {autoSubmit ? (
-          <p className="text-sm font-semibold text-card-foreground">正在跳转支付宝收银台...</p>
+          <p className="text-sm font-semibold text-card-foreground [overflow-wrap:anywhere]">正在跳转支付宝收银台...</p>
         ) : null}
         <Button type="submit" className="w-full">
           继续前往支付宝
         </Button>
-        <p className="text-xs leading-5 text-muted-foreground">
+        <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
           支付页面已生成，请继续完成支付。支付完成后，会员权益自动生效。
         </p>
         {checkout.message ? (
-          <p className="text-xs leading-5 text-muted-foreground">{checkout.message}</p>
+          <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{checkout.message}</p>
         ) : null}
       </form>
     );
@@ -382,7 +382,7 @@ export function CheckoutPayloadView({
     return (
       <p
         className={cn(
-          "rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground",
+          "rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]",
           className,
         )}
       >
@@ -394,7 +394,7 @@ export function CheckoutPayloadView({
   return (
     <p
       className={cn(
-        "rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground",
+        "rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]",
         className,
       )}
     >

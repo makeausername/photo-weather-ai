@@ -235,8 +235,8 @@ const providerMeta: Record<ProviderKey, ProviderMeta> = {
     key: "billing:wechat_pay",
     group: "billing",
     displayName: "微信支付",
-    purpose: "用于国内微信 Native 扫码支付，回调验签通过后才会发放订单权益。",
-    capabilities: ["Native 扫码", "API v3 签名", "回调验签", "权益发放"],
+    purpose: "用于国内微信 Native 扫码和手机浏览器 H5 支付，回调验签通过后才会发放订单权益。",
+    capabilities: ["自动模式", "Native 扫码", "H5 支付", "API v3 签名", "回调验签"],
     requiredConfigKeys: ["mode", "appId", "mchId", "notifyUrl", "returnUrl"],
   },
   "billing:alipay": {
@@ -342,7 +342,7 @@ const providerConfigDefaults: Partial<Record<string, Record<string, JsonValue>>>
   },
   wechat_pay: {
     realCallEnabled: false,
-    mode: "native",
+    mode: "auto",
     appId: "",
     mchId: "",
     notifyUrl: "",
@@ -893,7 +893,10 @@ function FeedbackPill({ state, dirty }: { readonly state?: RowState; readonly di
   return (
     <span
       aria-live="polite"
-      className={cn("rounded-md border px-2.5 py-1.5 text-xs", stateClass(state?.status ?? "idle"))}
+      className={cn(
+        "max-w-full rounded-md border px-2.5 py-1.5 text-xs [overflow-wrap:anywhere]",
+        stateClass(state?.status ?? "idle"),
+      )}
     >
       {message}
     </span>
@@ -926,7 +929,10 @@ function ProviderSaveDetailMessage({
     <p
       role={state?.status === "error" ? "alert" : "status"}
       aria-live={state?.status === "error" ? "assertive" : "polite"}
-      className={cn("rounded-md border px-3 py-2 text-sm", stateClass(status))}
+      className={cn(
+        "rounded-md border px-3 py-2 text-sm [overflow-wrap:anywhere]",
+        stateClass(status),
+      )}
     >
       {message}
     </p>
@@ -1037,18 +1043,18 @@ function ProviderTestDetails({ result }: { readonly result?: MockConnectionTestR
   }
 
   return (
-    <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
+    <div className="grid min-w-0 gap-1 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
       {hasAlipayKeyFormatError ? (
-        <p className="font-medium text-danger">{alipayKeyFormatHint}</p>
+        <p className="font-medium text-danger [overflow-wrap:anywhere]">{alipayKeyFormatHint}</p>
       ) : null}
       {missingFieldsText ? <p>{missingFieldsText}</p> : null}
       {invalidFieldsText ? <p>{invalidFieldsText}</p> : null}
       {details.length ? (
-        <dl className="flex flex-wrap gap-x-4 gap-y-1">
+        <dl className="grid min-w-0 gap-x-4 gap-y-1 sm:flex sm:flex-wrap">
           {details.map(([label, value]) => (
             <div key={label} className="flex min-w-0 gap-1">
               <dt className="shrink-0 font-semibold">{label}:</dt>
-              <dd className="min-w-0 break-words text-card-foreground">{value}</dd>
+              <dd className="min-w-0 break-words text-card-foreground [overflow-wrap:anywhere]">{value}</dd>
             </div>
           ))}
         </dl>
@@ -1074,7 +1080,7 @@ function EmailTestResultDetails({ result }: { readonly result?: AdminEmailTestRe
     <div
       data-email-test-result
       className={cn(
-        "rounded-md border px-3 py-2 text-sm",
+        "min-w-0 rounded-md border px-3 py-2 text-sm [overflow-wrap:anywhere]",
         stateClass(result.success ? "saved" : "error"),
       )}
     >
@@ -1090,7 +1096,7 @@ function EmailTestResultDetails({ result }: { readonly result?: AdminEmailTestRe
           {details.map(([label, value]) => (
             <div key={label} className="grid gap-1 sm:grid-cols-[120px_minmax(0,1fr)]">
               <dt className="font-semibold text-muted-foreground">{label}</dt>
-              <dd className="min-w-0 break-words text-card-foreground">{value}</dd>
+              <dd className="min-w-0 break-words text-card-foreground [overflow-wrap:anywhere]">{value}</dd>
             </div>
           ))}
         </dl>
@@ -1120,7 +1126,7 @@ class ProviderCardErrorBoundary extends Component<
   override render() {
     if (this.state.hasError) {
       return (
-        <div className="rounded-md border border-danger bg-card px-3 py-2 text-sm text-danger">
+        <div className="rounded-md border border-danger bg-card px-3 py-2 text-sm text-danger [overflow-wrap:anywhere]">
           该服务商配置暂时无法显示，请刷新或检查配置。
         </div>
       );
@@ -1272,7 +1278,7 @@ function CdnOperationResultSummary({ result }: { readonly result?: AdminCdnOpera
   }
 
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-background/45 px-3 py-2 text-sm">
+    <div className="grid min-w-0 gap-2 rounded-md border border-border bg-background/45 px-3 py-2 text-sm [overflow-wrap:anywhere]">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={result.success ? "success" : "danger"} className="rounded-md">
           {result.success ? "已受理" : "未受理"}
@@ -1284,8 +1290,8 @@ function CdnOperationResultSummary({ result }: { readonly result?: AdminCdnOpera
           {result.mode === "real" ? "真实调用" : "配置检查"}
         </Badge>
       </div>
-      <p className="leading-6 text-card-foreground">{result.messageZh}</p>
-      <p className="text-xs leading-5 text-muted-foreground">
+      <p className="leading-6 text-card-foreground [overflow-wrap:anywhere]">{result.messageZh}</p>
+      <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
         已接收 {result.acceptedCount} 条，拒绝 {result.rejectedCount} 条
         {result.providerTaskId ? `，任务 ${result.providerTaskId}` : ""}。
       </p>
@@ -1475,9 +1481,9 @@ function CdnOperationsPanel({
   return (
     <section
       data-cdn-operation-panel
-      className="grid gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-sm"
+      className="grid min-w-0 max-w-full gap-4 rounded-lg border border-border bg-card px-4 py-3 shadow-sm"
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-semibold text-primary">CDN 操作</p>
           <h3 className="mt-1 text-lg font-bold text-card-foreground">缓存刷新与 URL 预热</h3>
@@ -1485,7 +1491,7 @@ function CdnOperationsPanel({
             刷新和预热会消耗 CDN 配额；真实调用开启后会影响线上缓存状态。
           </p>
         </div>
-        <Badge variant={readiness.ready ? "success" : "warning"} className="rounded-md">
+        <Badge variant={readiness.ready ? "success" : "warning"} className="w-fit max-w-full rounded-md [overflow-wrap:anywhere]">
           {readiness.message}
         </Badge>
       </div>
@@ -1517,10 +1523,10 @@ function CdnOperationsPanel({
               "grid gap-3 rounded-md border border-border bg-background/35 p-3",
             )}
           >
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <SectionTitle title="缓存刷新" description="URL 与目录会按已配置 CDN 域名校验。" />
               <Select
-                className="w-32"
+                className="w-full sm:w-32"
                 value={refreshType}
                 onChange={(event) => setRefreshType(event.target.value as AdminCdnRefreshType)}
               >
@@ -1536,7 +1542,7 @@ function CdnOperationsPanel({
                 value={refreshUrlsInput}
                 onChange={(event) => setRefreshUrlsInput(event.target.value)}
                 rows={4}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
+                className="min-w-0 w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition [overflow-wrap:anywhere] focus:border-primary"
                 placeholder="https://cdn.example.com/assets/app.js"
               />
             </FormField>
@@ -1545,11 +1551,11 @@ function CdnOperationsPanel({
                 value={refreshDirectoriesInput}
                 onChange={(event) => setRefreshDirectoriesInput(event.target.value)}
                 rows={3}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
+                className="min-w-0 w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition [overflow-wrap:anywhere] focus:border-primary"
                 placeholder="https://cdn.example.com/assets/"
               />
             </FormField>
-            <Button disabled={!canRefresh} onClick={() => void runRefresh()}>
+            <Button className="w-full sm:w-fit" disabled={!canRefresh} onClick={() => void runRefresh()}>
               {busyAction === "refresh" ? "刷新中..." : "刷新缓存"}
             </Button>
           </section>
@@ -1566,11 +1572,11 @@ function CdnOperationsPanel({
                 value={prefetchUrlsInput}
                 onChange={(event) => setPrefetchUrlsInput(event.target.value)}
                 rows={7}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
+                className="min-w-0 w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition [overflow-wrap:anywhere] focus:border-primary"
                 placeholder="https://cdn.example.com/assets/app.js"
               />
             </FormField>
-            <Button disabled={!canPrefetch} onClick={() => void runPrefetch()}>
+            <Button className="w-full sm:w-fit" disabled={!canPrefetch} onClick={() => void runPrefetch()}>
               {busyAction === "prefetch" ? "预热中..." : "URL 预热"}
             </Button>
           </section>
@@ -1578,7 +1584,7 @@ function CdnOperationsPanel({
       </div>
 
       {errorMessage ? (
-        <div className="rounded-md border border-danger bg-card px-3 py-2 text-sm text-danger">
+        <div className="rounded-md border border-danger bg-card px-3 py-2 text-sm text-danger [overflow-wrap:anywhere]">
           {errorMessage}
         </div>
       ) : null}
@@ -2134,7 +2140,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               onChange={(event) => updateEmailTestDraft(provider.id, event.target.value)}
             />
           </FormField>
-          <Button disabled={isSending} onClick={() => void sendTestEmail(provider)}>
+          <Button className="w-full sm:w-auto" disabled={isSending} onClick={() => void sendTestEmail(provider)}>
             {isSending ? "发送中..." : "发送测试邮件"}
           </Button>
         </div>
@@ -2232,13 +2238,14 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
             <FeedbackPill state={saveState} dirty={dirty} />
             <FeedbackPill state={testState} />
           </div>
-          <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
-            <Button size="sm" onClick={() => selectProvider(provider)}>
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
+            <Button size="sm" className="w-full sm:w-auto" onClick={() => selectProvider(provider)}>
               配置
             </Button>
             <Button
               size="sm"
               variant="secondary"
+              className="w-full sm:w-auto"
               aria-label="测试连接"
               disabled={isTesting}
               onClick={() => void testProvider(provider)}
@@ -2248,6 +2255,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
             {dirty ? (
               <Button
                 size="sm"
+                className="w-full sm:w-auto"
                 aria-label="保存配置"
                 disabled={isSaving}
                 onClick={() => void saveProvider(provider)}
@@ -2311,7 +2319,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h4 className="text-base font-bold text-card-foreground">{providerName(provider)}</h4>
+              <h4 className="break-words text-base font-bold text-card-foreground">{providerName(provider)}</h4>
               <Badge variant="muted" className="rounded-md">
                 {providerTypeLabel(provider.providerType)}
               </Badge>
@@ -2488,8 +2496,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               <FeedbackPill state={saveState} dirty={dirty} />
               <FeedbackPill state={testState} />
             </div>
-            <div className="flex shrink-0 flex-wrap gap-2">
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
               <Button
+                className="w-full sm:w-auto"
                 aria-label="保存配置"
                 disabled={isSaving}
                 onClick={() => void saveProvider(provider)}
@@ -2498,6 +2507,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               </Button>
               <Button
                 variant="secondary"
+                className="w-full sm:w-auto"
                 aria-label="测试连接"
                 disabled={isTesting}
                 onClick={() => void testProvider(provider)}
@@ -2528,7 +2538,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
 
   return (
     <div
-      className="grid w-full gap-5"
+        className="grid w-full max-w-full min-w-0 gap-5"
       data-provider-console
       data-provider-module={moduleDefinition.key}
     >
@@ -2542,8 +2552,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
             {moduleDefinition.description}
           </p>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
+        <div className="grid w-full gap-2 sm:w-auto sm:shrink-0">
           <Button
+            className="w-full sm:w-auto"
             variant="secondary"
             disabled={loadState.status === "saving"}
             onClick={() => void loadProviders()}

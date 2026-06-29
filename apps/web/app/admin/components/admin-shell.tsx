@@ -59,8 +59,8 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
   const pathname = usePathname();
 
   return (
-    <main className="min-h-screen bg-background text-foreground lg:grid lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[272px_minmax(0,1fr)]">
-      <aside className="border-b border-border bg-card/96 lg:min-h-screen lg:border-b-0 lg:border-r">
+    <main className="min-h-screen max-w-full min-w-0 bg-background text-foreground lg:grid lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[272px_minmax(0,1fr)]">
+      <aside className="min-w-0 border-b border-border bg-card/96 lg:min-h-screen lg:border-b-0 lg:border-r">
         <div className="sticky top-0 grid content-start gap-5 p-4 lg:min-h-screen lg:p-5">
           <Link href="/admin" className="flex items-center gap-3">
             <img src="/brand-mark.svg" alt="" className="h-9 w-9 shrink-0" aria-hidden="true" />
@@ -99,7 +99,7 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
         </div>
       </aside>
 
-      <section className="min-w-0">
+      <section className="min-w-0 max-w-full">
         <header className="border-b border-border bg-card/92 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0">
@@ -122,7 +122,7 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
             </div>
           </div>
         </header>
-        <div className="grid gap-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">{children}</div>
+        <div className="grid max-w-full min-w-0 gap-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">{children}</div>
       </section>
     </main>
   );

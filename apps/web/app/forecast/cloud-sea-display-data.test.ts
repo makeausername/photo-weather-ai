@@ -296,6 +296,10 @@ describe("Cloud Sea display data rolling horizon", () => {
       source.indexOf("function CloudSeaProfessionalHourlyDataPanel"),
       source.indexOf("function CloudSeaProfessionalHourlyRow"),
     );
+    const rowSource = source.slice(
+      source.indexOf("function CloudSeaProfessionalHourlyRow"),
+      source.indexOf("function CloudSeaHourlyFocusPreview"),
+    );
     const cloudSeaPageSource = source.slice(
       source.indexOf("export function CloudSeaResultPage"),
       source.indexOf("export function GlowResultPage"),
@@ -311,12 +315,22 @@ describe("Cloud Sea display data rolling horizon", () => {
 
     expect(panelSource).toContain("const rows = data.rows");
     expect(panelSource).toContain("data-cloud-sea-professional-table-scroll");
+    expect(panelSource).toContain('data-professional-hourly-table-layout="mobile-scroll-safe"');
+    expect(panelSource).toContain("border-separate border-spacing-0");
+    expect(panelSource).not.toContain("border-collapse");
+    expect(panelSource).toContain("professionalHourlyDateHeaderClassName");
+    expect(panelSource).toContain("min-[760px]:sticky min-[760px]:left-0");
+    expect(panelSource).not.toContain("sticky left-0 z-20");
     expect(panelSource).not.toContain("ProfessionalHourlyCloudCard");
     expect(panelSource).not.toContain("professionalHourlyRowsByDate");
     expect(panelSource).not.toContain("data-professional-hourly-card-layout");
     expect(panelSource).not.toContain("data-glow-hourly-cloud-card");
     expect(panelSource).not.toMatch(/row\.date|currentDate|isSameDay|23:00/);
     expect(panelSource).not.toMatch(/startsWith\(\s*`\$\{date\}T`/);
+    expect(rowSource).toContain("professionalHourlyDateCellClassName(rowBackgroundClassName)");
+    expect(rowSource).toContain("professionalHourlyTimeCellClassName()");
+    expect(rowSource).not.toContain("bg-inherit");
+    expect(rowSource).not.toContain("sticky left-0");
     expect(cloudSeaPageSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
     expect(cloudSeaPageSource).not.toContain("CloudSeaMultiSourceAgreement");
     expect(glowPageSource).toContain("<GlowProfessionalDataSection");

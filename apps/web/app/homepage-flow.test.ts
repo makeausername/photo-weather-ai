@@ -294,6 +294,9 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("06");
     expect(html).toContain("sm:grid-cols-2");
     expect(html).toContain("xl:grid-cols-3");
+    expect(html).not.toContain("min-[900px]:grid-rows-[auto_minmax(0,1fr)]");
+    expect(html).not.toContain("min-[900px]:auto-rows-fr");
+    expect(html).not.toContain("min-[900px]:h-full");
     expect(html).not.toContain("云海判断需要关注什么");
     expect(html).not.toContain("朝霞晚霞判断需要看什么");
     expect(html).not.toContain("星空银河判断需要看什么");
@@ -318,6 +321,8 @@ describe("homepage forecast flow", () => {
     expect(html).toContain('data-homepage-card-grid="true"');
     expect(html).toContain("地点与窗口");
     expect(html).toContain("降水与风险");
+    expect(html).not.toContain("min-[900px]:grid-rows-[auto_minmax(0,1fr)]");
+    expect(html).not.toContain("min-[900px]:auto-rows-fr");
     expect(html).not.toContain('data-homepage-layer-visual="true"');
     expect(html).not.toContain("黄山光明顶");
   });
@@ -348,6 +353,9 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("低云 18%，湿度 68%，能见度 18.5 公里。");
     expect(html).toContain("当前建议");
     expect(html).toContain("根据窗口和风险安排到达时间与备选题材。");
+    expect(html).toContain("min-[900px]:grid-rows-[auto_minmax(0,1fr)]");
+    expect(html).toContain("min-[900px]:auto-rows-fr");
+    expect(html).toContain("min-[900px]:h-full");
     expect(html).not.toContain("和风天气");
     expect(html).not.toContain("Open-Meteo");
     expect(html).not.toContain("meteoblue");
@@ -904,6 +912,7 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("minmax(0,1fr)");
     expect(html).toContain('data-homepage-workbench-layout="scenario-two-column"');
     expect(html).toContain("min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)]");
+    expect(html).toContain("min-[900px]:items-stretch");
     expect(html).toContain(
       "min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)]",
     );
@@ -913,6 +922,7 @@ describe("homepage forecast flow", () => {
     expect(html).not.toContain(
       "min-[1200px]:grid-cols-[clamp(360px,24vw,420px)_minmax(0,1fr)_clamp(360px,24vw,420px)]",
     );
+    expect(html).not.toContain("min-[1200px]:items-start");
     expect(html).not.toContain("min-[1200px]:contents");
     expect(html).not.toContain("xl:grid-cols-4");
     expect(html).not.toMatch(/w-\[(?:[1-9]\d{3,})px\]|min-w-\[(?:[1-9]\d{3,})px\]/);

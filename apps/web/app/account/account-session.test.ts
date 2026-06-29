@@ -7,8 +7,11 @@ import {
   createBillingOrder,
   getCaptchaPublicConfig,
   getCurrentAccountSession,
+  listPublicBillingPaymentMethods,
+  loginPublicAccountBySms,
   loginPublicAccount,
   registerPublicAccount,
+  sendLoginSmsCode,
   sendRegisterVerificationCode,
   shouldShowAdminEntry,
   type AccountAccessStatus,
@@ -17,6 +20,7 @@ import {
   type AccountForecastHistoryRecord,
   type CaptchaToken,
   type PublicAccountSession,
+  type PublicBillingPaymentMethod,
 } from "../../components/account-session";
 import {
   invalidCredentialsMessage,
@@ -423,6 +427,9 @@ describe("account center foundation", () => {
     expect(html).toContain("新密码");
     expect(html).toContain("确认新密码");
     expect(html).toContain("保存新密码");
+    expect(html).toContain("lg:w-full lg:max-w-[520px] lg:flex-1");
+    expect(html).toContain("w-full sm:w-fit");
+    expect(html).toContain("w-full self-end");
     expect(html).toContain("修改绑定邮箱");
     expect(html).toContain("绑定/修改手机");
     expect(html).toContain("注销账户");
@@ -957,9 +964,11 @@ describe("account center foundation", () => {
     expect(html).not.toContain("订单和可用次数放在一起");
     expect(html).not.toContain("有权限时显示后台入口");
     expect(html).not.toContain("登录后可以做什么");
-    expect(html).toContain("输入邮箱或手机号和密码");
+    expect(html).toContain("支持邮箱或手机号密码登录");
+    expect(html).toContain("手机号验证码登录");
     expect(html).toContain("邮箱或手机号");
     expect(html).toContain("密码");
+    expect(html).not.toContain("请输入已绑定手机号");
     expect(html).toContain('value="photo@example.com"');
     expect(html).toContain("账户已创建，可以用刚才的邮箱或手机号登录。");
     expect(html).toContain("显示密码");
@@ -984,7 +993,18 @@ describe("account center foundation", () => {
   it("keeps public login and admin login routes importable", () => {
     expect(LoginPage({})).toBeTruthy();
     expect(loginMetadata.title).toBe("用户登录 - 逐光天气");
-    expect(publicLoginFormLabels).toEqual(["邮箱或手机号", "密码", "登录", "创建账户", "返回首页"]);
+    expect(publicLoginFormLabels).toEqual([
+      "密码登录",
+      "手机号验证码登录",
+      "邮箱或手机号",
+      "密码",
+      "手机号",
+      "发送验证码",
+      "验证码",
+      "登录",
+      "创建账户",
+      "返回首页",
+    ]);
     expect(AdminLoginPage).toBeTypeOf("function");
   });
 
@@ -1031,7 +1051,7 @@ describe("account center foundation", () => {
   });
 
   it("keeps the public register route importable with the expected form labels", () => {
-    expect(RegisterPage()).toBeTruthy();
+    expect(RegisterPage({})).toBeTruthy();
     expect(registerMetadata.title).toBe("创建账户 - 逐光天气");
     expect(publicRegisterFormLabels).toEqual([
       "邮箱注册",
@@ -1143,9 +1163,9 @@ function getPublicAccountMenuChildren(
 ): Array<React.ReactElement<PublicAccountMenuChildProps>> {
   const menu = PublicAccountMenuContent(props);
 
-  return React.Children.toArray(menu.props.children).filter(
-    React.isValidElement,
-  ) as Array<React.ReactElement<PublicAccountMenuChildProps>>;
+  return React.Children.toArray(menu.props.children).filter(React.isValidElement) as Array<
+    React.ReactElement<PublicAccountMenuChildProps>
+  >;
 }
 
 describe("login error sanitization", () => {
@@ -1244,7 +1264,147 @@ describe("public registration session API", () => {
     );
   });
 
-  it("creates billing orders with productCode and provider only", async () => {
+  it("sends login SMS codes through the passwordless endpoint", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          channel: "sms",
+          targetMasked: "138****8000",
+          expiresInSeconds: 600,
+          resendAfterSeconds: 60,
+          mode: "mock",
+          message: "如果该手机号已注册或已绑定，验证码将发送到该手机。",
+          mockCode: "123456",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(
+      sendLoginSmsCode({
+        phone: "13800138000",
+        captcha: captchaToken,
+      }),
+    ).resolves.toMatchObject({
+      success: true,
+      channel: "sms",
+      targetMasked: "138****8000",
+      mockCode: "123456",
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:4000/auth/login/sms/send-code",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          phone: "13800138000",
+          captcha: captchaToken,
+        }),
+      }),
+    );
+  });
+
+  it("stores SMS login sessions with the same account storage path", async () => {
+    const { localStorage } = installBrowserWindow();
+    const sessionExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const accessTokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          accessToken: "sms-account-access-token",
+          refreshToken: "sms-account-refresh-token",
+          accessTokenExpiresAt,
+          sessionExpiresAt,
+          sessionTtlDays: 7,
+          sessionRoleType: "user",
+          user: {
+            ...baseAccountSession.user,
+            phone: "13800138000",
+          },
+          profile: baseAccountSession.profile,
+          roles: baseAccountSession.roles,
+          roleCodes: baseAccountSession.roleCodes,
+          permissions: baseAccountSession.permissions,
+          isAdmin: false,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(
+      loginPublicAccountBySms({
+        phone: "13800138000",
+        code: "123456",
+      }),
+    ).resolves.toMatchObject({
+      user: {
+        phone: "13800138000",
+      },
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:4000/auth/login/sms/confirm",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          phone: "13800138000",
+          code: "123456",
+        }),
+      }),
+    );
+    expect(getStoredAdminTokens()).toEqual({
+      accessToken: "sms-account-access-token",
+      refreshToken: "sms-account-refresh-token",
+    });
+    expect(localStorage.getItem("photo_weather_admin_session_expires_at")).toBe(sessionExpiresAt);
+    expect(localStorage.getItem("photo_weather_admin_access_token_expires_at")).toBe(
+      accessTokenExpiresAt,
+    );
+  });
+
+  it("lists only ready public billing payment methods from the public endpoint", async () => {
+    const methods: readonly PublicBillingPaymentMethod[] = [
+      {
+        provider: "alipay",
+        label: "支付宝支付",
+        enabled: true,
+        ready: true,
+        recommended: true,
+      },
+      {
+        provider: "wechat_pay",
+        label: "微信支付",
+        enabled: false,
+        ready: false,
+        recommended: false,
+        unavailableReason: "disabled",
+      },
+    ];
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ methods }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(listPublicBillingPaymentMethods()).resolves.toEqual([methods[0]]);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:4000/billing/payment-methods",
+      expect.objectContaining({
+        cache: "no-store",
+        headers: expect.objectContaining({
+          Accept: "application/json",
+        }),
+      }),
+    );
+  });
+
+  it("creates billing orders with client payment routing fields only", async () => {
     installBrowserWindow();
     storeAdminSession(createStoredSession());
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -1277,7 +1437,12 @@ describe("public registration session API", () => {
     );
 
     await expect(
-      createBillingOrder({ productCode: "monthly_full", provider: "wechat_pay" }),
+      createBillingOrder({
+        productCode: "monthly_full",
+        provider: "wechat_pay",
+        clientMode: "mobile_browser",
+        returnUrl: "/checkout?product=monthly_full&payment_return=wechat_pay",
+      }),
     ).resolves.toMatchObject({
       order: {
         productCode: "monthly_full",
@@ -1295,6 +1460,8 @@ describe("public registration session API", () => {
     expect(JSON.parse(String((init as RequestInit).body))).toEqual({
       productCode: "monthly_full",
       provider: "wechat_pay",
+      clientMode: "mobile_browser",
+      returnUrl: "/checkout?product=monthly_full&payment_return=wechat_pay",
     });
     expect(String((init as RequestInit).body)).not.toContain("amountCents");
     expect(String((init as RequestInit).body)).not.toContain("durationDays");
@@ -1479,6 +1646,49 @@ describe("public registration session API", () => {
             headers: { "Content-Type": "application/json" },
           },
         ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            success: true,
+            channel: "sms",
+            targetMasked: "138****8000",
+            expiresInSeconds: 600,
+            resendAfterSeconds: 60,
+            mode: "mock",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            accessToken: "sms-access-token",
+            refreshToken: "sms-refresh-token",
+            user: {
+              id: "user-3",
+              email: null,
+              phone: "13800138000",
+              displayName: null,
+              status: "active",
+              createdAt: "2026-06-01T08:20:00.000Z",
+              updatedAt: "2026-06-01T08:20:00.000Z",
+              lastLoginAt: null,
+            },
+            profile: null,
+            roles: [],
+            roleCodes: ["user"],
+            permissions: [],
+            isAdmin: false,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
       );
 
     await loginPublicAccount("photo@example.com", "public88", captchaToken);
@@ -1493,6 +1703,14 @@ describe("public registration session API", () => {
       code: "123456",
       password: "public88",
       captcha: captchaToken,
+    });
+    await sendLoginSmsCode({
+      phone: "13800138000",
+      captcha: captchaToken,
+    });
+    await loginPublicAccountBySms({
+      phone: "13800138000",
+      code: "123456",
     });
 
     const requestBodies = fetchSpy.mock.calls.map(([, init]) =>
@@ -1515,6 +1733,14 @@ describe("public registration session API", () => {
         code: "123456",
         password: "public88",
         captcha: captchaToken,
+      },
+      {
+        phone: "13800138000",
+        captcha: captchaToken,
+      },
+      {
+        phone: "13800138000",
+        code: "123456",
       },
     ]);
   });

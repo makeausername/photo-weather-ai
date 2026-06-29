@@ -619,16 +619,16 @@ function PlanSummary({
           </div>
         </dl>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="grid gap-2 sm:flex sm:flex-wrap">
         <Link
           href="/pricing"
-          className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-foreground"
+          className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-foreground sm:w-auto"
         >
           返回定价
         </Link>
         <Link
           href="/account"
-          className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-foreground"
+          className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-foreground sm:w-auto"
         >
           查看账户权益
         </Link>
@@ -758,12 +758,12 @@ function PaymentActionPanel({
 
   return (
     <div className="grid min-w-0 gap-3 border-t border-border pt-4 lg:col-span-2">
-      <div className="grid gap-2 rounded-lg border border-border bg-muted/30 p-3">
-        <div className="flex items-start justify-between gap-3">
-          <p className="text-sm font-semibold leading-6 text-card-foreground">
+      <div className="grid min-w-0 gap-2 rounded-lg border border-border bg-muted/30 p-3">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <p className="min-w-0 text-sm font-semibold leading-6 text-card-foreground [overflow-wrap:anywhere]">
             {paymentStatusMessage(order)}
           </p>
-          <Badge variant={paid ? "success" : pending ? "warning" : "muted"} className="shrink-0">
+          <Badge variant={paid ? "success" : pending ? "warning" : "muted"} className="w-fit sm:shrink-0">
             {paymentStatusLabel(order.status)}
           </Badge>
         </div>
@@ -786,11 +786,11 @@ function PaymentActionPanel({
 
 function PaymentReturnNotice() {
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
-      <p className="leading-6 text-muted-foreground">如果已经完成支付，权益会在稍后自动生效。</p>
+    <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <p className="min-w-0 leading-6 text-muted-foreground [overflow-wrap:anywhere]">如果已经完成支付，权益会在稍后自动生效。</p>
       <Link
         href="/account"
-        className="inline-flex h-9 w-fit items-center justify-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-card-foreground transition hover:border-primary hover:bg-secondary"
+        className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-card-foreground transition hover:border-primary hover:bg-secondary sm:w-fit"
       >
         查看账户权益
       </Link>
@@ -819,7 +819,7 @@ function SafeCheckoutMessage({
       </div>
       <Link
         href={actionHref}
-        className="inline-flex h-10 w-fit items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+        className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)] sm:w-fit"
       >
         {actionLabel}
       </Link>

@@ -12,6 +12,7 @@ type LoginPageProps = {
     readonly registered?: string;
     readonly identifier?: string;
     readonly email?: string;
+    readonly returnTo?: string;
   };
 };
 
@@ -22,7 +23,11 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
   return (
     <PublicShell contentClassName="pb-10 sm:pb-12">
       <PublicAuthLayout>
-        <LoginForm initialIdentifier={initialIdentifier} registered={registered} />
+        <LoginForm
+          initialIdentifier={initialIdentifier}
+          registered={registered}
+          returnTo={searchParams?.returnTo}
+        />
       </PublicAuthLayout>
     </PublicShell>
   );

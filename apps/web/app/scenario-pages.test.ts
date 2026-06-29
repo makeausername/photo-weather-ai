@@ -2,9 +2,18 @@ import * as React from "react";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
-import { forecastHorizonLabels } from "@photo-weather/shared";
+import { forecastHorizonLabels, type ForecastCalculationResult } from "@photo-weather/shared";
 import { describe, expect, it, vi } from "vitest";
-import { ScenarioSearchPanel, SubjectKnowledgeGuide } from "../components/scenario-module-page";
+import {
+  AstroDecisionPanel,
+  CloudSeaDecisionPanel,
+  GlowDecisionPanel,
+  ScenarioSearchPanel,
+  SubjectKnowledgeGuide,
+  buildAstroResultCards,
+  buildCloudSeaResultCards,
+  buildGlowResultCards,
+} from "../components/scenario-module-page";
 import { HomepageSearchPanel } from "../components/homepage-search-panel";
 import { LocationSearchInput } from "../components/location-search-input";
 import { buildForecastUrl, type PlaceSearchResult } from "../components/place-search-card";
@@ -23,6 +32,7 @@ import {
   glowScenarioConfig,
   scenarioPageConfigs,
 } from "./scenario-configs";
+import { cloudSeaRegressionFixture } from "./forecast/__tests__/fixtures/cloudSeaRegressionFixtures";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/cloud-sea",
@@ -70,6 +80,386 @@ function extractPlaceSearchCardHtml(html: string): string {
   return html.slice(cardStart, guideStart === -1 ? undefined : guideStart);
 }
 
+function glowInlineForecastResult(): ForecastCalculationResult {
+  const base = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase").result;
+  const bestWindow: ForecastCalculationResult["glowAnalysis"]["bestGlowWindows"][number] = {
+    type: "sunset_glow",
+    phase: "sunset",
+    labelZh: "晚霞主窗口",
+    date: "2026-05-20",
+    start: "2026-05-20T18:36:00+08:00",
+    end: "2026-05-20T19:18:00+08:00",
+    eventAt: "2026-05-20T18:57:00+08:00",
+    score: 82,
+    colorCarrierScore: 78,
+    glowCarrierScore: 80,
+    lowCloudObstructionRisk: 24,
+    glowLightPathObstructionRisk: 38,
+    cloudSuppressionRisk: 32,
+    precipitationDisruptionRisk: 18,
+    visibilityColorQualityScore: 76,
+    recommendationLabel: "推荐重点关注",
+    confidence: 82,
+    riskTags: ["低云遮挡较低", "降水打断较低"],
+    noteZh: "日落前后中高云层次较好，西向云缝支持霞光显色。",
+  };
+
+  return {
+    ...base,
+    target: "glow",
+    finalTripDecisionLabel: "推荐附近蹲守",
+    finalRecommendationLabel: "推荐重点关注",
+    glowAnalysis: {
+      ...base.glowAnalysis,
+      sunriseGlowScore: 68,
+      sunsetGlowScore: 82,
+      lowCloudObstructionRisk: 24,
+      lowCloudFogWallRisk: 22,
+      glowLightPathObstructionRisk: 38,
+      glowLightPathDataAvailability: "available",
+      glowLightPathConfidence: "high",
+      cloudSuppressionRisk: 32,
+      colorCarrierScore: 78,
+      glowCarrierScore: 80,
+      precipitationDisruptionRisk: 18,
+      visibilityColorQualityScore: 76,
+      practicalGlowScore: 80,
+      occurrenceProbabilityPercent: 72,
+      vividnessIndex: 78,
+      vividnessLevel: "strong",
+      practicalSuitabilityScore: 76,
+      confidence: 82,
+      recommendationLabel: "推荐重点关注",
+      confidenceLevel: "high",
+      labels: {
+        sunriseGlowOpportunity: "中",
+        sunsetGlowOpportunity: "高",
+        lowCloudObstruction: "低",
+        lowCloudFogWallRisk: "低",
+        glowLightPathObstructionRisk: "中",
+        cloudSuppressionRisk: "低",
+        colorCarrier: "好",
+        bestWindowLabel: "晚霞主窗口",
+      },
+      bestGlowWindow: bestWindow,
+      bestGlowWindows: [bestWindow],
+      watchableGlowWindows: [],
+      notRecommendedGlowWindows: [],
+      dailyGlow: [
+        {
+          date: "2026-05-20",
+          dateLabelZh: "5月20日",
+          sunriseScore: 68,
+          sunsetScore: 82,
+          colorCarrierScore: 78,
+          lowCloudObstructionRisk: 24,
+          glowLightPathObstructionRisk: 38,
+          cloudSuppressionRisk: 32,
+          glowCarrierScore: 80,
+          precipitationDisruptionRisk: 18,
+          visibilityColorQualityScore: 76,
+          labels: {
+            sunriseGlowOpportunity: "中",
+            sunsetGlowOpportunity: "高",
+            lowCloudObstruction: "低",
+            lowCloudFogWallRisk: "低",
+            glowLightPathObstructionRisk: "中",
+            cloudSuppressionRisk: "低",
+            colorCarrier: "好",
+            bestWindowLabel: "晚霞主窗口",
+          },
+          bestWindow,
+          bestTarget: "sunset",
+          recommendationLabel: "推荐重点关注",
+          keyReason: "晚霞窗口中高云色彩载体较好，低云遮挡和降水打断都较低。",
+          riskNote: "仍需临近复核西向低云和现场风况。",
+        },
+      ],
+      cloudLayerEvidence: [
+        {
+          label: "中高云色彩载体",
+          value: "较好",
+          effect: "positive",
+          noteZh: "中高云覆盖适中，具备承载晚霞色彩的云层纹理。",
+        },
+      ],
+      aerosolAssessment: {
+        availability: "available",
+        confidence: "high",
+        state: "favorable_scatter",
+        stateLabelZh: "轻微散射",
+        implicationZh: "通透度足够，轻微气溶胶有利于暖色层次，但仍需现场复核能见度。",
+        noteZh: "空气透明度支持远山层次。",
+        scoreImpact: 4,
+        aerosolScore: 74,
+        visibilityKm: 18,
+      },
+      terrainObstructionAssessments: [
+        {
+          phase: "sunset",
+          date: "2026-05-20",
+          obstructionStatus: "marginal",
+          confidence: "medium",
+          dataAvailable: true,
+          labelZh: "西向地形略有遮挡",
+          noteZh: "日落方向地形余量偏窄，建议提前到位确认光路。",
+        },
+      ],
+      riskReasons: ["西向地形光路略有遮挡，需要提前到位复核。"],
+      opportunityReasons: ["晚霞中高云色彩载体较好，低云遮挡较低。"],
+      travelRecommendations: ["适合在附近机位蹲守，日落前提前复核西向云缝和通透度。"],
+      backupPlans: [
+        {
+          condition: "低云遮挡增强",
+          action: "转为附近观察",
+          detail: "保留近景暖光和云缝题材，避免远距离专程。",
+        },
+      ],
+      missingDataNotes: [],
+    },
+  };
+}
+
+function astroInlineForecastResult(): ForecastCalculationResult {
+  const base = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase").result;
+  const milkyWayWindow: ForecastCalculationResult["astroAnalysis"]["recommendedMilkyWayWindows"][number] =
+    {
+      type: "recommended_milky_way",
+      labelZh: "银河核心窗口",
+      date: "2026-05-21",
+      start: "2026-05-21T01:20:00+08:00",
+      end: "2026-05-21T03:05:00+08:00",
+      durationMinutes: 105,
+      score: 84,
+      riskTags: ["无月黑夜", "南向光害低"],
+      noteZh: "天文黑夜内月亮已落，银河核心高度较理想。",
+      directionZh: "东南偏南",
+      galacticCenterAltitude: 28,
+      galacticCenterAzimuth: 165,
+    };
+  const moonlessWindow: ForecastCalculationResult["astroAnalysis"]["moonlessNightWindows"][number] =
+    {
+      type: "moonless_night",
+      labelZh: "无月黑夜",
+      date: "2026-05-21",
+      start: "2026-05-21T00:40:00+08:00",
+      end: "2026-05-21T04:10:00+08:00",
+      durationMinutes: 210,
+      score: 78,
+      riskTags: ["月落后"],
+      noteZh: "月落后黑夜长度充足，适合等待银河升高。",
+    };
+  const astronomicalWindow: ForecastCalculationResult["astroAnalysis"]["astronomicalNightWindows"][number] =
+    {
+      type: "astronomical_night",
+      labelZh: "天文黑夜",
+      date: "2026-05-21",
+      start: "2026-05-21T21:15:00+08:00",
+      end: "2026-05-22T04:23:00+08:00",
+      durationMinutes: 428,
+      score: 82,
+      riskTags: ["黑夜长度充足"],
+      noteZh: "天文黑夜持续时间较长，天空背景具备星空拍摄基础。",
+    };
+  const overallSkyDarkness: NonNullable<
+    ForecastCalculationResult["astroAnalysis"]["overallSkyDarkness"]
+  > = {
+    available: true,
+    minClass: 2,
+    maxClass: 3,
+    rangeLabelZh: "2-3级",
+    skyQualityLabelZh: "深空条件较好",
+    confidence: "medium",
+    basisZh: "周边夜光与暗空经验综合参考。",
+    conservative: true,
+    calibrationEvidenceLevel: "limited",
+    rangeWidthClasses: 1,
+    rangeWidthPolicy: "normal",
+    diagnostics: [],
+    rawEstimatedBortleRangeLabel: "2-3级",
+    primaryBaseline: "wa_model",
+    skyBrightnessAvailable: false,
+    skyBrightnessEstimatedBortleLabel: null,
+    localRadiance: 1.2,
+    surroundingHaloRadiance: 3.4,
+    ambientRiskIndex: 32,
+    nationalRiskIndex: 35,
+    localToHaloRatio: 0.35,
+    haloToLocalRatio: 2.8,
+    localRadianceQuantile: 0.2,
+    haloRadianceQuantile: 0.3,
+    ambientRiskQuantile: 0.25,
+    noteZh: "整体暗空较好，适合银河拍摄。",
+  };
+  const targetDirectionLightPollution: NonNullable<
+    ForecastCalculationResult["astroAnalysis"]["targetDirectionLightPollution"]
+  > = {
+    available: true,
+    status: "resolved",
+    azimuthDegrees: 165,
+    directionLabelZh: "南偏东",
+    radiance: 0.8,
+    riskIndex: 22,
+    riskLevel: "low",
+    riskLevelLabelZh: "低",
+    warningZh: "银河方向光害较低，但仍需避开近处城镇灯光。",
+    basisZh: "按目标方向扇区估算。",
+    avoidDirectionLabelsZh: ["西北"],
+    cleanerDirectionLabelsZh: ["南", "东南"],
+  };
+  const finalPhotographyDecision: NonNullable<
+    ForecastCalculationResult["astroAnalysis"]["finalPhotographyDecision"]
+  > = {
+    available: true,
+    shootable: true,
+    score: 81,
+    recommendationLabel: "推荐重点关注",
+    overallSkyDarknessRangeLabelZh: "2-3级",
+    targetDirectionLightPollutionLabelZh: "低",
+    summaryZh: "整体暗空、银河方向、天气、月光和地形综合后支持拍摄。",
+    reasonsZh: ["银河方向光害较低，天文黑夜和无月时段覆盖核心窗口。"],
+    componentScores: {
+      overallSkyDarkness: 82,
+      targetDirectionLightPollution: 78,
+      cloudCover: 76,
+      cloudLayers: 80,
+      visibility: 74,
+      precipitation: 90,
+      wind: 86,
+      moonIllumination: 92,
+      astronomicalNight: 82,
+      milkyWayWindow: 84,
+      terrainObstruction: 88,
+    },
+  };
+
+  return {
+    ...base,
+    target: "astro",
+    finalTripDecisionLabel: "推荐专程前往",
+    astroAnalysis: {
+      ...base.astroAnalysis,
+      starsScore: 82,
+      milkyWayScore: 84,
+      astroConditionScore: 80,
+      astroPracticalScore: 81,
+      astronomicalWindowScore: 82,
+      skyConditionScore: 76,
+      milkyWayGeometryScore: 84,
+      moonlightImpactScore: 18,
+      moonImpactScore: 18,
+      transparencyScore: 74,
+      dewRiskScore: 42,
+      practicalAstroScore: 81,
+      astroTravelScore: 81,
+      astroWindowAvailable: true,
+      astroShootable: true,
+      cloudBlockerLevel: "low",
+      dewRiskLevel: "medium",
+      tripodWindRisk: "low",
+      labels: {
+        astronomicalWindow: "有",
+        starShootability: "高",
+        milkyWayShootability: "高",
+        moonlightImpact: "低",
+        cloudBlocker: "低",
+        dewRisk: "中",
+        windowRecommendation: "推荐银河窗口",
+      },
+      recommendationLabel: "推荐重点关注",
+      confidenceLevel: "high",
+      recommendedMilkyWayWindow: milkyWayWindow,
+      bestAstroWindows: [milkyWayWindow, moonlessWindow],
+      recommendedMilkyWayWindows: [milkyWayWindow],
+      moonlessNightWindows: [moonlessWindow],
+      astronomicalNightWindows: [astronomicalWindow],
+      moonInfo: {
+        moonPhase: 0.1,
+        moonPhaseNameZh: "残月",
+        moonIllumination: 0.08,
+        waxingOrWaning: "waning",
+        lunarDateText: "农历廿七",
+        moonrise: "2026-05-20T15:40:00+08:00",
+        moonset: "2026-05-21T00:36:00+08:00",
+        calculationNoteZh: "月落后进入无月黑夜。",
+      },
+      lightPollution: {
+        ...base.astroAnalysis.lightPollution,
+        available: true,
+        dataAvailable: true,
+        unavailableReason: undefined,
+        ambientRiskLevel: "medium",
+        ambientRiskLevelLabelZh: "中",
+        targetDirectionLevel: "low",
+        targetDirectionLevelLabelZh: "低",
+        targetDirectionRisk: 22,
+        targetAzimuthDegrees: 165,
+        lightPollutionNoteZh: "周边光害整体中等，南向银河方向相对干净。",
+        starPenalty: 8,
+        milkyWayPenalty: 10,
+        sampleCount: 64,
+        validSampleCount: 60,
+      },
+      overallSkyDarkness,
+      targetDirectionLightPollution,
+      finalPhotographyDecision,
+      cloudEvidence: [
+        {
+          label: "云量",
+          value: "较低",
+          effect: "positive",
+          noteZh: "银河窗口内总云量较低，低云遮挡风险有限。",
+        },
+      ],
+      visibilityEvidence: [
+        {
+          label: "通透度",
+          value: "较好",
+          effect: "positive",
+          noteZh: "能见度和透明度支持银河细节，但仍需复核山顶薄雾。",
+        },
+      ],
+      moonEvidence: [
+        {
+          label: "月光",
+          value: "低",
+          effect: "positive",
+          noteZh: "月落后进入无月黑夜，银河对比度受月光影响较小。",
+        },
+      ],
+      terrainEvidence: [
+        {
+          label: "地平线",
+          value: "较清晰",
+          effect: "positive",
+          noteZh: "目标方向地平线遮挡较低，银河核心升起后可见性较好。",
+        },
+      ],
+      lightPollutionEvidence: [
+        {
+          label: "光污染",
+          value: "中",
+          effect: "neutral",
+          noteZh: "整体光污染中等，银河方向相对更干净。",
+        },
+      ],
+      weatherBlockers: [],
+      riskReasons: ["露水风险中等，镜头需要防雾。"],
+      opportunityReasons: ["无月黑夜覆盖银河核心窗口。"],
+      travelRecommendations: ["适合专程，01:20 前后提前到位复核云量和南向光害。"],
+      backupPlans: [
+        {
+          condition: "薄云增多",
+          action: "附近蹲守",
+          detail: "保留星轨或月色山景题材。",
+        },
+      ],
+      missingDataNotes: [],
+      dataMode: "real",
+    },
+  };
+}
+
 function subjectDeepLinkParams(
   target: "cloud_sea" | "glow" | "astro",
   overrides: Record<string, string> = {},
@@ -77,8 +467,7 @@ function subjectDeepLinkParams(
   return {
     source: "general",
     target,
-    subject:
-      target === "cloud_sea" ? "cloud_sea" : target === "glow" ? "sunset_glow" : "milky_way",
+    subject: target === "cloud_sea" ? "cloud_sea" : target === "glow" ? "sunset_glow" : "milky_way",
     date: "2026-05-20",
     windowStart:
       target === "cloud_sea"
@@ -161,6 +550,7 @@ describe("scenario module pages", () => {
     expect(html).toContain('data-cloud-sea-section="CloudSeaSearchPanel"');
     expect(html).toContain("地点搜索与范围选择");
     expect(html).toContain('data-cloud-sea-pre-result="knowledge-guide"');
+    expect(html).not.toContain('data-cloud-sea-decision-panel="true"');
     expect(html).toContain("云海判断需要关注什么");
     expect(html).toContain(
       "选择地点后，系统会结合水汽、低云、地形、风速、光线窗口和降水时段判断云海形成、可拍机会与白墙风险。",
@@ -188,6 +578,7 @@ describe("scenario module pages", () => {
     const guideHtml = html.slice(guideStart);
 
     expect(guideStart).toBeGreaterThanOrEqual(0);
+    expect(html).toContain("min-[900px]:items-stretch");
     expect(guideHtml).toContain("grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3");
     expect(guideHtml).toContain("grid min-w-0 content-start gap-3");
     expect(guideHtml).not.toMatch(/min-w-\[[^\]]+\]/);
@@ -255,7 +646,9 @@ describe("scenario module pages", () => {
     expect(hasExactButton(html, "定位中")).toBe(false);
     expect(html).not.toContain("数据说明");
     expect(html).not.toContain("当前为体验模式");
-    expect(html).not.toMatch(/\bmock\b|\bdemo\b|演示数据|测试数据|开发模式|开发环境|provider|debug/i);
+    expect(html).not.toMatch(
+      /\bmock\b|\bdemo\b|演示数据|测试数据|开发模式|开发环境|provider|debug/i,
+    );
     expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
   });
 
@@ -420,9 +813,7 @@ describe("scenario module pages", () => {
       "utf8",
     );
 
-    expect(scenarioSource).toContain(
-      "useState<ForecastHorizon>(config.defaultHorizon)",
-    );
+    expect(scenarioSource).toContain("useState<ForecastHorizon>(config.defaultHorizon)");
     expect(scenarioSource).toContain("const handleForecastOptionsChange = useCallback");
     expect(scenarioSource).toContain("setSelectedHorizon(options.horizon)");
     expect(scenarioSource).toContain("onForecastOptionsChange={handleForecastOptionsChange}");
@@ -438,6 +829,351 @@ describe("scenario module pages", () => {
       expect(source).not.toContain("selectedHorizon");
       expect(source).not.toContain("useState");
     }
+  });
+
+  it("wires cloud sea, glow, and astro selected locations into inline forecast calculation", () => {
+    const scenarioSource = readFileSync(
+      fileURLToPath(new URL("../components/scenario-module-page.tsx", import.meta.url)),
+      "utf8",
+    );
+    const glowPageSource = readFileSync(
+      fileURLToPath(new URL("./glow/page.tsx", import.meta.url)),
+      "utf8",
+    );
+    const cloudSeaPageSource = readFileSync(
+      fileURLToPath(new URL("./cloud-sea/page.tsx", import.meta.url)),
+      "utf8",
+    );
+    const astroPageSource = readFileSync(
+      fileURLToPath(new URL("./astro/page.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    expect(scenarioSource).toContain(
+      "const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null)",
+    );
+    expect(scenarioSource).toContain('const isGlow = config.target === "glow"');
+    expect(scenarioSource).toContain('const isAstro = config.target === "astro"');
+    expect(scenarioSource).toContain("const isInlineDecisionTarget = isCloudSea || isGlow || isAstro");
+    expect(scenarioSource).toContain(
+      "selectedLocation={isInlineDecisionTarget ? selectedLocation : undefined}",
+    );
+    expect(scenarioSource).toContain(
+      "onSelectedLocationChange={isInlineDecisionTarget ? setSelectedLocation : undefined}",
+    );
+    expect(scenarioSource).toContain('const inlineForecastTarget = isAstro ? "astro" : config.target');
+    expect(scenarioSource).toContain(
+      "buildForecastRequestPayload(location, selectedHorizon, inlineForecastTarget)",
+    );
+    expect(scenarioSource).toContain("requestForecastCalculation(");
+    expect(scenarioSource).toContain("normalizeForecastClientErrorMessage(error)");
+    expect(scenarioSource).toContain('data-cloud-sea-decision-panel="true"');
+    expect(scenarioSource).toContain('data-glow-decision-panel="true"');
+    expect(scenarioSource).toContain('data-astro-decision-panel="true"');
+    expect(scenarioSource).not.toContain(
+      'buildForecastRequestPayload(location, selectedHorizon, "general")',
+    );
+    expect(scenarioSource).not.toContain(
+      'buildForecastRequestPayload(location, selectedHorizon, "cloud_sea")',
+    );
+    expect(scenarioSource).not.toContain(
+      'buildForecastRequestPayload(location, selectedHorizon, "glow")',
+    );
+
+    for (const source of [cloudSeaPageSource, glowPageSource, astroPageSource]) {
+      expect(source).toContain("ScenarioModulePage");
+      expect(source).not.toContain("requestForecastCalculation");
+      expect(source).not.toContain("buildForecastRequestPayload");
+      expect(source).not.toContain("selectedLocation");
+    }
+  });
+
+  it("renders generated cloud sea decision cards without homepage or provider copy", () => {
+    const { result } = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
+    const location = selectedLocationFromBrowserGeolocation({
+      latitudeWgs84: 30.1328,
+      longitudeWgs84: 118.171,
+      reverseGeocode: {
+        available: true,
+        name: "黄山光明顶",
+        address: "黄山风景区光明顶",
+      },
+    });
+    const expectedTitles = [
+      "云海综合指数",
+      "云海可拍机会",
+      "白墙风险",
+      "最佳云海窗口",
+      "地形与机位优势",
+      "现场行动建议",
+    ];
+    const cards = buildCloudSeaResultCards(result);
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaDecisionPanel, {
+        location,
+        horizon: "48h",
+        state: {
+          status: "ready",
+          result,
+        },
+      }),
+    );
+
+    expect(cards.map((card) => card.title)).toEqual(expectedTitles);
+    expect(html).toContain('data-cloud-sea-generated-result="true"');
+    expect(countOccurrences(html, "data-cloud-sea-decision-card=")).toBe(6);
+    for (const title of expectedTitles) {
+      expect(html).toContain(title);
+    }
+    expect(html).toContain("形成信号看水汽和低云是否足够");
+    expect(html).toContain("风速打散");
+    expect(html).toContain("雨后开口");
+    expect(html).not.toContain("推荐等级");
+    expect(html).not.toContain("云层与风");
+    expect(html).not.toContain("当前建议");
+    expect(html).not.toMatch(
+      /\bAI\b|GFS|Open-Meteo|meteoblue|provider|debug|DEM|Copernicus|GLO-30|VRT|synthetic|fixture|weatherProvider|dataSource|cloudSeaAnalysis|scoreCalibration/i,
+    );
+  });
+
+  it("renders cloud sea-specific loading and fallback panels after location selection", () => {
+    const location = selectedLocationFromBrowserGeolocation({
+      latitudeWgs84: 30.1328,
+      longitudeWgs84: 118.171,
+      reverseGeocode: {
+        available: true,
+        name: "黄山光明顶",
+      },
+    });
+    const loadingHtml = renderToStaticMarkup(
+      React.createElement(CloudSeaDecisionPanel, {
+        location,
+        horizon: "48h",
+        state: {
+          status: "loading",
+          result: null,
+        },
+      }),
+    );
+    const fallbackHtml = renderToStaticMarkup(
+      React.createElement(CloudSeaDecisionPanel, {
+        location,
+        horizon: "48h",
+        state: {
+          status: "error",
+          result: null,
+          errorMessage: "本次云海数据暂时不可用，请稍后重试。",
+        },
+      }),
+    );
+
+    expect(loadingHtml).toContain('data-cloud-sea-decision-status="loading"');
+    expect(loadingHtml).toContain("正在生成云海判断");
+    expect(loadingHtml).toContain("水汽 / 低云 / 地形");
+    expect(loadingHtml).toContain("白墙风险同步复核");
+    expect(loadingHtml).not.toContain('data-cloud-sea-pre-result="knowledge-guide"');
+    expect(fallbackHtml).toContain('data-cloud-sea-decision-status="error"');
+    expect(fallbackHtml).toContain("云海判断暂不可用");
+    expect(fallbackHtml).toContain("现场复核重点");
+    expect(fallbackHtml).not.toContain("综合出行判断");
+  });
+
+  it("renders generated glow decision cards without homepage, cloud sea, or provider copy", () => {
+    const result = glowInlineForecastResult();
+    const location = selectedLocationFromBrowserGeolocation({
+      latitudeWgs84: 30.1328,
+      longitudeWgs84: 118.171,
+      reverseGeocode: {
+        available: true,
+        name: "黄山光明顶",
+        address: "黄山风景区光明顶",
+      },
+    });
+    const expectedTitles = [
+      "朝霞机会",
+      "晚霞机会",
+      "最佳霞光窗口",
+      "色彩载体",
+      "遮挡与光路",
+      "通透与现场建议",
+    ];
+    const cards = buildGlowResultCards(result);
+    const html = renderToStaticMarkup(
+      React.createElement(GlowDecisionPanel, {
+        location,
+        horizon: "72h",
+        state: {
+          status: "ready",
+          result,
+        },
+      }),
+    );
+
+    expect(cards.map((card) => card.title)).toEqual(expectedTitles);
+    expect(html).toContain('data-glow-generated-result="true"');
+    expect(countOccurrences(html, "data-glow-decision-card=")).toBe(6);
+    for (const title of expectedTitles) {
+      expect(html).toContain(title);
+    }
+    expect(html).toContain("日落前后中高云层次较好");
+    expect(html).toContain("中高云色彩载体");
+    expect(html).toContain("西向地形略有遮挡");
+    expect(html).toContain("气溶胶");
+    expect(html).not.toContain("综合指数");
+    expect(html).not.toContain("推荐等级");
+    expect(html).not.toContain("云层与风");
+    expect(html).not.toContain("当前建议");
+    expect(html).not.toContain("云海综合指数");
+    expect(html).not.toContain("白墙风险");
+    expect(html).not.toMatch(
+      /\bAI\b|GFS|Open-Meteo|meteoblue|provider|debug|DEM|Copernicus|GLO-30|VRT|synthetic|fixture|weatherProvider|dataSource|glowLightPathObstructionRisk|aerosolOpticalDepth550|providerAgreement/i,
+    );
+  });
+
+  it("renders glow-specific loading and fallback panels after location selection", () => {
+    const location = selectedLocationFromBrowserGeolocation({
+      latitudeWgs84: 30.1328,
+      longitudeWgs84: 118.171,
+      reverseGeocode: {
+        available: true,
+        name: "黄山光明顶",
+      },
+    });
+    const loadingHtml = renderToStaticMarkup(
+      React.createElement(GlowDecisionPanel, {
+        location,
+        horizon: "72h",
+        state: {
+          status: "loading",
+          result: null,
+        },
+      }),
+    );
+    const fallbackHtml = renderToStaticMarkup(
+      React.createElement(GlowDecisionPanel, {
+        location,
+        horizon: "72h",
+        state: {
+          status: "error",
+          result: null,
+          errorMessage: "本次霞光数据暂时不可用，请稍后重试。",
+        },
+      }),
+    );
+
+    expect(loadingHtml).toContain('data-glow-decision-status="loading"');
+    expect(loadingHtml).toContain("正在生成朝霞晚霞判断");
+    expect(loadingHtml).toContain("日出 / 日落 / 云层");
+    expect(loadingHtml).toContain("遮挡与通透同步复核");
+    expect(loadingHtml).not.toContain('data-subject-knowledge-guide="glow"');
+    expect(fallbackHtml).toContain('data-glow-decision-status="error"');
+    expect(fallbackHtml).toContain("朝霞晚霞判断暂不可用");
+    expect(fallbackHtml).toContain("现场复核重点");
+    expect(fallbackHtml).not.toContain("综合出行判断");
+  });
+
+  it("renders generated astro decision cards without homepage, cloud sea, glow, or provider copy", () => {
+    const result = astroInlineForecastResult();
+    const location = selectedLocationFromBrowserGeolocation({
+      latitudeWgs84: 30.1328,
+      longitudeWgs84: 118.171,
+      reverseGeocode: {
+        available: true,
+        name: "黄山光明顶",
+        address: "黄山风景区光明顶",
+      },
+    });
+    const expectedTitles = [
+      "星空指数",
+      "银河机会",
+      "最佳银河窗口",
+      "月光影响",
+      "云量与通透",
+      "光污染与地形",
+    ];
+    const cards = buildAstroResultCards(result);
+    const html = renderToStaticMarkup(
+      React.createElement(AstroDecisionPanel, {
+        location,
+        horizon: "7d",
+        state: {
+          status: "ready",
+          result,
+        },
+      }),
+    );
+
+    expect(cards.map((card) => card.title)).toEqual(expectedTitles);
+    expect(html).toContain('data-astro-generated-result="true"');
+    expect(countOccurrences(html, "data-astro-decision-card=")).toBe(6);
+    expect(html).toContain("min-[900px]:grid-rows-[auto_minmax(0,1fr)]");
+    expect(html).toContain("min-[900px]:auto-rows-fr");
+    expect(html).toContain("min-[900px]:h-full");
+    for (const title of expectedTitles) {
+      expect(html).toContain(title);
+    }
+    expect(html).toContain("天文黑夜");
+    expect(html).toContain("无月黑夜");
+    expect(html).toContain("银河核心高度较理想");
+    expect(html).toContain("东南偏南");
+    expect(html).toContain("月落后进入无月黑夜");
+    expect(html).toContain("云量较低");
+    expect(html).toContain("银河方向光害较低");
+    expect(html).toContain("目标方向地平线遮挡较低");
+    expect(html).not.toContain("综合指数");
+    expect(html).not.toContain("推荐等级");
+    expect(html).not.toContain("云层与风");
+    expect(html).not.toContain("当前建议");
+    expect(html).not.toContain("云海综合指数");
+    expect(html).not.toContain("白墙风险");
+    expect(html).not.toContain("朝霞机会");
+    expect(html).not.toContain("晚霞机会");
+    expect(html).not.toMatch(
+      /\bAI\b|GFS|Open-Meteo|meteoblue|provider|debug|DEM|Copernicus|GLO-30|VRT|synthetic|fixture|weatherProvider|dataSource|milkyWayGeometryScore|targetDirectionLightPollution|terrainHorizonAssessment|providerCode|datasetYear/i,
+    );
+  });
+
+  it("renders astro-specific loading and fallback panels after location selection", () => {
+    const location = selectedLocationFromBrowserGeolocation({
+      latitudeWgs84: 30.1328,
+      longitudeWgs84: 118.171,
+      reverseGeocode: {
+        available: true,
+        name: "黄山光明顶",
+      },
+    });
+    const loadingHtml = renderToStaticMarkup(
+      React.createElement(AstroDecisionPanel, {
+        location,
+        horizon: "7d",
+        state: {
+          status: "loading",
+          result: null,
+        },
+      }),
+    );
+    const fallbackHtml = renderToStaticMarkup(
+      React.createElement(AstroDecisionPanel, {
+        location,
+        horizon: "7d",
+        state: {
+          status: "error",
+          result: null,
+          errorMessage: "本次星空银河数据暂时不可用，请稍后重试。",
+        },
+      }),
+    );
+
+    expect(loadingHtml).toContain('data-astro-decision-status="loading"');
+    expect(loadingHtml).toContain("正在生成星空银河判断");
+    expect(loadingHtml).toContain("天文黑夜 / 月光 / 银河");
+    expect(loadingHtml).toContain("银河窗口会单独评估");
+    expect(loadingHtml).toContain("光污染与天气同步复核");
+    expect(loadingHtml).not.toContain('data-subject-knowledge-guide="astro"');
+    expect(fallbackHtml).toContain('data-astro-decision-status="error"');
+    expect(fallbackHtml).toContain("星空银河判断暂不可用");
+    expect(fallbackHtml).toContain("现场复核重点");
+    expect(fallbackHtml).not.toContain("综合出行判断");
   });
 
   it("renders the cloud sea pre-result location search panel without result dashboard chrome", () => {
@@ -597,6 +1333,8 @@ describe("scenario module pages", () => {
     expect(html).toContain("地点搜索与范围选择");
     expect(html).toContain('data-subject-control-panel="true"');
     expect(html).toContain('data-subject-control-panel-target="glow"');
+    expect(html).toContain('data-subject-knowledge-guide="glow"');
+    expect(html).not.toContain('data-glow-decision-panel="true"');
     expect(html).not.toContain('data-quick-location-section="true"');
     expect(html).not.toContain("常用机位");
     for (const label of cloudSeaQuickSpotLabels) {
@@ -656,9 +1394,7 @@ describe("scenario module pages", () => {
     expect(html).not.toContain(
       "min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)_clamp",
     );
-    expect(subjectSectionHtml).not.toMatch(
-      /w-\[(?:[1-9]\d{3,})px\]|min-w-\[(?:[1-9]\d{3,})px\]/,
-    );
+    expect(subjectSectionHtml).not.toMatch(/w-\[(?:[1-9]\d{3,})px\]|min-w-\[(?:[1-9]\d{3,})px\]/);
   });
 
   it("builds glow current-location requests with WGS84 coordinates and no spot id", () => {
@@ -819,6 +1555,7 @@ describe("scenario module pages", () => {
     expect(html).toContain('data-subject-control-panel="true"');
     expect(html).toContain('data-subject-control-panel-target="astro"');
     expect(html).toContain('data-subject-knowledge-guide="astro"');
+    expect(html).not.toContain('data-astro-decision-panel="true"');
     expect(countOccurrences(html, 'data-subject-knowledge-card="astro"')).toBe(6);
     expect(html).not.toContain('data-quick-location-section="true"');
     expect(html).not.toContain("常用机位");

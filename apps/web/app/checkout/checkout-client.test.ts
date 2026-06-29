@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { CheckoutPayloadView } from "../../components/billing-checkout-payload-view";
 import type {
   BillingPaymentProvider,
+  PublicBillingPaymentMethod,
   PublicBillingProduct,
 } from "../../components/account-session";
 import {
@@ -74,6 +75,23 @@ const products: readonly PublicBillingProduct[] = [
     badgeText: null,
     featureBullets: ["全年完整摄影判断"],
     sortOrder: 30,
+  },
+];
+
+const paymentMethods: readonly PublicBillingPaymentMethod[] = [
+  {
+    provider: "alipay",
+    label: "支付宝支付",
+    enabled: true,
+    ready: true,
+    recommended: true,
+  },
+  {
+    provider: "wechat_pay",
+    label: "微信支付",
+    enabled: true,
+    ready: true,
+    recommended: false,
   },
 ];
 
@@ -153,6 +171,7 @@ describe("checkout cashier client", () => {
     const html = renderToStaticMarkup(
       React.createElement(CheckoutClient, {
         initialLoggedIn: true,
+        initialPaymentMethods: paymentMethods,
         initialProducts: products,
         productCode: "monthly_full",
       }),
@@ -170,6 +189,8 @@ describe("checkout cashier client", () => {
       "正在生成二维码...",
       "支付完成后，会员权益自动生效。",
       "返回定价",
+      "当前暂未开放在线支付，请稍后再试。",
+      "查看账户权益",
     ]);
     expect(html).toContain("确认支付");
     expect(html).toContain("月卡");
@@ -180,6 +201,12 @@ describe("checkout cashier client", () => {
     expect(html).toContain("微信扫码支付");
     expect(html).toContain('data-checkout-payment-methods="primary"');
     expect(html).not.toContain("创建订单");
+    expect(checkoutClientSource).toContain("grid gap-2 sm:flex sm:flex-wrap");
+    expect(checkoutClientSource).toContain("min-w-0 text-sm font-semibold leading-6");
+    expect(checkoutClientSource).toContain(
+      "w-full items-center justify-center rounded-lg border border-border bg-card px-3",
+    );
+    expect(checkoutClientSource).toContain("sm:w-auto");
     expect(checkoutClientSource.indexOf("<CheckoutPaymentMethods")).toBeLessThan(
       checkoutClientSource.indexOf("<PaymentActionPanel"),
     );
@@ -197,6 +224,42 @@ describe("checkout cashier client", () => {
     expect(html).toContain("请先登录后继续支付");
     expect(html).toContain('href="/login?returnTo=%2Fcheckout%3Fproduct%3Dquarterly_full"');
     expect(html).toContain('href="/register?returnTo=%2Fcheckout%3Fproduct%3Dquarterly_full"');
+    expect(html).not.toContain("支付宝支付");
+    expect(html).not.toContain("微信扫码支付");
+  });
+
+  it("renders only the public-ready payment methods returned by the backend", () => {
+    const alipayOnlyMethods = paymentMethods.filter((method) => method.provider === "alipay");
+    const html = renderToStaticMarkup(
+      React.createElement(CheckoutClient, {
+        initialLoggedIn: true,
+        initialPaymentMethods: alipayOnlyMethods,
+        initialProducts: products,
+        productCode: "monthly_full",
+      }),
+    );
+
+    expect(html).toContain("选择支付方式");
+    expect(html).toContain("支付宝支付");
+    expect(html).not.toContain("微信扫码支付");
+    expect(html).not.toContain("打开微信支付");
+  });
+
+  it("shows pricing and account actions when no public payment method is available", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CheckoutClient, {
+        initialLoggedIn: true,
+        initialPaymentMethods: [],
+        initialProducts: products,
+        productCode: "monthly_full",
+      }),
+    );
+
+    expect(html).toContain("当前暂未开放在线支付，请稍后再试。");
+    expect(html).toContain('href="/pricing"');
+    expect(html).toContain("返回定价");
+    expect(html).toContain('href="/account"');
+    expect(html).toContain("查看账户权益");
     expect(html).not.toContain("支付宝支付");
     expect(html).not.toContain("微信扫码支付");
   });
@@ -229,15 +292,17 @@ describe("checkout cashier client", () => {
 
   it("wires payment buttons to the selected provider and disables duplicates while submitting", () => {
     const providers: BillingPaymentProvider[] = [];
-    const paymentMethods = CheckoutPaymentMethods({
+    const renderedMethods = CheckoutPaymentMethods({
       clientMode: "desktop",
+      paymentMethods,
+      paymentMethodsState: "ready",
       selectedProduct: products[0] ?? null,
       submittingProvider: null,
       onProviderPayment: (provider) => providers.push(provider),
     });
 
-    findClickableByText(paymentMethods, "支付宝支付").props.onClick?.();
-    findClickableByText(paymentMethods, "微信扫码支付").props.onClick?.();
+    findClickableByText(renderedMethods, "支付宝支付").props.onClick?.();
+    findClickableByText(renderedMethods, "微信扫码支付").props.onClick?.();
 
     expect(providers).toEqual(["alipay", "wechat_pay"]);
     expect(checkoutClientSource).toContain(
@@ -252,6 +317,8 @@ describe("checkout cashier client", () => {
 
     const disabledMethods = CheckoutPaymentMethods({
       clientMode: "desktop",
+      paymentMethods,
+      paymentMethodsState: "ready",
       selectedProduct: products[0] ?? null,
       submittingProvider: "alipay",
       onProviderPayment: () => undefined,
@@ -263,6 +330,8 @@ describe("checkout cashier client", () => {
 
     const mobileMethods = CheckoutPaymentMethods({
       clientMode: "mobile_browser",
+      paymentMethods,
+      paymentMethodsState: "ready",
       selectedProduct: products[0] ?? null,
       submittingProvider: null,
       onProviderPayment: () => undefined,
@@ -273,6 +342,27 @@ describe("checkout cashier client", () => {
     expect(nodeText(collectClickableElements(mobileMethods)[1]?.props.children)).toBe(
       "打开微信支付",
     );
+  });
+
+  it("does not render a clickable control for unavailable payment providers", () => {
+    const providers: BillingPaymentProvider[] = [];
+    const alipayOnlyMethods = paymentMethods.filter((method) => method.provider === "alipay");
+    const renderedMethods = CheckoutPaymentMethods({
+      clientMode: "desktop",
+      paymentMethods: alipayOnlyMethods,
+      paymentMethodsState: "ready",
+      selectedProduct: products[0] ?? null,
+      submittingProvider: null,
+      onProviderPayment: (provider) => providers.push(provider),
+    });
+    const buttons = collectClickableElements(renderedMethods);
+
+    expect(buttons).toHaveLength(1);
+    findClickableByText(renderedMethods, "支付宝支付").props.onClick?.();
+    expect(() => findClickableByText(renderedMethods, "微信扫码支付")).toThrow(
+      "Expected clickable element containing 微信扫码支付",
+    );
+    expect(providers).toEqual(["alipay"]);
   });
 
   it("renders Alipay form_post as an auto-submitting POST form with a fallback button", () => {
@@ -321,6 +411,9 @@ describe("checkout cashier client", () => {
     expect(html).toContain('src="data:image/svg+xml');
     expect(html).toContain("weixin://wxpay/bizpayurl?pr=abc");
     expect(html).toContain("当前为扫码模式，建议在电脑端打开，或返回选择支付宝。");
+    expect(payloadViewSource).toContain("min-w-0 max-w-full rounded-lg");
+    expect(payloadViewSource).toContain("h-48 w-48 max-w-full");
+    expect(payloadViewSource).toContain("[overflow-wrap:anywhere]");
   });
 
   it("renders redirect_url as an auto-redirecting payment fallback", () => {
@@ -347,6 +440,7 @@ describe("checkout cashier client", () => {
     const html = renderToStaticMarkup(
       React.createElement(CheckoutClient, {
         initialLoggedIn: true,
+        initialPaymentMethods: paymentMethods,
         initialProducts: products,
         paymentReturn: "alipay",
         productCode: "yearly_full",

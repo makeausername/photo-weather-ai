@@ -25,7 +25,7 @@ describe("admin calibration UI", () => {
     expect(html).toContain("校准概览");
     expect(html).toContain("地点");
     expect(html).toContain("地点校准");
-    expect(html).toContain("历史校准地点");
+    expect(html).toContain("搜索地点");
     expect(html).toContain("拉取历史天气");
     expect(html).toContain("运行历史回放");
     expect(html).toContain("回放结果");

@@ -296,7 +296,7 @@ export function PricingClient({
           </div>
           <Link
             href="/account"
-            className="inline-flex h-10 w-fit shrink-0 items-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary"
+            className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary sm:w-fit sm:shrink-0"
           >
             查看账户权益
           </Link>

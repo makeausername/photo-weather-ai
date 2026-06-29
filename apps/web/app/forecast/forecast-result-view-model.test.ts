@@ -5583,7 +5583,14 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain");
     expect(html).toContain("[-webkit-overflow-scrolling:touch]");
     expect(html).toContain("min-w-[1280px]");
-    expect(html).toContain("sticky left-0");
+    expect(html).toContain('data-professional-hourly-table-layout="mobile-scroll-safe"');
+    expect(html).toContain("border-separate border-spacing-0");
+    expect(html).not.toContain("border-collapse");
+    expect(html).toContain("w-[4.5rem] min-w-[4.5rem]");
+    expect(html).toContain("w-[5rem] min-w-[5rem]");
+    expect(html).toContain("min-[760px]:sticky min-[760px]:left-0");
+    expect(html).not.toContain("sticky left-0");
+    expect(html).not.toContain("bg-inherit");
     expect(html).not.toContain("meteoblue");
     expect(html).not.toContain("Open-Meteo");
     expect(html).not.toContain("和风天气");
@@ -6985,6 +6992,18 @@ describe("forecast result target-aware view model", () => {
         variant: "embedded",
       }),
     );
+
+    for (const sharedHourlyHtml of [expandedAstroHtml, cloudSeaHtml, glowHtml]) {
+      expect(sharedHourlyHtml).toContain(
+        'data-professional-hourly-table-layout="mobile-scroll-safe"',
+      );
+      expect(sharedHourlyHtml).toContain("border-separate border-spacing-0");
+      expect(sharedHourlyHtml).toContain("w-[4.5rem] min-w-[4.5rem]");
+      expect(sharedHourlyHtml).toContain("w-[5rem] min-w-[5rem]");
+      expect(sharedHourlyHtml).toContain("min-[760px]:sticky min-[760px]:left-0");
+      expect(sharedHourlyHtml).not.toContain("sticky left-0");
+      expect(sharedHourlyHtml).not.toContain("bg-inherit");
+    }
 
     expect(expandedAstroHtml).toContain('data-professional-hourly-row="');
     expect(expandedAstroHtml).toContain("银河优先复核");

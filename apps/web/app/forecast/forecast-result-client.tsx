@@ -6056,7 +6056,7 @@ function CloudSeaReturnLink({ href }: { readonly href: string }) {
   return (
     <a
       href={href}
-      className="inline-flex w-fit items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold text-card-foreground transition hover:border-primary hover:bg-secondary"
+      className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold text-card-foreground transition hover:border-primary hover:bg-secondary sm:w-fit"
     >
       返回综合判断
       <span aria-hidden="true">→</span>

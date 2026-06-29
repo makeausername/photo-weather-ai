@@ -7,11 +7,17 @@ export const metadata: Metadata = {
   title: "创建账户 - 逐光天气",
 };
 
-export default function RegisterPage() {
+type RegisterPageProps = {
+  readonly searchParams?: {
+    readonly returnTo?: string;
+  };
+};
+
+export default function RegisterPage({ searchParams }: RegisterPageProps) {
   return (
     <PublicShell contentClassName="pb-10 sm:pb-12">
       <PublicAuthLayout size="wide">
-        <RegisterForm />
+        <RegisterForm returnTo={searchParams?.returnTo} />
       </PublicAuthLayout>
     </PublicShell>
   );

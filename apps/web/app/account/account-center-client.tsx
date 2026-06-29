@@ -216,7 +216,7 @@ function AccountOverviewCard({ session }: { readonly session: PublicAccountSessi
             {accountIdentifier}
           </p>
         </div>
-        <dl className="grid min-w-0 gap-3 sm:grid-cols-3 lg:w-[520px]">
+        <dl className="grid min-w-0 gap-3 sm:grid-cols-3 lg:w-full lg:max-w-[520px] lg:flex-1">
           <SummaryField label="账户角色" value={roleText} />
           <SummaryField label="最近登录" value={formatOptionalDateTime(session.user.lastLoginAt)} />
           <SummaryField label="注册时间" value={formatOptionalDateTime(session.user.createdAt)} />
@@ -380,7 +380,7 @@ function MembershipSummaryCard({
                 <Link
                   href={membership.primaryAction.href}
                   className={cn(
-                    "inline-flex h-9 shrink-0 items-center justify-center rounded-lg px-3 text-sm font-semibold transition",
+                    "inline-flex h-9 w-full items-center justify-center rounded-lg px-3 text-sm font-semibold transition md:w-auto md:shrink-0",
                     membership.primaryAction.variant === "primary"
                       ? "bg-primary text-primary-foreground shadow-sm hover:bg-[var(--primary-hover)]"
                       : "border border-border bg-card text-foreground hover:border-primary hover:bg-secondary",
@@ -748,7 +748,7 @@ function MembershipOrderRow({ order }: { readonly order: AccountBillingOrderReco
             {billingProductLabel(order.productCode)} · {formatPriceCny(order.amountCents)}
           </p>
         </div>
-        <p className="shrink-0 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground sm:shrink-0">
           {formatOptionalDateTime(order.createdAt)}
         </p>
       </div>
@@ -866,7 +866,7 @@ function HistoryEmptyState() {
       </div>
       <Link
         href="/"
-        className="inline-flex h-8 w-fit shrink-0 items-center rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+        className="inline-flex h-8 w-full items-center justify-center rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)] sm:w-fit sm:shrink-0"
       >
         开始分析
       </Link>
@@ -912,27 +912,27 @@ function HistoryRow({
             {formatOptionalDateTime(item.createdAt)}
           </p>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
           {href ? (
             <Link
               href={href}
-              className="inline-flex h-8 items-center rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+              className="inline-flex h-8 items-center justify-center rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
             >
               打开分析
             </Link>
           ) : item.locked ? (
             <Link
               href="/pricing"
-              className="inline-flex h-8 items-center rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+              className="inline-flex h-8 items-center justify-center rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
             >
               开通会员
             </Link>
           ) : (
-            <span className="inline-flex h-8 items-center rounded-lg border border-border bg-card px-3 text-xs font-semibold text-muted-foreground">
+            <span className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-card px-3 text-xs font-semibold text-muted-foreground">
               坐标不足
             </span>
           )}
-          <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
+          <Button type="button" variant="ghost" size="sm" className="w-full sm:w-auto" onClick={onDelete}>
             删除
           </Button>
         </div>
@@ -1027,7 +1027,7 @@ function ChangePasswordForm({
           />
         </FormField>
       </div>
-      <Button type="submit" className="w-fit" disabled={status === "loading"}>
+      <Button type="submit" className="w-full sm:w-fit" disabled={status === "loading"}>
         {status === "loading" ? "正在保存..." : "保存新密码"}
       </Button>
       <StatusMessage state={status} message={message} />
@@ -1118,7 +1118,7 @@ function EmailBindingForm({
         <Button
           type="button"
           variant="secondary"
-          className="self-end"
+          className="w-full self-end"
           disabled={sending}
           onClick={() => void handleSendCode()}
         >
@@ -1133,7 +1133,7 @@ function EmailBindingForm({
           onChange={(event) => setCurrentPassword(event.target.value)}
         />
       </FormField>
-      <Button type="submit" className="w-fit" disabled={status === "loading"}>
+      <Button type="submit" className="w-full sm:w-fit" disabled={status === "loading"}>
         {status === "loading" ? "正在确认..." : "确认换绑邮箱"}
       </Button>
       <StatusMessage state={status} message={message} />
@@ -1224,7 +1224,7 @@ function PhoneBindingForm({
         <Button
           type="button"
           variant="secondary"
-          className="self-end"
+          className="w-full self-end"
           disabled={sending}
           onClick={() => void handleSendCode()}
         >
@@ -1239,7 +1239,7 @@ function PhoneBindingForm({
           onChange={(event) => setCurrentPassword(event.target.value)}
         />
       </FormField>
-      <Button type="submit" className="w-fit" disabled={status === "loading"}>
+      <Button type="submit" className="w-full sm:w-fit" disabled={status === "loading"}>
         {status === "loading" ? "正在确认..." : "确认绑定手机"}
       </Button>
       <StatusMessage state={status} message={message} />
@@ -1295,7 +1295,7 @@ function DeleteAccountForm({ onAccountDeleted }: { readonly onAccountDeleted?: (
           我确认注销当前账户，并理解该操作会撤销所有登录会话。
         </span>
       </label>
-      <Button type="submit" variant="danger" className="w-fit" disabled={status === "loading"}>
+      <Button type="submit" variant="danger" className="w-full sm:w-fit" disabled={status === "loading"}>
         {status === "loading" ? "正在注销..." : "注销账户"}
       </Button>
       <StatusMessage state={status} message={message} />
@@ -1313,8 +1313,8 @@ function SectionTitle({
   readonly aside?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div>
+    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
         <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
         {description ? (
           <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
@@ -1340,7 +1340,7 @@ function StatusMessage({
     <p
       role={state === "error" ? "alert" : "status"}
       className={cn(
-        "rounded-lg border px-3 py-2 text-xs leading-5",
+        "rounded-lg border px-3 py-2 text-xs leading-5 [overflow-wrap:anywhere]",
         state === "success"
           ? "border-success bg-card text-success"
           : "border-danger bg-card text-danger",

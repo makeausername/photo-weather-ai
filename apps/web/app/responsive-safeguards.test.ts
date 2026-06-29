@@ -35,25 +35,45 @@ describe("responsive safeguards", () => {
     const dashboardSource = readAppSource("./forecast/result-dashboard-components.tsx");
     const forecastSource = readAppSource("./forecast/forecast-result-client.tsx");
     const pricingSource = readAppSource("./pricing/pricing-client.tsx");
+    const authSource = readAppSource("../components/public-auth.tsx");
+    const packageSource = readAppSource("../../../package.json");
+    const mobileAuditSource = readAppSource("../../../scripts/audit-mobile-layout.mjs");
     const combinedSource = [uiSource, moonSource, dashboardSource, forecastSource].join("\n");
     const cardCalendarSource = [moonSource, dashboardSource, pricingSource].join("\n");
 
     expect(uiSource).toContain("export function ResponsiveDataScroller");
     expect(uiSource).toContain("w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain");
     expect(uiSource).toContain("[-webkit-overflow-scrolling:touch]");
+    expect(uiSource).toContain('data-responsive-data-scroller="true"');
+    expect(uiSource).toContain('data-responsive-table="true"');
+    expect(uiSource).toContain("border-separate border-spacing-0");
+    expect(uiSource).not.toContain("border-collapse");
     expect(moonSource).toContain("mt-5 w-full max-w-full min-w-0");
     expect(moonSource).not.toContain("data-moon-calendar-scroll");
     expect(moonSource).not.toContain("data-moon-calendar-inner");
     expect(moonSource).not.toContain("min-w-[480px]");
     expect(moonSource).not.toContain("overflow-x-auto");
     expect(dashboardSource).toContain("grid min-w-0 max-w-full items-stretch");
+    expect(authSource).toContain("w-full max-w-full min-w-0");
+    expect(authSource).toContain("[overflow-wrap:anywhere]");
     expect(forecastSource).toContain('data-cloud-sea-professional-table-scroll="true"');
+    expect(forecastSource).toContain(
+      'data-professional-hourly-table-layout="mobile-scroll-safe"',
+    );
+    expect(forecastSource).toContain("border-separate border-spacing-0");
+    expect(forecastSource).toContain("min-[760px]:sticky min-[760px]:left-0");
+    expect(forecastSource).not.toContain("bg-inherit");
+    expect(forecastSource).not.toContain("sticky left-0");
     expect(forecastSource).toContain("<ResponsiveDataScroller");
     expect(combinedSource).not.toContain("w-screen");
     expect(combinedSource).not.toContain("w-[100vw]");
     expect(combinedSource).not.toContain("min-w-[100vw]");
     expect(combinedSource).not.toContain("min-w-[480px]");
     expect(cardCalendarSource).not.toMatch(/min-w-\[(?:[3-9]\d{2,}|[1-9]\d{3,})px\]/);
+    expect(packageSource).toContain('"mobile:audit": "node scripts/audit-mobile-layout.mjs"');
+    expect(mobileAuditSource).toContain("Mobile layout audit:");
+    expect(mobileAuditSource).toContain("raw table without explicit horizontal scroller");
+    expect(mobileAuditSource).toContain("process.exit(0)");
   });
 });
 
