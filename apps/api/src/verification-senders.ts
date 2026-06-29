@@ -303,6 +303,9 @@ function safeUnavailableMessage(channel: AuthVerificationChannel): string {
 }
 
 function verificationPurposeTitle(purpose: AuthVerificationPurpose): string {
+  if (purpose === "login") {
+    return "登录验证码";
+  }
   if (purpose === "change_email") {
     return "换绑邮箱验证码";
   }
@@ -316,6 +319,9 @@ function verificationPurposeTitle(purpose: AuthVerificationPurpose): string {
 }
 
 function verificationPurposeIntro(purpose: AuthVerificationPurpose): string {
+  if (purpose === "login") {
+    return "你正在登录逐光天气账户。";
+  }
   if (purpose === "change_email") {
     return "你正在换绑逐光天气账户邮箱。";
   }

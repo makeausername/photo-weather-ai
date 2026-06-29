@@ -43,6 +43,7 @@ export type AuthVerificationChannel = "email" | "sms";
 
 export type AuthVerificationPurpose =
   | "register"
+  | "login"
   | "change_email"
   | "change_phone"
   | "delete_account";

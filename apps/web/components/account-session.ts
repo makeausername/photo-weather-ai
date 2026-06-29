@@ -66,6 +66,17 @@ export type SendRegisterVerificationCodeResponse = {
   readonly mockCode?: string;
 };
 
+export type SendLoginSmsCodeResponse = {
+  readonly success: boolean;
+  readonly channel: "sms";
+  readonly targetMasked: string;
+  readonly expiresInSeconds: number;
+  readonly resendAfterSeconds: number;
+  readonly mode: "mock" | "real" | "config_check";
+  readonly message?: string;
+  readonly mockCode?: string;
+};
+
 export type AccountVerificationCodeResponse = {
   readonly success: boolean;
   readonly channel: RegisterVerificationChannel;
@@ -339,6 +350,46 @@ export async function loginPublicAccount(
   return session;
 }
 
+export async function sendLoginSmsCode(input: {
+  readonly phone: string;
+  readonly captcha?: CaptchaToken;
+}): Promise<SendLoginSmsCodeResponse> {
+  const response = await fetch(`${apiBaseUrl}/auth/login/sms/send-code`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readPublicApiError(response, "短信服务暂不可用，请稍后重试。"));
+  }
+
+  return (await response.json()) as SendLoginSmsCodeResponse;
+}
+
+export async function loginPublicAccountBySms(input: {
+  readonly phone: string;
+  readonly code: string;
+}): Promise<PublicAccountSession> {
+  const response = await fetch(`${apiBaseUrl}/auth/login/sms/confirm`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readPublicApiError(response, "登录失败，请检查验证码后重试。"));
+  }
+
+  const session = (await response.json()) as AdminAuthSession;
+  storeAdminSession(session);
+  return session;
+}
+
 export async function sendRegisterVerificationCode(input: {
   readonly channel: RegisterVerificationChannel;
   readonly target: string;
@@ -547,9 +598,7 @@ export async function listPublicBillingPaymentMethods(): Promise<
   );
   return (payload.methods ?? []).filter(
     (method) =>
-      isBillingPaymentProvider(method.provider) &&
-      method.enabled === true &&
-      method.ready === true,
+      isBillingPaymentProvider(method.provider) && method.enabled === true && method.ready === true,
   );
 }
 

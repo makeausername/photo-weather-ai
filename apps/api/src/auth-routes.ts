@@ -102,6 +102,8 @@ export const loginServiceUnavailableMessage = "登录服务暂时不可用，请
 export const captchaRequiredMessage = "请先完成安全验证。";
 export const sessionExpiredMessage = "登录状态已过期，请重新登录。";
 export const sessionInvalidMessage = "登录状态已失效，请重新登录。";
+const loginSmsGenericSendMessage = "如果该手机号已注册或已绑定，验证码将发送到该手机。";
+const loginSmsInvalidCodeMessage = "验证码错误或已过期，请重新获取。";
 
 const captchaTokenSchema = z.object({
   providerCode: z.literal(tencentCaptchaProviderCode),
@@ -120,6 +122,19 @@ const loginSchema = z
     message: "请输入邮箱或手机号。",
     path: ["identifier"],
   });
+
+const loginSmsSendCodeSchema = z.object({
+  phone: z.string().trim().min(1, "请输入手机号。").max(40, "手机号过长。"),
+  captcha: captchaTokenSchema.optional(),
+});
+
+const loginSmsConfirmSchema = z.object({
+  phone: z.string().trim().min(1, "请输入手机号。").max(40, "手机号过长。"),
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "请输入 6 位数字验证码。"),
+});
 
 const verificationChannelSchema = z.enum(["email", "sms"]);
 
@@ -204,6 +219,11 @@ function normalizeRegisterTarget(channel: AuthVerificationChannel, target: strin
   }
 
   const normalized = normalizeUserPhone(target);
+  return normalized && /^1[3-9]\d{9}$/.test(normalized) ? normalized : null;
+}
+
+function normalizeLoginSmsPhone(phone: string): string | null {
+  const normalized = normalizeUserPhone(phone);
   return normalized && /^1[3-9]\d{9}$/.test(normalized) ? normalized : null;
 }
 
@@ -588,6 +608,85 @@ function sendLoginServiceUnavailable(reply: FastifyReply): FastifyReply {
   });
 }
 
+function publicLoginSmsSendMode(env: NodeJS.ProcessEnv): VerificationSenderResult["mode"] {
+  const configuredMode = env.AUTH_VERIFICATION_SENDER_MODE?.trim().toLowerCase();
+  if (configuredMode === "mock" || configuredMode === "real" || configuredMode === "config_check") {
+    return configuredMode;
+  }
+
+  return env.NODE_ENV === "production" ? "real" : "mock";
+}
+
+function loginSmsSendResponse(input: {
+  readonly target: string;
+  readonly expiresInSeconds: number;
+  readonly resendAfterSeconds: number;
+  readonly mode: VerificationSenderResult["mode"];
+  readonly mockCode?: string;
+}) {
+  return {
+    success: true,
+    channel: "sms" as const,
+    targetMasked: targetMasked("sms", input.target),
+    expiresInSeconds: input.expiresInSeconds,
+    resendAfterSeconds: input.resendAfterSeconds,
+    mode: input.mode,
+    message: loginSmsGenericSendMessage,
+    ...(input.mockCode ? { mockCode: input.mockCode } : {}),
+  };
+}
+
+async function createLoginSessionResponse(input: {
+  readonly app: FastifyInstance;
+  readonly request: FastifyRequest;
+  readonly principal: AuthenticatedPrincipal;
+  readonly client?: DatabaseClient;
+  readonly authConfig: AuthConfig;
+  readonly target: string;
+  readonly auditAction: string;
+}) {
+  const now = new Date();
+  const sessionExpiresAt = calculateSessionExpiresAt(input.principal, input.authConfig, now);
+  const refreshToken = createRefreshToken();
+  await createUserSession(
+    {
+      userId: input.principal.user.id,
+      refreshTokenHash: hashRefreshToken(refreshToken),
+      expiresAt: sessionExpiresAt,
+      ipAddress: input.request.ip,
+      userAgent: input.request.headers["user-agent"] ?? null,
+    },
+    { client: input.client },
+  );
+  await touchUserLastLogin(input.principal.user.id, { client: input.client, now });
+
+  const refreshedPrincipal = await getUserAuthContextById(input.principal.user.id, {
+    client: input.client,
+  });
+  const principal = refreshedPrincipal ?? input.principal;
+  const metadata = authSessionMetadata(principal, input.authConfig, sessionExpiresAt, now);
+  await recordAuthAudit(input.app, {
+    client: input.client,
+    actorUserId: principal.user.id,
+    action: input.auditAction,
+    target: input.target,
+    afterJson: {
+      sessionExpiresAt: metadata.sessionExpiresAt,
+      roleSessionType: metadata.sessionRoleType,
+      sessionTtlDays: metadata.sessionTtlDays,
+    },
+    ipAddress: input.request.ip,
+    userAgent: input.request.headers["user-agent"] ?? null,
+  });
+
+  return authResponse(
+    principal,
+    signAccessToken(principal.user.id, input.authConfig, now),
+    refreshToken,
+    metadata,
+  );
+}
+
 export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOptions): void {
   const client = options.dbClient;
   const authConfig = options.authConfig;
@@ -931,6 +1030,308 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
     return confirmPublicRegistration(parsedBody.data, request, reply);
   });
 
+  app.post("/auth/login/sms/send-code", async (request, reply) => {
+    const parsedBody = loginSmsSendCodeSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    const target = normalizeLoginSmsPhone(parsedBody.data.phone);
+    if (!target) {
+      return reply.status(400).send({
+        error: "invalid_phone",
+        message: "请输入有效中国大陆手机号。",
+      });
+    }
+
+    if (
+      !(await verifyAuthCaptcha(
+        {
+          action: "login",
+          captcha: parsedBody.data.captcha,
+          target,
+          channel: "sms",
+        },
+        request,
+        reply,
+      ))
+    ) {
+      return reply;
+    }
+
+    const now = new Date();
+    const ttlSeconds = verificationCodeTtlSeconds(env);
+    const cooldownSeconds = verificationResendCooldownSeconds(env);
+    const suppressedMode = publicLoginSmsSendMode(env);
+    let pendingVerificationCodeId: string | null = null;
+    const genericResponse = (
+      input: {
+        readonly mode?: VerificationSenderResult["mode"];
+        readonly mockCode?: string;
+        readonly resendAfterSeconds?: number;
+      } = {},
+    ) =>
+      loginSmsSendResponse({
+        target,
+        expiresInSeconds: ttlSeconds,
+        resendAfterSeconds: input.resendAfterSeconds ?? cooldownSeconds,
+        mode: input.mode ?? suppressedMode,
+        mockCode: input.mockCode,
+      });
+
+    try {
+      const authContext = await getUserAuthContextByIdentifier(target, { client });
+      if (!authContext) {
+        await recordAuthAudit(app, {
+          client,
+          action: "auth.sms_login.code_send_suppressed",
+          target,
+          channel: "sms",
+          afterJson: {
+            reason: "no_active_phone_user",
+            targetMasked: targetMasked("sms", target),
+          },
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        });
+
+        return reply.send(genericResponse());
+      }
+
+      const existing = await findLatestActiveAuthVerificationCode(
+        {
+          channel: "sms",
+          purpose: "login",
+          target,
+          now,
+        },
+        { client },
+      );
+      if (existing) {
+        const resendAt = existing.createdAt.getTime() + cooldownSeconds * 1000;
+        if (resendAt > now.getTime()) {
+          const resendAfterSeconds = Math.ceil((resendAt - now.getTime()) / 1000);
+          await recordAuthAudit(app, {
+            client,
+            actorUserId: authContext.user.id,
+            action: "auth.sms_login.code_send_suppressed",
+            target,
+            channel: "sms",
+            afterJson: {
+              reason: "resend_cooldown",
+              targetMasked: targetMasked("sms", target),
+              resendAfterSeconds,
+            },
+            ipAddress: request.ip,
+            userAgent: request.headers["user-agent"] ?? null,
+          });
+
+          return reply.send(genericResponse({ resendAfterSeconds }));
+        }
+      }
+
+      const code = generateVerificationCode();
+      const verificationCode = await createAuthVerificationCode(
+        {
+          channel: "sms",
+          purpose: "login",
+          target,
+          code,
+          expiresAt: new Date(now.getTime() + ttlSeconds * 1000),
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+          secret: authConfig.jwtSecret,
+          env,
+        },
+        { client },
+      );
+      pendingVerificationCodeId = verificationCode.id;
+
+      const sendResult = await verificationSender.send({
+        channel: "sms",
+        purpose: "login",
+        target,
+        code,
+      });
+      if (!sendResult.success) {
+        await consumeAuthVerificationCode({ id: verificationCode.id, now }, { client });
+        pendingVerificationCodeId = null;
+        await recordAuthAudit(app, {
+          client,
+          actorUserId: authContext.user.id,
+          action: "auth.sms_login.failure",
+          target,
+          channel: "sms",
+          afterJson: {
+            reason: sendResult.error ?? "verification_sender_unavailable",
+            mode: sendResult.mode,
+            targetMasked: targetMasked("sms", target),
+          },
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        });
+
+        return reply.send(genericResponse());
+      }
+
+      await recordAuthAudit(app, {
+        client,
+        actorUserId: authContext.user.id,
+        action: "auth.sms_login.code_sent",
+        target,
+        channel: "sms",
+        afterJson: {
+          targetMasked: targetMasked("sms", target),
+          mode: sendResult.mode,
+        },
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      });
+
+      return reply.send(
+        genericResponse({
+          mode: sendResult.mode,
+          mockCode: shouldExposeMockCode(env, sendResult) ? code : undefined,
+        }),
+      );
+    } catch (error) {
+      if (pendingVerificationCodeId) {
+        try {
+          await consumeAuthVerificationCode({ id: pendingVerificationCodeId, now }, { client });
+        } catch (consumeError) {
+          request.log.warn({ err: consumeError }, "Failed to consume unsent SMS login code");
+        }
+      }
+      request.log.error(
+        { err: error, targetMasked: targetMasked("sms", target) },
+        "SMS login code send failed",
+      );
+      return reply.send(genericResponse());
+    }
+  });
+
+  app.post("/auth/login/sms/confirm", async (request, reply) => {
+    const parsedBody = loginSmsConfirmSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return sendZodError(reply, parsedBody.error);
+    }
+
+    const target = normalizeLoginSmsPhone(parsedBody.data.phone);
+    if (!target) {
+      return reply.status(400).send({
+        error: "invalid_phone",
+        message: "请输入有效中国大陆手机号。",
+      });
+    }
+
+    const sendVerifyFailure = async () => {
+      await recordAuthAudit(app, {
+        client,
+        action: "auth.sms_login.verify_failure",
+        target,
+        channel: "sms",
+        afterJson: {
+          targetMasked: targetMasked("sms", target),
+        },
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      });
+
+      return reply.status(400).send({
+        error: "verification_code_invalid",
+        message: loginSmsInvalidCodeMessage,
+      });
+    };
+
+    try {
+      const now = new Date();
+      const verificationCode = await findLatestActiveAuthVerificationCode(
+        {
+          channel: "sms",
+          purpose: "login",
+          target,
+          now,
+        },
+        { client },
+      );
+
+      if (!verificationCode || verificationCode.attemptCount >= verificationMaxAttempts(env)) {
+        return sendVerifyFailure();
+      }
+
+      if (
+        !verifyAuthVerificationCode(verificationCode, {
+          code: parsedBody.data.code,
+          secret: authConfig.jwtSecret,
+          env,
+        })
+      ) {
+        await incrementAuthVerificationAttempt({ id: verificationCode.id }, { client });
+        return sendVerifyFailure();
+      }
+
+      const consumed = await consumeAuthVerificationCode(
+        {
+          id: verificationCode.id,
+          now,
+        },
+        { client },
+      );
+      if (!consumed) {
+        return sendVerifyFailure();
+      }
+
+      const authContext = await getUserAuthContextByIdentifier(target, { client });
+      if (!authContext) {
+        await recordAuthAudit(app, {
+          client,
+          action: "auth.sms_login.failure",
+          target,
+          channel: "sms",
+          afterJson: {
+            reason: "no_active_phone_user_after_verify",
+            targetMasked: targetMasked("sms", target),
+          },
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"] ?? null,
+        });
+
+        return reply.status(400).send({
+          error: "verification_code_invalid",
+          message: loginSmsInvalidCodeMessage,
+        });
+      }
+
+      return createLoginSessionResponse({
+        app,
+        request,
+        principal: authContext,
+        client,
+        authConfig,
+        target,
+        auditAction: "auth.sms_login.success",
+      });
+    } catch (error) {
+      await recordAuthAudit(app, {
+        client,
+        action: "auth.sms_login.failure",
+        target,
+        channel: "sms",
+        afterJson: {
+          reason: "service_error",
+          targetMasked: targetMasked("sms", target),
+        },
+        ipAddress: request.ip,
+        userAgent: request.headers["user-agent"] ?? null,
+      });
+      request.log.error(
+        { err: error, targetMasked: targetMasked("sms", target) },
+        "SMS login failed",
+      );
+      return sendLoginServiceUnavailable(reply);
+    }
+  });
+
   app.post("/auth/login", async (request, reply) => {
     const parsedBody = loginSchema.safeParse(request.body);
     if (!parsedBody.success) {
@@ -973,44 +1374,15 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRoutesOpti
         });
       }
 
-      const now = new Date();
-      const sessionExpiresAt = calculateSessionExpiresAt(authContext, authConfig, now);
-      const refreshToken = createRefreshToken();
-      await createUserSession(
-        {
-          userId: authContext.user.id,
-          refreshTokenHash: hashRefreshToken(refreshToken),
-          expiresAt: sessionExpiresAt,
-          ipAddress: request.ip,
-          userAgent: request.headers["user-agent"] ?? null,
-        },
-        { client },
-      );
-      await touchUserLastLogin(authContext.user.id, { client, now });
-
-      const refreshedPrincipal = await getUserAuthContextById(authContext.user.id, { client });
-      const principal = refreshedPrincipal ?? authContext;
-      const metadata = authSessionMetadata(principal, authConfig, sessionExpiresAt, now);
-      await recordAuthAudit(app, {
+      return createLoginSessionResponse({
+        app,
+        request,
+        principal: authContext,
         client,
-        actorUserId: principal.user.id,
-        action: "auth.login.success",
+        authConfig,
         target: identifier,
-        afterJson: {
-          sessionExpiresAt: metadata.sessionExpiresAt,
-          roleSessionType: metadata.sessionRoleType,
-          sessionTtlDays: metadata.sessionTtlDays,
-        },
-        ipAddress: request.ip,
-        userAgent: request.headers["user-agent"] ?? null,
+        auditAction: "auth.login.success",
       });
-
-      return authResponse(
-        principal,
-        signAccessToken(principal.user.id, authConfig, now),
-        refreshToken,
-        metadata,
-      );
     } catch (error) {
       request.log.error({ err: error, identifier }, "Auth login failed");
       return sendLoginServiceUnavailable(reply);

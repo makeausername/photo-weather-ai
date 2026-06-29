@@ -85,6 +85,8 @@ type PublicRateLimitDecision =
 
 const publicRateLimitedRoutes = new Set([
   "POST /auth/login",
+  "POST /auth/login/sms/send-code",
+  "POST /auth/login/sms/confirm",
   "POST /auth/register",
   "POST /auth/register/send-code",
   "POST /auth/register/confirm",

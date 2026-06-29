@@ -63,6 +63,7 @@ enum AuthVerificationChannel {
 
 enum AuthVerificationPurpose {
   register
+  login
   change_email
   change_phone
   delete_account
