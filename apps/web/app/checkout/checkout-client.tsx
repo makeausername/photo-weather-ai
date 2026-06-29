@@ -44,6 +44,7 @@ type CheckoutClientProps = {
   readonly initialLoggedIn?: boolean | null;
   readonly initialPaymentMethods?: readonly PublicBillingPaymentMethod[];
   readonly initialProducts?: readonly PublicBillingProduct[];
+  readonly orderNo?: string | null;
   readonly paymentReturn?: string | null;
   readonly productCode?: string | null;
 };
@@ -51,6 +52,7 @@ type CheckoutClientProps = {
 type AuthState = "checking" | "authenticated" | "guest";
 export type PaymentMethodsState = "idle" | "loading" | "ready" | "error";
 type ProductState = "idle" | "loading" | "ready" | "error";
+type ReturnOrderState = "idle" | "loading" | "ready" | "error";
 export type PaymentClientMode = "desktop" | "mobile_browser" | "wechat_browser" | "alipay_browser";
 
 type PaymentClientModeDetectionInput = {
@@ -71,6 +73,10 @@ export const checkoutClientLabels = [
   "正在唤起微信支付...",
   "正在生成二维码...",
   "支付完成后，会员权益自动生效。",
+  "已从支付宝返回。如果已经完成支付，权益会在稍后自动生效。",
+  "支付成功，会员权益已生效。",
+  "支付结果同步中，请稍后刷新或查看账户权益。",
+  "支付未完成，请重新选择支付方式。",
   "返回定价",
   "当前暂未开放在线支付，请稍后再试。",
   "查看账户权益",
@@ -211,6 +217,21 @@ function paymentStatusMessage(order: AccountBillingOrderRecord): string {
   return "支付完成后，会员权益自动生效。";
 }
 
+export function paymentReturnStatusMessage(
+  status: AccountBillingOrderRecord["status"] | null | undefined,
+): string {
+  if (status === "paid") {
+    return "支付成功，会员权益已生效。";
+  }
+  if (status === "failed" || status === "closed" || status === "canceled") {
+    return "支付未完成，请重新选择支付方式。";
+  }
+  if (status === "refunded") {
+    return "支付已退款，权益状态以账户中心为准。";
+  }
+  return "支付结果同步中，请稍后刷新或查看账户权益。";
+}
+
 function isMobilePaymentClientMode(clientMode: PaymentClientMode): boolean {
   return clientMode !== "desktop";
 }
@@ -256,10 +277,12 @@ export function CheckoutClient({
   initialLoggedIn = null,
   initialPaymentMethods,
   initialProducts,
+  orderNo,
   paymentReturn,
   productCode,
 }: CheckoutClientProps) {
   const selectedProductCode = isCheckoutProductCode(productCode) ? productCode : null;
+  const paymentReturnOrderNo = orderNo?.trim() || null;
   const initialCheckoutProducts = filterCheckoutProducts(initialProducts);
   const initialAvailablePaymentMethods = filterPublicPaymentMethods(initialPaymentMethods);
   const [products, setProducts] =
@@ -278,6 +301,10 @@ export function CheckoutClient({
   );
   const [checkout, setCheckout] = useState<BillingCheckoutPayload | null>(null);
   const [order, setOrder] = useState<AccountBillingOrderRecord | null>(null);
+  const [returnOrder, setReturnOrder] = useState<AccountBillingOrderRecord | null>(null);
+  const [returnOrderState, setReturnOrderState] = useState<ReturnOrderState>(
+    paymentReturnOrderNo ? "loading" : "idle",
+  );
   const [submittingProvider, setSubmittingProvider] = useState<BillingPaymentProvider | null>(null);
   const [clientMode, setClientMode] = useState<PaymentClientMode>("desktop");
   const [message, setMessage] = useState("");
@@ -369,9 +396,7 @@ export function CheckoutClient({
         if (!cancelled) {
           setPaymentMethods([]);
           setPaymentMethodsState("error");
-          setMessage(
-            error instanceof Error ? error.message : "支付方式暂时不可用，请稍后再试。",
-          );
+          setMessage(error instanceof Error ? error.message : "支付方式暂时不可用，请稍后再试。");
         }
       });
 
@@ -403,6 +428,35 @@ export function CheckoutClient({
       cancelled = true;
     };
   }, [initialLoggedIn, selectedProductCode]);
+
+  useEffect(() => {
+    if (!paymentReturnOrderNo) {
+      setReturnOrder(null);
+      setReturnOrderState("idle");
+      return;
+    }
+
+    let cancelled = false;
+    setReturnOrder(null);
+    setReturnOrderState("loading");
+    getBillingOrder(paymentReturnOrderNo)
+      .then((nextOrder) => {
+        if (!cancelled) {
+          setReturnOrder(nextOrder);
+          setReturnOrderState("ready");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setReturnOrder(null);
+          setReturnOrderState("error");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [paymentReturnOrderNo]);
 
   useEffect(() => {
     if (!order || order.status !== "pending") {
@@ -480,6 +534,17 @@ export function CheckoutClient({
     }
   }
 
+  if (!selectedProductCode && (paymentReturn || paymentReturnOrderNo)) {
+    return (
+      <PaymentReturnShell
+        order={returnOrder}
+        orderNo={paymentReturnOrderNo}
+        paymentReturn={paymentReturn}
+        state={returnOrderState}
+      />
+    );
+  }
+
   if (!selectedProductCode) {
     return (
       <CheckoutShell>
@@ -509,7 +574,15 @@ export function CheckoutClient({
           </p>
         </header>
 
-        {paymentReturn ? <PaymentReturnNotice /> : null}
+        {paymentReturn ? <PaymentReturnNotice paymentReturn={paymentReturn} /> : null}
+
+        {paymentReturnOrderNo ? (
+          <PaymentReturnStatusPanel
+            order={returnOrder}
+            orderNo={paymentReturnOrderNo}
+            state={returnOrderState}
+          />
+        ) : null}
 
         {message ? (
           <p
@@ -763,7 +836,10 @@ function PaymentActionPanel({
           <p className="min-w-0 text-sm font-semibold leading-6 text-card-foreground [overflow-wrap:anywhere]">
             {paymentStatusMessage(order)}
           </p>
-          <Badge variant={paid ? "success" : pending ? "warning" : "muted"} className="w-fit sm:shrink-0">
+          <Badge
+            variant={paid ? "success" : pending ? "warning" : "muted"}
+            className="w-fit sm:shrink-0"
+          >
             {paymentStatusLabel(order.status)}
           </Badge>
         </div>
@@ -784,16 +860,155 @@ function PaymentActionPanel({
   );
 }
 
-function PaymentReturnNotice() {
+function PaymentReturnShell({
+  order,
+  orderNo,
+  paymentReturn,
+  state,
+}: {
+  readonly order: AccountBillingOrderRecord | null;
+  readonly orderNo: string | null;
+  readonly paymentReturn?: string | null;
+  readonly state: ReturnOrderState;
+}) {
+  return (
+    <CheckoutShell>
+      <div className="grid min-w-0 max-w-full gap-4">
+        <header className="min-w-0">
+          <Badge variant="muted">支付返回</Badge>
+          <h1 className="mt-3 text-2xl font-bold tracking-normal text-foreground sm:text-[30px]">
+            支付返回确认
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+            我们正在根据支付平台返回的信息同步订单状态，会员权益仍以支付通知确认为准。
+          </p>
+        </header>
+
+        <PaymentReturnNotice paymentReturn={paymentReturn} />
+
+        {orderNo ? (
+          <PaymentReturnStatusPanel order={order} orderNo={orderNo} state={state} />
+        ) : null}
+      </div>
+    </CheckoutShell>
+  );
+}
+
+function paymentReturnNoticeText(paymentReturn?: string | null): string {
+  if (paymentReturn === "alipay") {
+    return "已从支付宝返回。如果已经完成支付，权益会在稍后自动生效。";
+  }
+  if (paymentReturn === "wechat_pay") {
+    return "已从微信支付返回。如果已经完成支付，权益会在稍后自动生效。";
+  }
+  return "已从支付页面返回。如果已经完成支付，权益会在稍后自动生效。";
+}
+
+function PaymentReturnNotice({ paymentReturn }: { readonly paymentReturn?: string | null }) {
   return (
     <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
-      <p className="min-w-0 leading-6 text-muted-foreground [overflow-wrap:anywhere]">如果已经完成支付，权益会在稍后自动生效。</p>
+      <p className="min-w-0 leading-6 text-muted-foreground [overflow-wrap:anywhere]">
+        {paymentReturnNoticeText(paymentReturn)}
+      </p>
+      <PaymentReturnActions />
+    </div>
+  );
+}
+
+function PaymentReturnActions() {
+  return (
+    <div className="grid min-w-0 gap-2 sm:flex sm:shrink-0 sm:flex-wrap sm:justify-end">
       <Link
         href="/account"
         className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-card-foreground transition hover:border-primary hover:bg-secondary sm:w-fit"
       >
         查看账户权益
       </Link>
+      <Link
+        href="/pricing"
+        className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-muted-foreground transition hover:border-primary hover:bg-secondary hover:text-foreground sm:w-fit"
+      >
+        返回定价
+      </Link>
+    </div>
+  );
+}
+
+function paymentReturnStatusBadgeVariant(
+  state: ReturnOrderState,
+  order: AccountBillingOrderRecord | null,
+): "success" | "warning" | "danger" | "muted" {
+  if (order?.status === "paid") {
+    return "success";
+  }
+  if (order?.status === "failed" || order?.status === "closed" || order?.status === "canceled") {
+    return "danger";
+  }
+  if (state === "error") {
+    return "danger";
+  }
+  if (order?.status === "pending" || order?.status === "created" || state === "loading") {
+    return "warning";
+  }
+  return "muted";
+}
+
+function paymentReturnStatusBadgeLabel(
+  state: ReturnOrderState,
+  order: AccountBillingOrderRecord | null,
+): string {
+  if (order) {
+    return paymentStatusLabel(order.status);
+  }
+  if (state === "loading") {
+    return "同步中";
+  }
+  if (state === "error") {
+    return "待确认";
+  }
+  return "待同步";
+}
+
+function paymentReturnPanelMessage(
+  state: ReturnOrderState,
+  order: AccountBillingOrderRecord | null,
+): string {
+  if (order) {
+    return paymentReturnStatusMessage(order.status);
+  }
+  if (state === "error") {
+    return "暂时无法读取订单状态，请稍后刷新或查看账户权益。";
+  }
+  return "支付结果同步中，请稍后刷新或查看账户权益。";
+}
+
+function PaymentReturnStatusPanel({
+  order,
+  orderNo,
+  state,
+}: {
+  readonly order: AccountBillingOrderRecord | null;
+  readonly orderNo: string;
+  readonly state: ReturnOrderState;
+}) {
+  return (
+    <div className="grid min-w-0 gap-2 rounded-lg border border-border bg-muted/30 p-3">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold leading-6 text-card-foreground [overflow-wrap:anywhere]">
+            {paymentReturnPanelMessage(state, order)}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+            订单号：{order?.orderNo ?? orderNo}
+          </p>
+        </div>
+        <Badge
+          variant={paymentReturnStatusBadgeVariant(state, order)}
+          className="w-fit sm:shrink-0"
+        >
+          {paymentReturnStatusBadgeLabel(state, order)}
+        </Badge>
+      </div>
     </div>
   );
 }

@@ -307,25 +307,144 @@ function safeHeadersForStorage(headers: Record<string, string | undefined>): Jso
   );
 }
 
-function normalizeReturnUrl(value: string | undefined, env: NodeJS.ProcessEnv): string | null {
+type ReturnUrlSource = "metadata.merchantReturnUrl" | "metadata.returnUrl" | "provider_config";
+
+type MerchantReturnUrlResolution = {
+  readonly host: string;
+  readonly source: ReturnUrlSource;
+  readonly url: string;
+};
+
+const publicSiteBaseEnvKeys = [
+  "PUBLIC_SITE_URL",
+  "SITE_BASE_URL",
+  "NEXT_PUBLIC_SITE_URL",
+  "PUBLIC_SITE_BASE_URL",
+] as const;
+
+function firstCommaSeparatedHeaderValue(value: string | string[] | undefined): string | undefined {
+  return firstHeaderValue(value)
+    ?.split(",")
+    .map((item) => item.trim())
+    .find((item) => item.length > 0);
+}
+
+function preferredPublicProtocol(
+  env: NodeJS.ProcessEnv,
+  candidate: string | undefined,
+): "http" | "https" {
+  const normalized = candidate?.trim().toLowerCase();
+  if (normalized === "http" || normalized === "https") {
+    return normalized;
+  }
+  return env.NODE_ENV === "production" ? "https" : "http";
+}
+
+function parseHttpUrl(value: string, description: string, defaultProtocol?: "http" | "https"): URL {
+  const trimmed = value.trim();
+  const hasProtocol = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed);
+  const source = hasProtocol
+    ? trimmed
+    : defaultProtocol
+      ? `${defaultProtocol}://${trimmed}`
+      : trimmed;
+  let parsed: URL;
+  try {
+    parsed = new URL(source);
+  } catch {
+    throw new Error(`${description} must be a valid HTTP(S) URL.`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`${description} must use http or https.`);
+  }
+  if (!parsed.hostname) {
+    throw new Error(`${description} must include a host.`);
+  }
+  return parsed;
+}
+
+function resolvePublicSiteBaseUrl(request: FastifyRequest, env: NodeJS.ProcessEnv): URL {
+  for (const key of publicSiteBaseEnvKeys) {
+    const configured = env[key]?.trim();
+    if (configured) {
+      const parsed = parseHttpUrl(configured, key, preferredPublicProtocol(env, undefined));
+      return new URL(parsed.origin);
+    }
+  }
+
+  const forwardedHost = firstCommaSeparatedHeaderValue(request.headers["x-forwarded-host"]);
+  const host = forwardedHost ?? firstCommaSeparatedHeaderValue(request.headers.host);
+  if (!host) {
+    throw new Error("public site host is not configured.");
+  }
+  const forwardedProto = firstCommaSeparatedHeaderValue(request.headers["x-forwarded-proto"]);
+  const protocol = preferredPublicProtocol(env, forwardedProto ?? request.protocol);
+  const parsed = parseHttpUrl(`${protocol}://${host}`, "public site base URL");
+  return new URL(parsed.origin);
+}
+
+function removeSensitiveReturnParams(url: URL): void {
+  url.searchParams.delete("checkoutToken");
+  url.searchParams.delete("checkout_token");
+}
+
+function relativePathFromUrl(url: URL): string {
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function normalizeReturnUrl(
+  value: string | undefined,
+  request: FastifyRequest,
+  env: NodeJS.ProcessEnv,
+): string | null {
   const trimmed = value?.trim();
   if (!trimmed) {
     return null;
   }
   if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
-    return trimmed;
+    const parsed = new URL(trimmed, "https://merchant-return.local");
+    removeSensitiveReturnParams(parsed);
+    return relativePathFromUrl(parsed);
   }
 
-  const allowedBase = env.SITE_BASE_URL ?? env.PUBLIC_SITE_BASE_URL ?? env.NEXT_PUBLIC_SITE_URL;
-  if (!allowedBase) {
-    throw new Error("returnUrl must be a relative URL when site base URL is not configured.");
-  }
-  const allowed = new URL(allowedBase);
-  const parsed = new URL(trimmed);
+  const allowed = resolvePublicSiteBaseUrl(request, env);
+  const parsed = parseHttpUrl(trimmed, "returnUrl");
   if (parsed.origin !== allowed.origin) {
     throw new Error("returnUrl origin is not allowed.");
   }
+  removeSensitiveReturnParams(parsed);
   return parsed.toString();
+}
+
+function resolveMerchantReturnUrl(input: {
+  readonly env: NodeJS.ProcessEnv;
+  readonly orderNo?: string;
+  readonly request: FastifyRequest;
+  readonly returnUrl: string | null | undefined;
+  readonly source: ReturnUrlSource;
+}): MerchantReturnUrlResolution {
+  const trimmed = input.returnUrl?.trim();
+  if (!trimmed) {
+    throw new Error("returnUrl is not configured.");
+  }
+
+  const publicSiteBase = resolvePublicSiteBaseUrl(input.request, input.env);
+  const parsed =
+    trimmed.startsWith("/") && !trimmed.startsWith("//")
+      ? new URL(trimmed, publicSiteBase)
+      : parseHttpUrl(trimmed, "returnUrl");
+  if (parsed.origin !== publicSiteBase.origin) {
+    throw new Error("returnUrl origin is not allowed.");
+  }
+  removeSensitiveReturnParams(parsed);
+  if (input.orderNo) {
+    parsed.searchParams.set("orderNo", input.orderNo);
+  }
+  return {
+    host: parsed.host,
+    source: input.source,
+    url: parsed.toString(),
+  };
 }
 
 function firstHeaderValue(value: string | string[] | undefined): string | undefined {
@@ -398,14 +517,60 @@ function readUrlEncodedFormBody(request: FastifyRequest): Record<string, string>
   return Object.fromEntries(new URLSearchParams(rawBody).entries());
 }
 
+function readOrderMetadata(order: PaymentOrderRecord): Record<string, unknown> {
+  return isPlainRecord(order.metadataJson) ? order.metadataJson : {};
+}
+
+function readStringMetadataValue(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 function readOrderReturnUrl(order: PaymentOrderRecord): string | null {
-  const metadata = isPlainRecord(order.metadataJson) ? order.metadataJson : {};
-  const returnUrl = metadata.returnUrl;
-  return typeof returnUrl === "string" && returnUrl.trim() ? returnUrl.trim() : null;
+  const metadata = readOrderMetadata(order);
+  return readStringMetadataValue(metadata, "returnUrl");
+}
+
+function resolveOrderMerchantReturnUrl(input: {
+  readonly configReturnUrl: string | null | undefined;
+  readonly env: NodeJS.ProcessEnv;
+  readonly order: PaymentOrderRecord;
+  readonly request: FastifyRequest;
+}): MerchantReturnUrlResolution {
+  const metadata = readOrderMetadata(input.order);
+  const merchantReturnUrl = readStringMetadataValue(metadata, "merchantReturnUrl");
+  if (merchantReturnUrl) {
+    return resolveMerchantReturnUrl({
+      env: input.env,
+      orderNo: input.order.orderNo,
+      request: input.request,
+      returnUrl: merchantReturnUrl,
+      source: "metadata.merchantReturnUrl",
+    });
+  }
+
+  const returnUrl = readOrderReturnUrl(input.order);
+  if (returnUrl) {
+    return resolveMerchantReturnUrl({
+      env: input.env,
+      orderNo: input.order.orderNo,
+      request: input.request,
+      returnUrl,
+      source: "metadata.returnUrl",
+    });
+  }
+
+  return resolveMerchantReturnUrl({
+    env: input.env,
+    orderNo: input.order.orderNo,
+    request: input.request,
+    returnUrl: input.configReturnUrl,
+    source: "provider_config",
+  });
 }
 
 function readOrderClientMode(order: PaymentOrderRecord): string | undefined {
-  const metadata = isPlainRecord(order.metadataJson) ? order.metadataJson : {};
+  const metadata = readOrderMetadata(order);
   const clientMode = metadata.clientMode;
   return typeof clientMode === "string" && clientMode.trim() ? clientMode.trim() : undefined;
 }
@@ -618,6 +783,25 @@ function canManualMarkPaid(input: {
   );
 }
 
+function firstQueryString(value: unknown): string | null {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  return typeof candidate === "string" && candidate.trim() ? candidate.trim() : null;
+}
+
+function alipayReturnFallbackPath(query: unknown): string {
+  const params = isPlainRecord(query) ? query : {};
+  const orderNo = firstQueryString(params.orderNo) ?? firstQueryString(params.out_trade_no);
+  if (orderNo) {
+    const checkoutParams = new URLSearchParams({
+      payment_return: "alipay",
+      orderNo: orderNo.slice(0, 80),
+    });
+    return `/checkout?${checkoutParams.toString()}`;
+  }
+
+  return "/pricing?payment_return=alipay";
+}
+
 function registerRawBodyCapture(app: FastifyInstance) {
   app.addContentTypeParser(
     "application/x-www-form-urlencoded",
@@ -680,7 +864,7 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
 
     let returnUrl: string | null;
     try {
-      returnUrl = normalizeReturnUrl(parsedBody.data.returnUrl, env);
+      returnUrl = normalizeReturnUrl(parsedBody.data.returnUrl, request, env);
     } catch (error) {
       return sendError(reply, 400, "invalid_return_url", (error as Error).message);
     }
@@ -716,6 +900,10 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
       }
     }
 
+    const baseOrderMetadata = {
+      clientMode: parsedBody.data.clientMode ?? null,
+      returnUrl,
+    };
     const order = await createPaymentOrder(
       {
         userId: context.principal.user.id,
@@ -725,10 +913,7 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
         productCode: product.code,
         productId: product.id,
         status: "pending",
-        metadataJson: compactJson({
-          clientMode: parsedBody.data.clientMode ?? null,
-          returnUrl,
-        }),
+        metadataJson: compactJson(baseOrderMetadata),
       },
       { client },
     );
@@ -744,12 +929,22 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
     }
 
     try {
+      const merchantReturnUrl =
+        parsedBody.data.provider === "alipay"
+          ? resolveMerchantReturnUrl({
+              env,
+              orderNo: order.orderNo,
+              request,
+              returnUrl: returnUrl || config.returnUrl,
+              source: returnUrl ? "metadata.returnUrl" : "provider_config",
+            })
+          : null;
       const payment = await provider.createPayment({
         order,
         product,
         clientIp: resolveClientIp(request),
         clientMode: parsedBody.data.clientMode,
-        returnUrl,
+        returnUrl: merchantReturnUrl?.url ?? returnUrl,
       });
       const checkout =
         parsedBody.data.provider === "alipay"
@@ -761,19 +956,35 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
               request,
             })
           : payment.publicPayload;
-      if (
+      const providerPayloadJson =
         parsedBody.data.provider === "alipay" &&
+        merchantReturnUrl &&
         payment.providerPayloadJson &&
         typeof payment.providerPayloadJson === "object" &&
         !Array.isArray(payment.providerPayloadJson)
+          ? compactJson({
+              ...payment.providerPayloadJson,
+              merchantReturnHost: merchantReturnUrl.host,
+              returnUrlSource: merchantReturnUrl.source,
+            })
+          : payment.providerPayloadJson ?? null;
+      if (
+        parsedBody.data.provider === "alipay" &&
+        providerPayloadJson &&
+        typeof providerPayloadJson === "object" &&
+        !Array.isArray(providerPayloadJson)
       ) {
-        request.log.info(payment.providerPayloadJson, "Created Alipay checkout request");
+        request.log.info(providerPayloadJson, "Created Alipay checkout request");
       }
       const updatedOrder = await updatePaymentOrderStatus(
         {
           orderNo: order.orderNo,
           status: "pending",
-          providerPayloadJson: payment.providerPayloadJson ?? null,
+          providerPayloadJson,
+          metadataJson: compactJson({
+            ...baseOrderMetadata,
+            ...(merchantReturnUrl ? { merchantReturnUrl: merchantReturnUrl.url } : {}),
+          }),
         },
         { client },
       );
@@ -840,13 +1051,29 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
     }
 
     try {
+      const merchantReturnUrl = resolveOrderMerchantReturnUrl({
+        configReturnUrl: config.returnUrl,
+        env,
+        order,
+        request,
+      });
       const pagePayRequest = (provider as AlipayProvider).createPagePayRequest({
         order,
         product,
         clientMode: readOrderClientMode(order),
-        returnUrl: readOrderReturnUrl(order) || config.returnUrl,
+        returnUrl: merchantReturnUrl.url,
       });
-      request.log.info(pagePayRequest.safeDiagnostics, "Created Alipay checkout request");
+      const safeDiagnostics = isPlainRecord(pagePayRequest.safeDiagnostics)
+        ? pagePayRequest.safeDiagnostics
+        : {};
+      request.log.info(
+        {
+          ...safeDiagnostics,
+          merchantReturnHost: merchantReturnUrl.host,
+          returnUrlSource: merchantReturnUrl.source,
+        },
+        "Created Alipay checkout request",
+      );
       const html = renderAlipayPagePayFormHtml({
         charset: pagePayRequest.charset,
         fields: pagePayRequest.fields,
@@ -984,8 +1211,8 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
     }),
   );
 
-  app.get("/billing/alipay/return", async (_request, reply) => {
-    return reply.redirect("/pricing?payment_return=alipay");
+  app.get("/billing/alipay/return", async (request, reply) => {
+    return reply.redirect(alipayReturnFallbackPath(request.query));
   });
 
   app.post<{ Params: { orderNo: string } }>(

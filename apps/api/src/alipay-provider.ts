@@ -107,6 +107,7 @@ export class AlipayProvider implements PaymentProvider {
         charset: this.config.charset,
         signType: this.config.signType,
         transportMode: "server_post_form",
+        merchantReturnHost: gatewayHostOf(request.returnUrl),
         subjectLength: request.subject.length,
         subjectPreview: request.subject.slice(0, 8),
         signContentIncludesSignType: signContent.includes("sign_type=RSA2"),
@@ -211,6 +212,7 @@ export class AlipayProvider implements PaymentProvider {
     readonly method: string;
     readonly params: Map<string, string>;
     readonly productCode: string;
+    readonly returnUrl: string;
     readonly resolvedMode: "page" | "wap";
     readonly subject: string;
   } {
@@ -219,6 +221,7 @@ export class AlipayProvider implements PaymentProvider {
     const method = resolvedMode === "wap" ? "alipay.trade.wap.pay" : "alipay.trade.page.pay";
     const productCode = resolvedMode === "wap" ? "QUICK_WAP_WAY" : "FAST_INSTANT_TRADE_PAY";
     const subject = this.getProductSubject(input.product);
+    const returnUrl = resolveAlipayReturnUrl(input.returnUrl || this.config.returnUrl);
     params.set("app_id", this.config.appId);
     params.set("method", method);
     params.set("format", "JSON");
@@ -227,7 +230,7 @@ export class AlipayProvider implements PaymentProvider {
     params.set("timestamp", formatAlipayTimestamp(new Date()));
     params.set("version", "1.0");
     params.set("notify_url", this.config.notifyUrl);
-    params.set("return_url", input.returnUrl || this.config.returnUrl);
+    params.set("return_url", returnUrl);
     params.set(
       "biz_content",
       JSON.stringify({
@@ -238,7 +241,7 @@ export class AlipayProvider implements PaymentProvider {
         product_code: productCode,
       }),
     );
-    return { method, params, productCode, resolvedMode, subject };
+    return { method, params, productCode, returnUrl, resolvedMode, subject };
   }
 
   private getProductSubject(product: PaymentCreateInput["product"]): string {
@@ -267,4 +270,17 @@ function gatewayHostOf(value: string): string {
   } catch {
     return "invalid";
   }
+}
+
+function resolveAlipayReturnUrl(value: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("Alipay return_url must be an absolute HTTP(S) URL.");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Alipay return_url must be an absolute HTTP(S) URL.");
+  }
+  return parsed.toString();
 }
