@@ -4516,6 +4516,42 @@ export function CloudSeaProfessionalHourlyDataPanel({
   );
 }
 
+function professionalHourlyDateHeaderClassName(): string {
+  return cn(
+    "w-[4.5rem] min-w-[4.5rem] bg-muted",
+    "min-[760px]:sticky min-[760px]:left-0 min-[760px]:z-20",
+    "min-[760px]:shadow-[4px_0_0_var(--border)]",
+  );
+}
+
+function professionalHourlyDateCellClassName(rowBackgroundClassName: string): string {
+  return cn(
+    "w-[4.5rem] min-w-[4.5rem] font-semibold text-card-foreground",
+    rowBackgroundClassName,
+    "min-[760px]:sticky min-[760px]:left-0 min-[760px]:z-10",
+    "min-[760px]:shadow-[4px_0_0_var(--border)]",
+  );
+}
+
+function professionalHourlyTimeCellClassName(): string {
+  return "w-[5rem] min-w-[5rem] font-semibold text-card-foreground";
+}
+
+function professionalHourlyRowBackgroundClassName(
+  rowIndex: number,
+  tone: ProfessionalHourlyRowAnnotation["tone"] | undefined,
+): string {
+  if (tone === "success") {
+    return "bg-secondary/20";
+  }
+
+  if (tone === "warning" || tone === "danger") {
+    return "bg-accent/10";
+  }
+
+  return rowIndex % 2 === 0 ? "bg-card" : "bg-muted/35";
+}
+
 function ProfessionalHourlyCloudSection({
   target,
   data,
@@ -4728,7 +4764,10 @@ function ProfessionalHourlyCloudSection({
         </p>
 
         <ResponsiveDataScroller data-cloud-sea-professional-table-scroll="true">
-          <table className="w-full min-w-[1280px] border-collapse text-left text-[12px] leading-5">
+          <table
+            className="w-full min-w-[1280px] border-separate border-spacing-0 text-left text-[12px] leading-5"
+            data-professional-hourly-table-layout="mobile-scroll-safe"
+          >
             <thead className="bg-muted text-xs text-muted-foreground">
               <tr>
                 {[
@@ -4754,7 +4793,8 @@ function ProfessionalHourlyCloudSection({
                     scope="col"
                     className={cn(
                       "whitespace-nowrap border-b border-border px-2 py-2 font-semibold",
-                      index === 0 && "sticky left-0 z-20 bg-muted",
+                      index === 0 && professionalHourlyDateHeaderClassName(),
+                      index === 1 && "w-[5rem] min-w-[5rem]",
                     )}
                   >
                     {label}
@@ -4764,11 +4804,12 @@ function ProfessionalHourlyCloudSection({
             </thead>
             <tbody>
               {filteredRows.length > 0 ? (
-                filteredRows.map((row) => (
+                filteredRows.map((row, rowIndex) => (
                   <CloudSeaProfessionalHourlyRow
                     key={row.time}
                     target={target}
                     row={row}
+                    rowIndex={rowIndex}
                     timezone={basis.timezone}
                     annotation={rowAnnotations.get(row.time)}
                     ordinarySignalLabel={config?.ordinarySignalLabel}
@@ -4928,6 +4969,7 @@ export function professionalHourlySignalDisplayForTarget(
 function CloudSeaProfessionalHourlyRow({
   target,
   row,
+  rowIndex,
   timezone,
   annotation,
   ordinarySignalLabel,
@@ -4936,6 +4978,7 @@ function CloudSeaProfessionalHourlyRow({
 }: {
   readonly target: ProfessionalHourlySectionTarget;
   readonly row: ProfessionalHourlyRow;
+  readonly rowIndex: number;
   readonly timezone: string;
   readonly annotation?: ProfessionalHourlyRowAnnotation;
   readonly ordinarySignalLabel?: string;
@@ -4949,25 +4992,25 @@ function CloudSeaProfessionalHourlyRow({
   });
   const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "—";
   const weatherGlyph = weatherGlyphForProfessionalHour(row, weatherText);
+  const rowBackgroundClassName = professionalHourlyRowBackgroundClassName(
+    rowIndex,
+    annotation?.tone,
+  );
 
   return (
     <tr
-      className={cn(
-        "odd:bg-card even:bg-muted/35",
-        annotation?.tone === "success" && "bg-secondary/20",
-        (annotation?.tone === "warning" || annotation?.tone === "danger") && "bg-accent/10",
-      )}
+      className={rowBackgroundClassName}
       data-professional-hourly-row={row.time}
       data-professional-hourly-row-annotation={annotation?.label}
       data-professional-hourly-row-emphasis={annotation?.tone}
     >
       <ProfessionalHourlyCell
         cell="date"
-        className="sticky left-0 z-10 bg-inherit font-semibold text-card-foreground"
+        className={professionalHourlyDateCellClassName(rowBackgroundClassName)}
       >
         {row.dateLabel || formatProfessionalDate(row.time, timezone)}
       </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell cell="time" className="font-semibold text-card-foreground">
+      <ProfessionalHourlyCell cell="time" className={professionalHourlyTimeCellClassName()}>
         {row.timeLabel || formatProfessionalTime(row.time, timezone)}
       </ProfessionalHourlyCell>
       <ProfessionalHourlyCell cell="weather">
