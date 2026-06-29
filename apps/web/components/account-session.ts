@@ -140,6 +140,15 @@ export type PublicBillingProduct = {
 
 export type BillingPaymentProvider = "wechat_pay" | "alipay";
 
+export type PublicBillingPaymentMethod = {
+  readonly provider: BillingPaymentProvider;
+  readonly label: string;
+  readonly enabled: boolean;
+  readonly ready: boolean;
+  readonly recommended: boolean;
+  readonly unavailableReason?: string | null;
+};
+
 export type BillingCheckoutPayload =
   | { readonly kind: "mock"; readonly message: string }
   | { readonly kind: "qr_code"; readonly codeUrl: string; readonly message: string }
@@ -515,6 +524,33 @@ export async function listPublicBillingProducts(): Promise<readonly PublicBillin
     },
   );
   return payload.products ?? [];
+}
+
+function isBillingPaymentProvider(value: unknown): value is BillingPaymentProvider {
+  return value === "wechat_pay" || value === "alipay";
+}
+
+export async function listPublicBillingPaymentMethods(): Promise<
+  readonly PublicBillingPaymentMethod[]
+> {
+  const payload = await publicApiFetch<{
+    readonly methods?: readonly PublicBillingPaymentMethod[];
+  }>(
+    "/billing/payment-methods",
+    {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    },
+    {
+      fallbackMessage: retryableServiceMessage,
+    },
+  );
+  return (payload.methods ?? []).filter(
+    (method) =>
+      isBillingPaymentProvider(method.provider) &&
+      method.enabled === true &&
+      method.ready === true,
+  );
 }
 
 export async function createBillingOrder(input: {

@@ -77,6 +77,17 @@ const alipayPagePaySchema = z.object({
 });
 
 const authRequiredMessage = "请先登录后再操作。";
+const publicBillingPaymentProviders = ["alipay", "wechat_pay"] as const;
+
+type PublicBillingPaymentProvider = (typeof publicBillingPaymentProviders)[number];
+
+type PublicBillingPaymentMethod = {
+  readonly provider: PublicBillingPaymentProvider;
+  readonly label: string;
+  readonly enabled: boolean;
+  readonly ready: boolean;
+  readonly recommended: boolean;
+};
 
 function sendZodError(reply: FastifyReply, error: z.ZodError): FastifyReply {
   return reply.status(400).send({
@@ -90,6 +101,54 @@ function sendZodError(reply: FastifyReply, error: z.ZodError): FastifyReply {
 
 function sendError(reply: FastifyReply, statusCode: number, error: string, message: string) {
   return reply.status(statusCode).send({ error, message });
+}
+
+function publicBillingPaymentMethodLabel(provider: PublicBillingPaymentProvider): string {
+  return provider === "alipay" ? "支付宝支付" : "微信支付";
+}
+
+function publicBillingPaymentMethodRecommended(provider: PublicBillingPaymentProvider): boolean {
+  return provider === "alipay";
+}
+
+async function readPublicBillingPaymentMethod(input: {
+  readonly client?: DatabaseClient;
+  readonly env: NodeJS.ProcessEnv;
+  readonly providerCode: PublicBillingPaymentProvider;
+}): Promise<PublicBillingPaymentMethod | null> {
+  const check = await checkBillingProviderConfig({
+    providerCode: input.providerCode,
+    dbClient: input.client,
+    env: input.env,
+  });
+  const ready = check.enabled && check.realCallEnabled && check.configReady;
+  if (!ready) {
+    return null;
+  }
+
+  return {
+    provider: input.providerCode,
+    label: publicBillingPaymentMethodLabel(input.providerCode),
+    enabled: true,
+    ready: true,
+    recommended: publicBillingPaymentMethodRecommended(input.providerCode),
+  };
+}
+
+async function listPublicBillingPaymentMethods(input: {
+  readonly client?: DatabaseClient;
+  readonly env: NodeJS.ProcessEnv;
+}): Promise<readonly PublicBillingPaymentMethod[]> {
+  const methods = await Promise.all(
+    publicBillingPaymentProviders.map((providerCode) =>
+      readPublicBillingPaymentMethod({
+        client: input.client,
+        env: input.env,
+        providerCode,
+      }),
+    ),
+  );
+  return methods.filter((method): method is PublicBillingPaymentMethod => Boolean(method));
 }
 
 function compactJson(value: unknown): JsonValue {
@@ -602,6 +661,10 @@ export function registerPaymentRoutes(app: FastifyInstance, options: PaymentRout
 
   app.get("/billing/products", async () => {
     return { products: await listPublicBillingProducts({ client }) };
+  });
+
+  app.get("/billing/payment-methods", async () => {
+    return { methods: await listPublicBillingPaymentMethods({ client, env }) };
   });
 
   app.post("/billing/orders", async (request, reply) => {

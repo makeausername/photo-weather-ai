@@ -7,10 +7,12 @@ import {
   createBillingOrder,
   getBillingOrder,
   getCurrentAccountSession,
+  listPublicBillingPaymentMethods,
   listPublicBillingProducts,
   type AccountBillingOrderRecord,
   type BillingCheckoutPayload,
   type BillingPaymentProvider,
+  type PublicBillingPaymentMethod,
   type PublicBillingProduct,
 } from "../../components/account-session";
 import { CheckoutPayloadView } from "../../components/billing-checkout-payload-view";
@@ -27,23 +29,27 @@ const checkoutProductCodes: readonly CheckoutProductCode[] = [
 
 const checkoutProductCodeSet = new Set<string>(checkoutProductCodes);
 
-const paymentProviderOptions = [
-  { value: "alipay", desktopLabel: "支付宝支付", mobileLabel: "打开支付宝支付" },
-  { value: "wechat_pay", desktopLabel: "微信扫码支付", mobileLabel: "打开微信支付" },
-] as const satisfies readonly {
-  readonly value: BillingPaymentProvider;
-  readonly desktopLabel: string;
-  readonly mobileLabel: string;
-}[];
+const paymentProviderLabels = {
+  alipay: { desktopLabel: "支付宝支付", mobileLabel: "打开支付宝支付" },
+  wechat_pay: { desktopLabel: "微信扫码支付", mobileLabel: "打开微信支付" },
+} as const satisfies Record<
+  BillingPaymentProvider,
+  {
+    readonly desktopLabel: string;
+    readonly mobileLabel: string;
+  }
+>;
 
 type CheckoutClientProps = {
   readonly initialLoggedIn?: boolean | null;
+  readonly initialPaymentMethods?: readonly PublicBillingPaymentMethod[];
   readonly initialProducts?: readonly PublicBillingProduct[];
   readonly paymentReturn?: string | null;
   readonly productCode?: string | null;
 };
 
 type AuthState = "checking" | "authenticated" | "guest";
+export type PaymentMethodsState = "idle" | "loading" | "ready" | "error";
 type ProductState = "idle" | "loading" | "ready" | "error";
 export type PaymentClientMode = "desktop" | "mobile_browser" | "wechat_browser" | "alipay_browser";
 
@@ -66,6 +72,8 @@ export const checkoutClientLabels = [
   "正在生成二维码...",
   "支付完成后，会员权益自动生效。",
   "返回定价",
+  "当前暂未开放在线支付，请稍后再试。",
+  "查看账户权益",
 ] as const;
 
 export function isCheckoutProductCode(
@@ -148,6 +156,19 @@ function filterCheckoutProducts(
     : [];
 }
 
+function filterPublicPaymentMethods(
+  methods: readonly PublicBillingPaymentMethod[] | undefined,
+): readonly PublicBillingPaymentMethod[] {
+  return methods
+    ? methods.filter(
+        (method) =>
+          method.enabled === true &&
+          method.ready === true &&
+          (method.provider === "alipay" || method.provider === "wechat_pay"),
+      )
+    : [];
+}
+
 function formatPrice(product: PublicBillingProduct): string {
   return product.priceText || formatPriceCents(product.amountCents);
 }
@@ -197,12 +218,11 @@ function isMobilePaymentClientMode(clientMode: PaymentClientMode): boolean {
 function paymentButtonLabel(
   provider: BillingPaymentProvider,
   clientMode: PaymentClientMode,
+  fallbackLabel?: string,
 ): string {
-  const option = paymentProviderOptions.find((item) => item.value === provider);
-  if (!option) {
-    return "继续支付";
-  }
-  return isMobilePaymentClientMode(clientMode) ? option.mobileLabel : option.desktopLabel;
+  const option = paymentProviderLabels[provider];
+  const label = isMobilePaymentClientMode(clientMode) ? option.mobileLabel : option.desktopLabel;
+  return label || fallbackLabel || "继续支付";
 }
 
 function paymentLoadingLabel(
@@ -234,16 +254,24 @@ function paymentCheckoutReadyMessage(
 
 export function CheckoutClient({
   initialLoggedIn = null,
+  initialPaymentMethods,
   initialProducts,
   paymentReturn,
   productCode,
 }: CheckoutClientProps) {
   const selectedProductCode = isCheckoutProductCode(productCode) ? productCode : null;
   const initialCheckoutProducts = filterCheckoutProducts(initialProducts);
+  const initialAvailablePaymentMethods = filterPublicPaymentMethods(initialPaymentMethods);
   const [products, setProducts] =
     useState<readonly PublicBillingProduct[]>(initialCheckoutProducts);
   const [productState, setProductState] = useState<ProductState>(
     selectedProductCode ? (initialProducts ? "ready" : "loading") : "idle",
+  );
+  const [paymentMethods, setPaymentMethods] = useState<readonly PublicBillingPaymentMethod[]>(
+    initialAvailablePaymentMethods,
+  );
+  const [paymentMethodsState, setPaymentMethodsState] = useState<PaymentMethodsState>(
+    selectedProductCode ? (initialPaymentMethods ? "ready" : "loading") : "idle",
   );
   const [authState, setAuthState] = useState<AuthState>(
     initialLoggedIn === true ? "authenticated" : initialLoggedIn === false ? "guest" : "checking",
@@ -265,6 +293,10 @@ export function CheckoutClient({
         ? products.find((product) => product.code === selectedProductCode) ?? null
         : null,
     [products, selectedProductCode],
+  );
+  const availablePaymentProviderSet = useMemo(
+    () => new Set(paymentMethods.map((method) => method.provider)),
+    [paymentMethods],
   );
 
   useEffect(() => {
@@ -310,6 +342,43 @@ export function CheckoutClient({
       cancelled = true;
     };
   }, [initialProducts, selectedProductCode]);
+
+  useEffect(() => {
+    if (!selectedProductCode) {
+      setPaymentMethods([]);
+      setPaymentMethodsState("idle");
+      return;
+    }
+    if (initialPaymentMethods) {
+      setPaymentMethods(filterPublicPaymentMethods(initialPaymentMethods));
+      setPaymentMethodsState("ready");
+      return;
+    }
+
+    let cancelled = false;
+    setPaymentMethodsState("loading");
+    listPublicBillingPaymentMethods()
+      .then((methods) => {
+        if (cancelled) {
+          return;
+        }
+        setPaymentMethods(filterPublicPaymentMethods(methods));
+        setPaymentMethodsState("ready");
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setPaymentMethods([]);
+          setPaymentMethodsState("error");
+          setMessage(
+            error instanceof Error ? error.message : "支付方式暂时不可用，请稍后再试。",
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialPaymentMethods, selectedProductCode]);
 
   useEffect(() => {
     if (!selectedProductCode || initialLoggedIn !== null) {
@@ -366,6 +435,10 @@ export function CheckoutClient({
     }
     if (authState !== "authenticated") {
       setMessage("请先登录后继续支付。");
+      return;
+    }
+    if (!availablePaymentProviderSet.has(nextProvider)) {
+      setMessage("当前支付方式暂不可用，请刷新后重试。");
       return;
     }
 
@@ -479,6 +552,8 @@ export function CheckoutClient({
             {!productUnavailable && authState === "authenticated" ? (
               <CheckoutPaymentMethods
                 clientMode={clientMode}
+                paymentMethods={paymentMethods}
+                paymentMethodsState={paymentMethodsState}
                 selectedProduct={selectedProduct}
                 submittingProvider={submittingProvider}
                 onProviderPayment={(nextProvider) => void handleProviderPayment(nextProvider)}
@@ -590,38 +665,78 @@ function LoginPrompt({ checkoutPath }: { readonly checkoutPath: string }) {
 export function CheckoutPaymentMethods({
   clientMode,
   onProviderPayment,
+  paymentMethods,
+  paymentMethodsState,
   selectedProduct,
   submittingProvider,
 }: {
   readonly clientMode: PaymentClientMode;
   readonly onProviderPayment: (provider: BillingPaymentProvider) => void;
+  readonly paymentMethods: readonly PublicBillingPaymentMethod[];
+  readonly paymentMethodsState: PaymentMethodsState;
   readonly selectedProduct: PublicBillingProduct | null;
   readonly submittingProvider: BillingPaymentProvider | null;
 }) {
   const submitting = Boolean(submittingProvider);
 
+  if (paymentMethodsState === "loading") {
+    return (
+      <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+        正在读取支付方式...
+      </p>
+    );
+  }
+
+  if (paymentMethods.length === 0) {
+    return <PaymentMethodsUnavailable />;
+  }
+
   return (
     <div className="grid gap-2" data-checkout-payment-methods="primary">
       <p className="text-sm font-semibold text-card-foreground">选择支付方式</p>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
-        {paymentProviderOptions.map((item) => {
-          const loading = submittingProvider === item.value;
+        {paymentMethods.map((item) => {
+          const loading = submittingProvider === item.provider;
           return (
             <Button
-              key={item.value}
+              key={item.provider}
               type="button"
-              variant={item.value === "alipay" ? "primary" : "secondary"}
+              variant={item.recommended || paymentMethods.length === 1 ? "primary" : "secondary"}
               size="lg"
               className="h-12 w-full"
               disabled={!selectedProduct || submitting}
-              onClick={() => onProviderPayment(item.value)}
+              onClick={() => onProviderPayment(item.provider)}
             >
               {loading
-                ? paymentLoadingLabel(item.value, clientMode)
-                : paymentButtonLabel(item.value, clientMode)}
+                ? paymentLoadingLabel(item.provider, clientMode)
+                : paymentButtonLabel(item.provider, clientMode, item.label)}
             </Button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function PaymentMethodsUnavailable() {
+  return (
+    <div className="grid gap-3 rounded-lg border border-border bg-muted/30 p-3">
+      <p className="text-sm font-semibold text-card-foreground">
+        当前暂未开放在线支付，请稍后再试。
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+        <Link
+          href="/pricing"
+          className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+        >
+          返回定价
+        </Link>
+        <Link
+          href="/account"
+          className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-card-foreground transition hover:border-primary hover:bg-secondary"
+        >
+          查看账户权益
+        </Link>
       </div>
     </div>
   );
