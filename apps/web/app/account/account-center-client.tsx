@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   changeAccountPassword,
@@ -11,6 +11,7 @@ import {
   deleteAccountForecastHistory,
   deletePublicAccount,
   getAccountAccess,
+  getBillingOrder,
   getCurrentAccountSession,
   listAccountBillingOrders,
   listAccountForecastHistory,
@@ -36,6 +37,15 @@ import {
 
 type LoadState = "loading" | "ready";
 type FormState = "idle" | "loading" | "success" | "error";
+type PaymentReturnOrderState = "idle" | "loading" | "ready" | "error";
+
+type AccountCenterClientProps = {
+  readonly paymentReturn?: string | null;
+  readonly paymentReturnOrderNo?: string | null;
+};
+
+const paymentReturnPollIntervalMs = 4000;
+const paymentReturnPollMaxMs = 30000;
 
 const emptyValue = "未设置";
 
@@ -61,10 +71,15 @@ export const accountCenterSectionLabels = [
   "注销账户",
 ] as const;
 
-export function AccountCenterClient() {
+export function AccountCenterClient({
+  paymentReturn,
+  paymentReturnOrderNo,
+}: AccountCenterClientProps = {}) {
   const router = useRouter();
   const [state, setState] = useState<LoadState>("loading");
   const [session, setSession] = useState<PublicAccountSession | null>(null);
+  const normalizedPaymentReturn = paymentReturn?.trim() || null;
+  const normalizedPaymentReturnOrderNo = paymentReturnOrderNo?.trim() || null;
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +123,8 @@ export function AccountCenterClient() {
   return (
     <AuthenticatedAccountCenter
       session={session}
+      paymentReturn={normalizedPaymentReturn}
+      paymentReturnOrderNo={normalizedPaymentReturnOrderNo}
       onSessionUpdate={setSession}
       onAccountDeleted={handleAccountDeleted}
     />
@@ -160,6 +177,8 @@ export function AuthenticatedAccountCenter({
   onAccountDeleted,
   initialHistory,
   initialBillingSummary,
+  paymentReturn,
+  paymentReturnOrderNo,
 }: {
   readonly session: PublicAccountSession;
   readonly onSessionUpdate?: (session: PublicAccountSession) => void;
@@ -170,11 +189,29 @@ export function AuthenticatedAccountCenter({
     readonly entitlements: readonly AccountEntitlementRecord[];
     readonly access?: AccountAccessStatus;
   };
+  readonly paymentReturn?: string | null;
+  readonly paymentReturnOrderNo?: string | null;
 }) {
+  const [membershipRefreshKey, setMembershipRefreshKey] = useState(0);
+  const refreshMembershipSummary = useCallback(() => {
+    setMembershipRefreshKey((current) => current + 1);
+  }, []);
+
   return (
     <div className="grid gap-5">
       <AccountOverviewCard session={session} />
-      <MembershipSummaryCard session={session} initialSummary={initialBillingSummary} />
+      {paymentReturn ? (
+        <AccountPaymentReturnCard
+          paymentReturn={paymentReturn}
+          orderNo={paymentReturnOrderNo ?? null}
+          onRefreshAccountAccess={refreshMembershipSummary}
+        />
+      ) : null}
+      <MembershipSummaryCard
+        session={session}
+        initialSummary={initialBillingSummary}
+        refreshKey={membershipRefreshKey}
+      />
       <ForecastHistoryCard initialHistory={initialHistory} />
 
       <div
@@ -284,9 +321,292 @@ function SecuritySettingsCard({
   );
 }
 
+type AccountPaymentReturnKind = "paid" | "pending" | "failed" | "error" | "no_order";
+
+type AccountPaymentReturnViewModel = {
+  readonly badgeLabel: string;
+  readonly badgeVariant: AccountBadgeVariant;
+  readonly kind: AccountPaymentReturnKind;
+  readonly message: string;
+  readonly title: string;
+};
+
+export function AccountPaymentReturnCard({
+  initialOrder,
+  onRefreshAccountAccess,
+  orderNo,
+  paymentReturn,
+}: {
+  readonly initialOrder?: AccountBillingOrderRecord | null;
+  readonly onRefreshAccountAccess?: () => void;
+  readonly orderNo?: string | null;
+  readonly paymentReturn?: string | null;
+}) {
+  const normalizedOrderNo = orderNo?.trim() || initialOrder?.orderNo || null;
+  const [manualRefreshKey, setManualRefreshKey] = useState(0);
+  const [order, setOrder] = useState<AccountBillingOrderRecord | null>(initialOrder ?? null);
+  const [orderState, setOrderState] = useState<PaymentReturnOrderState>(
+    initialOrder ? "ready" : normalizedOrderNo ? "loading" : "idle",
+  );
+
+  useEffect(() => {
+    if (!normalizedOrderNo) {
+      setOrder(initialOrder ?? null);
+      setOrderState(initialOrder ? "ready" : "idle");
+      return;
+    }
+
+    const orderNoForLookup = normalizedOrderNo;
+    let cancelled = false;
+    let refreshedAccountAccess = false;
+    let timeoutId: number | undefined;
+    const startedAt = Date.now();
+
+    function refreshAccountAccessOnce() {
+      if (!refreshedAccountAccess) {
+        refreshedAccountAccess = true;
+        onRefreshAccountAccess?.();
+      }
+    }
+
+    function scheduleNextPoll() {
+      if (Date.now() - startedAt + paymentReturnPollIntervalMs > paymentReturnPollMaxMs) {
+        refreshAccountAccessOnce();
+        return;
+      }
+      timeoutId = window.setTimeout(loadOrder, paymentReturnPollIntervalMs);
+    }
+
+    function loadOrder() {
+      if (!initialOrder) {
+        setOrderState("loading");
+      }
+      getBillingOrder(orderNoForLookup)
+        .then((nextOrder) => {
+          if (cancelled) {
+            return;
+          }
+          setOrder(nextOrder);
+          setOrderState("ready");
+          if (isPaymentReturnPollingStatus(nextOrder.status)) {
+            scheduleNextPoll();
+            return;
+          }
+          refreshAccountAccessOnce();
+        })
+        .catch(() => {
+          if (cancelled) {
+            return;
+          }
+          setOrder(null);
+          setOrderState("error");
+          refreshAccountAccessOnce();
+        });
+    }
+
+    setOrder(initialOrder ?? null);
+    setOrderState(initialOrder ? "ready" : "loading");
+    loadOrder();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [initialOrder, manualRefreshKey, normalizedOrderNo, onRefreshAccountAccess]);
+
+  const view = accountPaymentReturnViewModel(orderState, order, Boolean(normalizedOrderNo));
+  const isLoading = orderState === "loading";
+  const canRefresh = Boolean(normalizedOrderNo) && view.kind !== "paid";
+
+  return (
+    <Card
+      data-account-payment-return="status-card"
+      data-payment-return-provider={paymentReturn ?? "unknown"}
+      data-payment-return-status={view.kind}
+      className="p-5 shadow-sm sm:p-6"
+    >
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant={view.badgeVariant}>{view.badgeLabel}</Badge>
+            {paymentReturn ? (
+              <Badge variant="muted">{paymentReturnProviderLabel(paymentReturn)}</Badge>
+            ) : null}
+          </div>
+          <h2 className="mt-3 text-lg font-bold text-card-foreground">{view.title}</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{view.message}</p>
+          {normalizedOrderNo ? (
+            <p className="mt-2 break-all text-xs leading-5 text-muted-foreground">
+              订单号：{order?.orderNo ?? normalizedOrderNo}
+            </p>
+          ) : null}
+        </div>
+        <PaymentReturnCardActions
+          canRefresh={canRefresh}
+          kind={view.kind}
+          loading={isLoading}
+          onRefresh={() => setManualRefreshKey((current) => current + 1)}
+        />
+      </div>
+    </Card>
+  );
+}
+
+function isPaymentReturnPollingStatus(status: AccountBillingOrderRecord["status"]): boolean {
+  return status === "pending" || status === "created";
+}
+
+function accountPaymentReturnViewModel(
+  state: PaymentReturnOrderState,
+  order: AccountBillingOrderRecord | null,
+  hasOrderNo: boolean,
+): AccountPaymentReturnViewModel {
+  if (!hasOrderNo) {
+    return {
+      badgeLabel: "待确认",
+      badgeVariant: "muted",
+      kind: "no_order",
+      title: "已从支付页面返回",
+      message: "暂时没有收到订单号，请在账户权益中查看当前会员状态。",
+    };
+  }
+
+  if (state === "error") {
+    return {
+      badgeLabel: "读取失败",
+      badgeVariant: "danger",
+      kind: "error",
+      title: "暂时无法读取订单",
+      message: "请稍后刷新，或在账户中心查看会员状态。",
+    };
+  }
+
+  if (order?.status === "paid") {
+    return {
+      badgeLabel: "已支付",
+      badgeVariant: "success",
+      kind: "paid",
+      title: "支付成功",
+      message: "会员权益已生效，可继续使用完整摄影判断。",
+    };
+  }
+
+  if (order?.status === "failed" || order?.status === "closed" || order?.status === "canceled") {
+    return {
+      badgeLabel: billingStatusLabel(order.status),
+      badgeVariant: "danger",
+      kind: "failed",
+      title: "支付未完成",
+      message: "这笔订单未完成支付，可以重新选择套餐购买。",
+    };
+  }
+
+  if (order?.status === "refunded") {
+    return {
+      badgeLabel: billingStatusLabel(order.status),
+      badgeVariant: "muted",
+      kind: "failed",
+      title: "支付未完成",
+      message: "这笔订单当前不可用，可以重新选择套餐购买。",
+    };
+  }
+
+  return {
+    badgeLabel: state === "loading" ? "同步中" : "待确认",
+    badgeVariant: "warning",
+    kind: "pending",
+    title: "支付结果同步中",
+    message:
+      "我们已从支付页面返回，正在等待支付通知确认。通常几秒内会自动更新，会员权益会根据支付通知自动生效。",
+  };
+}
+
+function paymentReturnProviderLabel(paymentReturn: string): string {
+  if (paymentReturn === "alipay") {
+    return "支付宝返回";
+  }
+  if (paymentReturn === "wechat_pay") {
+    return "微信支付返回";
+  }
+  return "支付返回";
+}
+
+function PaymentReturnCardActions({
+  canRefresh,
+  kind,
+  loading,
+  onRefresh,
+}: {
+  readonly canRefresh: boolean;
+  readonly kind: AccountPaymentReturnKind;
+  readonly loading: boolean;
+  readonly onRefresh: () => void;
+}) {
+  if (kind === "paid") {
+    return (
+      <div className="grid min-w-0 gap-2 sm:flex sm:shrink-0 sm:flex-wrap sm:justify-end">
+        <Link
+          href="/"
+          className="inline-flex h-9 w-full items-center justify-center rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)] sm:w-fit"
+        >
+          开始使用
+        </Link>
+        <PaymentReturnSecondaryLink href="/account">查看账户权益</PaymentReturnSecondaryLink>
+        <PaymentReturnSecondaryLink href="/">返回首页</PaymentReturnSecondaryLink>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid min-w-0 gap-2 sm:flex sm:shrink-0 sm:flex-wrap sm:justify-end">
+      {kind === "failed" ? (
+        <Link
+          href="/pricing"
+          className="inline-flex h-9 w-full items-center justify-center rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)] sm:w-fit"
+        >
+          重新购买
+        </Link>
+      ) : canRefresh ? (
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full sm:w-fit"
+          disabled={loading}
+          onClick={onRefresh}
+        >
+          {loading ? "正在刷新..." : "刷新状态"}
+        </Button>
+      ) : null}
+      <PaymentReturnSecondaryLink href="/account">查看账户权益</PaymentReturnSecondaryLink>
+      <PaymentReturnSecondaryLink href="/">返回首页</PaymentReturnSecondaryLink>
+      <PaymentReturnSecondaryLink href="/pricing">返回定价</PaymentReturnSecondaryLink>
+    </div>
+  );
+}
+
+function PaymentReturnSecondaryLink({
+  children,
+  href,
+}: {
+  readonly children: ReactNode;
+  readonly href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-card-foreground transition hover:border-primary hover:bg-secondary sm:w-fit"
+    >
+      {children}
+    </Link>
+  );
+}
+
 function MembershipSummaryCard({
   session,
   initialSummary,
+  refreshKey = 0,
 }: {
   readonly session: PublicAccountSession;
   readonly initialSummary?: {
@@ -294,6 +614,7 @@ function MembershipSummaryCard({
     readonly entitlements: readonly AccountEntitlementRecord[];
     readonly access?: AccountAccessStatus;
   };
+  readonly refreshKey?: number;
 }) {
   const [orders, setOrders] = useState<readonly AccountBillingOrderRecord[]>(
     initialSummary?.orders ?? [],
@@ -305,7 +626,7 @@ function MembershipSummaryCard({
   useEffect(() => {
     let cancelled = false;
 
-    if (initialSummary) {
+    if (initialSummary && refreshKey === 0) {
       setOrders(initialSummary.orders);
       setAccess(initialSummary.access ?? null);
       setState("ready");
@@ -336,7 +657,7 @@ function MembershipSummaryCard({
     return () => {
       cancelled = true;
     };
-  }, [initialSummary]);
+  }, [initialSummary, refreshKey]);
 
   const membership =
     state === "ready" && !errorMessage ? buildMembershipViewModel(access, orders, session) : null;
@@ -454,9 +775,7 @@ function buildMembershipViewModel(
   const paidOrders = selectPaidMembershipOrders(orders, state);
   const tierLabel = membershipTierLabel(effectiveAccess, state);
   const emptyOrdersMessage =
-    state !== "admin" && paidOrders.length === 0
-      ? "暂无付费订单"
-      : undefined;
+    state !== "admin" && paidOrders.length === 0 ? "暂无付费订单" : undefined;
 
   return {
     state,
@@ -932,7 +1251,13 @@ function HistoryRow({
               坐标不足
             </span>
           )}
-          <Button type="button" variant="ghost" size="sm" className="w-full sm:w-auto" onClick={onDelete}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="w-full sm:w-auto"
+            onClick={onDelete}
+          >
             删除
           </Button>
         </div>
@@ -1295,7 +1620,12 @@ function DeleteAccountForm({ onAccountDeleted }: { readonly onAccountDeleted?: (
           我确认注销当前账户，并理解该操作会撤销所有登录会话。
         </span>
       </label>
-      <Button type="submit" variant="danger" className="w-full sm:w-fit" disabled={status === "loading"}>
+      <Button
+        type="submit"
+        variant="danger"
+        className="w-full sm:w-fit"
+        disabled={status === "loading"}
+      >
         {status === "loading" ? "正在注销..." : "注销账户"}
       </Button>
       <StatusMessage state={status} message={message} />

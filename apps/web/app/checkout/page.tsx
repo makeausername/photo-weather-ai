@@ -7,6 +7,8 @@ export const metadata: Metadata = {
 
 type CheckoutPageProps = {
   readonly searchParams?: {
+    readonly orderNo?: string | string[];
+    readonly out_trade_no?: string | string[];
     readonly payment_return?: string | string[];
     readonly product?: string | string[];
   };
@@ -22,6 +24,9 @@ function firstSearchParam(value: string | string[] | undefined): string {
 export default function CheckoutPage({ searchParams }: CheckoutPageProps) {
   return (
     <CheckoutClient
+      orderNo={
+        firstSearchParam(searchParams?.orderNo) || firstSearchParam(searchParams?.out_trade_no)
+      }
       paymentReturn={firstSearchParam(searchParams?.payment_return)}
       productCode={firstSearchParam(searchParams?.product)}
     />

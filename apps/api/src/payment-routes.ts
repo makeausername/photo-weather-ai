@@ -791,15 +791,14 @@ function firstQueryString(value: unknown): string | null {
 function alipayReturnFallbackPath(query: unknown): string {
   const params = isPlainRecord(query) ? query : {};
   const orderNo = firstQueryString(params.orderNo) ?? firstQueryString(params.out_trade_no);
+  const accountParams = new URLSearchParams({
+    payment_return: "alipay",
+  });
   if (orderNo) {
-    const checkoutParams = new URLSearchParams({
-      payment_return: "alipay",
-      orderNo: orderNo.slice(0, 80),
-    });
-    return `/checkout?${checkoutParams.toString()}`;
+    accountParams.set("orderNo", orderNo.slice(0, 80));
   }
 
-  return "/pricing?payment_return=alipay";
+  return `/account?${accountParams.toString()}`;
 }
 
 function registerRawBodyCapture(app: FastifyInstance) {

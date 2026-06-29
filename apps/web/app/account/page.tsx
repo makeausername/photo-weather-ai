@@ -6,7 +6,25 @@ export const metadata: Metadata = {
   title: "账户中心 - 逐光天气",
 };
 
-export default function AccountPage() {
+type AccountPageProps = {
+  readonly searchParams?: {
+    readonly orderNo?: string | string[];
+    readonly out_trade_no?: string | string[];
+    readonly payment_return?: string | string[];
+  };
+};
+
+function firstSearchParam(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return value[0] ?? "";
+  }
+  return value ?? "";
+}
+
+export default function AccountPage({ searchParams }: AccountPageProps) {
+  const orderNo =
+    firstSearchParam(searchParams?.orderNo) || firstSearchParam(searchParams?.out_trade_no);
+
   return (
     <PublicShell contentClassName="grid gap-6 pb-14">
       <header className="border-b border-border pb-5">
@@ -19,7 +37,10 @@ export default function AccountPage() {
         </p>
       </header>
 
-      <AccountCenterClient />
+      <AccountCenterClient
+        paymentReturn={firstSearchParam(searchParams?.payment_return)}
+        paymentReturnOrderNo={orderNo}
+      />
     </PublicShell>
   );
 }

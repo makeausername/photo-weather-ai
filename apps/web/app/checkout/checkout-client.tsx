@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
@@ -132,11 +133,20 @@ export function detectPaymentClientMode(
   return mobileUserAgent || touchSizedViewport || narrowViewport ? "mobile_browser" : "desktop";
 }
 
-function checkoutReturnPathForProvider(
-  productCode: string,
+export function checkoutReturnPathForProvider(
+  _productCode: string,
   provider: BillingPaymentProvider,
 ): string {
-  return `${checkoutPathForProduct(productCode)}&payment_return=${encodeURIComponent(provider)}`;
+  return `/account?payment_return=${encodeURIComponent(provider)}`;
+}
+
+function accountPaymentReturnPath(paymentReturn: string, orderNo?: string | null): string {
+  const params = new URLSearchParams({ payment_return: paymentReturn });
+  const trimmedOrderNo = orderNo?.trim();
+  if (trimmedOrderNo) {
+    params.set("orderNo", trimmedOrderNo);
+  }
+  return `/account?${params.toString()}`;
 }
 
 function loginHrefForCheckout(checkoutPath: string): string {
@@ -281,8 +291,14 @@ export function CheckoutClient({
   paymentReturn,
   productCode,
 }: CheckoutClientProps) {
+  const router = useRouter();
   const selectedProductCode = isCheckoutProductCode(productCode) ? productCode : null;
+  const normalizedPaymentReturn = paymentReturn?.trim() || null;
   const paymentReturnOrderNo = orderNo?.trim() || null;
+  const legacyCheckoutPaymentReturnPath =
+    selectedProductCode && normalizedPaymentReturn
+      ? accountPaymentReturnPath(normalizedPaymentReturn, paymentReturnOrderNo)
+      : null;
   const initialCheckoutProducts = filterCheckoutProducts(initialProducts);
   const initialAvailablePaymentMethods = filterPublicPaymentMethods(initialPaymentMethods);
   const [products, setProducts] =
@@ -329,6 +345,12 @@ export function CheckoutClient({
   useEffect(() => {
     setClientMode(detectPaymentClientMode());
   }, []);
+
+  useEffect(() => {
+    if (legacyCheckoutPaymentReturnPath) {
+      router.replace(legacyCheckoutPaymentReturnPath);
+    }
+  }, [legacyCheckoutPaymentReturnPath, router]);
 
   useEffect(() => {
     checkoutRequestIdRef.current += 1;
@@ -534,12 +556,23 @@ export function CheckoutClient({
     }
   }
 
-  if (!selectedProductCode && (paymentReturn || paymentReturnOrderNo)) {
+  if (legacyCheckoutPaymentReturnPath) {
     return (
       <PaymentReturnShell
         order={returnOrder}
         orderNo={paymentReturnOrderNo}
-        paymentReturn={paymentReturn}
+        paymentReturn={normalizedPaymentReturn}
+        state={returnOrderState}
+      />
+    );
+  }
+
+  if (!selectedProductCode && (normalizedPaymentReturn || paymentReturnOrderNo)) {
+    return (
+      <PaymentReturnShell
+        order={returnOrder}
+        orderNo={paymentReturnOrderNo}
+        paymentReturn={normalizedPaymentReturn}
         state={returnOrderState}
       />
     );
@@ -574,7 +607,9 @@ export function CheckoutClient({
           </p>
         </header>
 
-        {paymentReturn ? <PaymentReturnNotice paymentReturn={paymentReturn} /> : null}
+        {normalizedPaymentReturn ? (
+          <PaymentReturnNotice paymentReturn={normalizedPaymentReturn} />
+        ) : null}
 
         {paymentReturnOrderNo ? (
           <PaymentReturnStatusPanel
