@@ -52,6 +52,15 @@ select {
   font: inherit;
 }
 
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--foreground);
+  caret-color: var(--foreground);
+  box-shadow: 0 0 0 1000px var(--card) inset;
+  -webkit-box-shadow: 0 0 0 1000px var(--card) inset;
+}
+
 ::selection {
   background: rgb(47 111 94 / 22%);
 }

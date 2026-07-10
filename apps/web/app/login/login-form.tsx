@@ -239,8 +239,10 @@ export function LoginForm({
         >
           <button
             type="button"
+            id="login-password-tab"
             role="tab"
             aria-selected={loginMode === "password"}
+            aria-controls="login-password-panel"
             className={cn(
               "h-9 rounded-md px-3 text-sm font-semibold transition",
               loginMode === "password"
@@ -253,8 +255,10 @@ export function LoginForm({
           </button>
           <button
             type="button"
+            id="login-sms-tab"
             role="tab"
             aria-selected={loginMode === "sms"}
+            aria-controls="login-sms-panel"
             className={cn(
               "h-9 rounded-md px-3 text-sm font-semibold transition",
               loginMode === "sms"
@@ -268,9 +272,16 @@ export function LoginForm({
         </div>
 
         {loginMode === "password" ? (
-          <>
+          <div
+            id="login-password-panel"
+            role="tabpanel"
+            aria-labelledby="login-password-tab"
+            className="grid gap-4"
+          >
             <FormField label="邮箱或手机号">
               <Input
+                id="login-identifier"
+                name="identifier"
                 type="text"
                 autoComplete="username"
                 placeholder="请输入邮箱或手机号"
@@ -281,6 +292,8 @@ export function LoginForm({
             </FormField>
             <FormField label="密码">
               <PasswordInput
+                id="login-password"
+                name="password"
                 autoComplete="current-password"
                 placeholder="请输入密码"
                 value={password}
@@ -288,12 +301,19 @@ export function LoginForm({
                 required
               />
             </FormField>
-          </>
+          </div>
         ) : (
-          <>
+          <div
+            id="login-sms-panel"
+            role="tabpanel"
+            aria-labelledby="login-sms-tab"
+            className="grid gap-4"
+          >
             <FormField label="手机号">
               <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <Input
+                  id="login-sms-phone"
+                  name="phone"
                   type="tel"
                   autoComplete="tel"
                   inputMode="tel"
@@ -327,6 +347,8 @@ export function LoginForm({
             ) : null}
             <FormField label="验证码">
               <Input
+                id="login-sms-code"
+                name="code"
                 type="text"
                 autoComplete="one-time-code"
                 inputMode="numeric"
@@ -338,7 +360,7 @@ export function LoginForm({
                 required
               />
             </FormField>
-          </>
+          </div>
         )}
 
         <AuthStatusMessage message={status} tone={statusTone} />

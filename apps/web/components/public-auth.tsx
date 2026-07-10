@@ -7,18 +7,14 @@ type PublicAuthLayoutProps = {
   readonly size?: "default" | "wide";
 };
 
-export function PublicAuthLayout({
-  children,
-  className,
-  size = "default",
-}: PublicAuthLayoutProps) {
-  const maxWidthClassName = size === "wide" ? "max-w-[580px]" : "max-w-[500px]";
+export function PublicAuthLayout({ children, className, size = "default" }: PublicAuthLayoutProps) {
+  const maxWidthClassName = size === "wide" ? "max-w-xl" : "max-w-lg";
 
   return (
     <section
       data-auth-layout="centered-public-auth"
       className={cn(
-        "mx-auto grid w-full max-w-full min-w-0 justify-items-center gap-5 pt-2 sm:pt-4 lg:pt-6",
+        "mx-auto grid w-full min-w-0 justify-items-center gap-5 py-4 sm:py-6 lg:py-8",
         maxWidthClassName,
         className,
       )}
@@ -37,14 +33,19 @@ type AuthCardProps = {
 
 export function AuthCard({ eyebrow, title, description, children }: AuthCardProps) {
   return (
-    <Card data-auth-card="centered-form-card" className="w-full max-w-full min-w-0 p-5 shadow-sm sm:p-6">
+    <Card
+      data-auth-card="centered-form-card"
+      className="w-full max-w-full min-w-0 p-5 shadow-sm sm:p-6"
+    >
       <div className="mb-5 min-w-0 border-b border-border pb-4">
         <p className="text-xs font-bold text-primary">{eyebrow}</p>
         <h1 className="mt-1.5 text-xl font-bold leading-tight text-card-foreground sm:text-2xl">
           {title}
         </h1>
         {description ? (
-          <p className="mt-2 text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">{description}</p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
+            {description}
+          </p>
         ) : null}
       </div>
       {children}

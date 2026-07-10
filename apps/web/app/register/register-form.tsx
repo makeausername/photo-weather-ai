@@ -263,6 +263,7 @@ export function RegisterForm({ returnTo = null }: { readonly returnTo?: string |
   return (
     <AuthCard eyebrow="账户" title="创建账户">
       <div
+        role="tablist"
         className="mb-4 grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/70 p-1"
         aria-label="注册方式"
       >
@@ -273,13 +274,16 @@ export function RegisterForm({ returnTo = null }: { readonly returnTo?: string |
           <button
             key={item.value}
             type="button"
+            id={`register-${item.value}-tab`}
+            role="tab"
+            aria-selected={channel === item.value}
+            aria-controls={`register-${item.value}-panel`}
             className={cn(
               "h-10 rounded-md text-sm font-semibold transition",
               channel === item.value
                 ? "bg-card text-card-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
             )}
-            aria-pressed={channel === item.value}
             onClick={() => switchChannel(item.value as RegisterVerificationChannel)}
           >
             {item.label}
@@ -290,6 +294,8 @@ export function RegisterForm({ returnTo = null }: { readonly returnTo?: string |
       <form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
         <FormField label="昵称" hint="可选，最多 40 个字符。">
           <Input
+            id="register-display-name"
+            name="displayName"
             type="text"
             autoComplete="nickname"
             placeholder="请输入昵称"
@@ -300,33 +306,53 @@ export function RegisterForm({ returnTo = null }: { readonly returnTo?: string |
         </FormField>
 
         {channel === "email" ? (
-          <FormField label="邮箱">
-            <Input
-              type="email"
-              autoComplete="email"
-              placeholder="请输入邮箱"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-            />
-          </FormField>
+          <div
+            id="register-email-panel"
+            role="tabpanel"
+            aria-labelledby="register-email-tab"
+            className="grid gap-4"
+          >
+            <FormField label="邮箱">
+              <Input
+                id="register-email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                placeholder="请输入邮箱"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+              />
+            </FormField>
+          </div>
         ) : (
-          <FormField label="手机号">
-            <Input
-              type="tel"
-              inputMode="numeric"
-              autoComplete="tel"
-              placeholder="请输入中国大陆手机号"
-              value={phone}
-              onChange={(event) => setPhone(event.target.value)}
-              required
-            />
-          </FormField>
+          <div
+            id="register-sms-panel"
+            role="tabpanel"
+            aria-labelledby="register-sms-tab"
+            className="grid gap-4"
+          >
+            <FormField label="手机号">
+              <Input
+                id="register-phone"
+                name="phone"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel"
+                placeholder="请输入中国大陆手机号"
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+                required
+              />
+            </FormField>
+          </div>
         )}
 
         <FormField label="验证码">
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_136px]">
             <Input
+              id="register-code"
+              name="code"
               type="text"
               inputMode="numeric"
               autoComplete="one-time-code"
@@ -350,6 +376,8 @@ export function RegisterForm({ returnTo = null }: { readonly returnTo?: string |
 
         <FormField label="密码" hint="至少 8 个字符。">
           <PasswordInput
+            id="register-password"
+            name="password"
             autoComplete="new-password"
             placeholder="请输入密码"
             value={password}
@@ -360,6 +388,8 @@ export function RegisterForm({ returnTo = null }: { readonly returnTo?: string |
         </FormField>
         <FormField label="确认密码">
           <PasswordInput
+            id="register-confirm-password"
+            name="confirmPassword"
             autoComplete="new-password"
             placeholder="请再次输入密码"
             value={confirmPassword}
