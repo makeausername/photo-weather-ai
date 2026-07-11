@@ -592,10 +592,11 @@ export class MeteoblueRealProvider implements WeatherProvider {
     return {
       provider: realSource.providerCode,
       observedAt: new Date().toISOString(),
-      aqi: 0,
-      category: "good",
-      pm25: 0,
-      pm10: 0,
+      availability: "unavailable",
+      aqi: null,
+      category: null,
+      pm25: null,
+      pm10: null,
     };
   }
 
@@ -616,18 +617,32 @@ export class MeteoblueRealProvider implements WeatherProvider {
       }
       const providerElevationMeters =
         meteoblueMetadataHeightMeters(root) ?? this.options.elevationMeters;
+      const visibilitySourceUnit = findMeteoblueFieldUnit(root, fieldAliases("visibility"));
+      const temperatureSourceUnit =
+        findMeteoblueFieldUnit(root, fieldAliases("temperature")) ?? "C";
+      const pressureSourceUnit =
+        findMeteoblueFieldUnit(root, fieldAliases("pressure")) ?? "hPa";
+      const precipitationSourceUnit =
+        findMeteoblueFieldUnit(root, fieldAliases("precipitation")) ?? "mm";
+      const windSpeedSourceUnit = findMeteoblueFieldUnit(root, fieldAliases("windSpeed"));
+      const windGustSourceUnit =
+        findMeteoblueFieldUnit(root, fieldAliases("windGust")) ?? windSpeedSourceUnit;
 
       return validateHourlyWeather(
         timeValues.map((timeValue, index) => {
           const missingFields = new Set<string>();
-          const temperatureValue = nullableRounded(
+          const temperatureValue = normalizeMeteoblueTemperatureC(
             pickAt(data1h, index, fieldAliases("temperature")),
+            temperatureSourceUnit,
           );
           if (temperatureValue === null) {
             missingFields.add("temperature");
           }
           const temperature = temperatureValue ?? 0;
-          const dewPoint = nullableRounded(pickAt(data1h, index, fieldAliases("dewPoint")));
+          const dewPoint = normalizeMeteoblueTemperatureC(
+            pickAt(data1h, index, fieldAliases("dewPoint")),
+            temperatureSourceUnit,
+          );
           const cloudLow = nullablePercent(pickAt(data1h, index, fieldAliases("cloudLow")));
           const cloudMid = nullablePercent(pickAt(data1h, index, fieldAliases("cloudMid")));
           const cloudHigh = nullablePercent(pickAt(data1h, index, fieldAliases("cloudHigh")));
@@ -637,9 +652,13 @@ export class MeteoblueRealProvider implements WeatherProvider {
             missingFields.add("humidity");
           }
           const humidity = humidityValue ?? 0;
-          const pressure = nullableRounded(pickAt(data1h, index, fieldAliases("pressure")));
+          const pressure = normalizeMeteobluePressureHpa(
+            pickAt(data1h, index, fieldAliases("pressure")),
+            pressureSourceUnit,
+          );
           const windSpeedValue = normalizeNullableWindSpeed(
             pickAt(data1h, index, fieldAliases("windSpeed")),
+            windSpeedSourceUnit,
           );
           if (windSpeedValue === null) {
             missingFields.add("windSpeed");
@@ -647,6 +666,7 @@ export class MeteoblueRealProvider implements WeatherProvider {
           const windSpeed = windSpeedValue ?? 0;
           const windGust = normalizeNullableWindSpeed(
             pickAt(data1h, index, fieldAliases("windGust")),
+            windGustSourceUnit,
           );
           const windDirection = normalizeWindDirection(
             pickAt(data1h, index, fieldAliases("windDirection")),
@@ -654,12 +674,16 @@ export class MeteoblueRealProvider implements WeatherProvider {
           const precipitationProbability = nullablePercent(
             pickAt(data1h, index, fieldAliases("precipitationProbability")),
           );
-          const precipitation = nullableRounded(
+          const precipitation = normalizeMeteobluePrecipitationMm(
             pickAt(data1h, index, fieldAliases("precipitation")),
+            precipitationSourceUnit,
           );
-          const visibility = normalizeVisibilityKm(
-            pickAt(data1h, index, fieldAliases("visibility")),
+          const rawVisibility = pickAt(data1h, index, fieldAliases("visibility"));
+          const visibilityNormalization = normalizeMeteoblueVisibilityKm(
+            rawVisibility,
+            visibilitySourceUnit,
           );
+          const visibility = visibilityNormalization.value;
 
           for (const [field, value] of [
             ["cloudLow", cloudLow],
@@ -682,8 +706,9 @@ export class MeteoblueRealProvider implements WeatherProvider {
           return {
             time: normalizeMeteoblueTime(timeValue, root),
             temperature,
-            feelsLike: nullableRounded(
+            feelsLike: normalizeMeteoblueTemperatureC(
               pickAt(data1h, index, "felttemperature", "apparent_temperature", "feels_like"),
+              temperatureSourceUnit,
             ),
             humidity,
             dewPointSpread: dewPoint === null ? null : roundTo(temperature - dewPoint),
@@ -727,6 +752,21 @@ export class MeteoblueRealProvider implements WeatherProvider {
             dataMode: realSource.mode,
             sourceConfidence: missingFields.size > 0 ? 0.78 : 0.9,
             missingFields: missingFields.size > 0 ? [...missingFields] : undefined,
+            fieldMetadata: {
+              visibility: {
+                value: visibility,
+                providerCode: realSource.providerCode,
+                providerLabelZh: realSource.providerLabelZh,
+                estimated: false,
+                missingReason: visibilityNormalization.rejectionReason,
+                rawValue:
+                  typeof rawVisibility === "number" || typeof rawVisibility === "string"
+                    ? rawVisibility
+                    : null,
+                sourceUnit: visibilityNormalization.sourceUnit,
+                validationStatus: visibilityNormalization.validationStatus,
+              },
+            },
           };
         }),
       );
@@ -1333,14 +1373,70 @@ function hasUsableMeteoblueField(
   });
 }
 
-function normalizeNullableWindSpeed(value: unknown): number | null {
+function normalizeNullableWindSpeed(value: unknown, unit: unknown): number | null {
   const parsed = toNumber(value);
   if (parsed === null) {
     return null;
   }
+  const normalizedUnit = typeof unit === "string" ? unit.trim().toLowerCase() : "";
+  const metersPerSecond =
+    ["m/s", "mps", "ms-1"].includes(normalizedUnit)
+      ? parsed
+      : ["km/h", "kmh", "kph"].includes(normalizedUnit)
+        ? parsed / 3.6
+        : ["mph", "mi/h"].includes(normalizedUnit)
+          ? parsed * 0.44704
+          : null;
+  return metersPerSecond === null || metersPerSecond < 0 ? null : roundTo(metersPerSecond);
+}
 
-  const metersPerSecond = parsed > 35 ? parsed / 3.6 : parsed;
-  return roundTo(Math.max(0, metersPerSecond));
+function normalizeMeteoblueTemperatureC(value: unknown, unit: unknown): number | null {
+  const parsed = toNumber(value);
+  if (parsed === null) {
+    return null;
+  }
+  const normalizedUnit = typeof unit === "string" ? unit.trim().toLowerCase() : "";
+  const celsius =
+    ["c", "°c", "celsius"].includes(normalizedUnit)
+      ? parsed
+      : ["f", "°f", "fahrenheit"].includes(normalizedUnit)
+        ? ((parsed - 32) * 5) / 9
+        : null;
+  return celsius === null ? null : roundTo(celsius);
+}
+
+function normalizeMeteobluePressureHpa(value: unknown, unit: unknown): number | null {
+  const parsed = toNumber(value);
+  if (parsed === null) {
+    return null;
+  }
+  const normalizedUnit = typeof unit === "string" ? unit.trim().toLowerCase() : "";
+  const hpa =
+    ["hpa", "mbar", "mb"].includes(normalizedUnit)
+      ? parsed
+      : normalizedUnit === "pa"
+        ? parsed / 100
+        : normalizedUnit === "kpa"
+          ? parsed * 10
+          : ["inhg", "in hg"].includes(normalizedUnit)
+            ? parsed * 33.8639
+            : null;
+  return hpa === null ? null : roundTo(hpa);
+}
+
+function normalizeMeteobluePrecipitationMm(value: unknown, unit: unknown): number | null {
+  const parsed = toNumber(value);
+  if (parsed === null) {
+    return null;
+  }
+  const normalizedUnit = typeof unit === "string" ? unit.trim().toLowerCase() : "";
+  const millimeters =
+    ["mm", "millimeter", "millimeters", "millimetre", "millimetres"].includes(normalizedUnit)
+      ? parsed
+      : ["in", "inch", "inches"].includes(normalizedUnit)
+        ? parsed * 25.4
+        : null;
+  return millimeters === null ? null : roundTo(millimeters);
 }
 
 function normalizeWindDirection(value: unknown): number | null {
@@ -1353,13 +1449,98 @@ function normalizeWindDirection(value: unknown): number | null {
   return ((rounded % 360) + 360) % 360;
 }
 
-function normalizeVisibilityKm(value: unknown): number | null {
+export function normalizeMeteoblueVisibilityKm(
+  value: unknown,
+  unit: unknown,
+): {
+  readonly value: number | null;
+  readonly sourceUnit?: string;
+  readonly validationStatus: "valid" | "rejected_outlier" | "unit_uncertain";
+  readonly rejectionReason?: string;
+} {
   const parsed = toNumber(value);
   if (parsed === null) {
-    return null;
+    return {
+      value: null,
+      sourceUnit: normalizeMeteoblueUnit(unit),
+      validationStatus: "rejected_outlier",
+      rejectionReason: "missing_or_non_numeric_visibility",
+    };
   }
 
-  return roundTo(parsed > 1000 ? parsed / 1000 : parsed);
+  const sourceUnit = normalizeMeteoblueUnit(unit);
+  if (!sourceUnit) {
+    return {
+      value: null,
+      validationStatus: "unit_uncertain",
+      rejectionReason: "missing_or_unsupported_visibility_unit",
+    };
+  }
+  const kilometers = sourceUnit === "m" ? parsed / 1000 : parsed;
+  if (!Number.isFinite(kilometers) || kilometers < 0 || kilometers > 200) {
+    return {
+      value: null,
+      sourceUnit,
+      validationStatus: "rejected_outlier",
+      rejectionReason: "visibility_out_of_range_km",
+    };
+  }
+
+  return {
+    value: roundTo(kilometers),
+    sourceUnit,
+    validationStatus: "valid",
+  };
+}
+
+function normalizeMeteoblueUnit(value: unknown): "m" | "km" | undefined {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (["m", "meter", "meters", "metre", "metres"].includes(normalized)) {
+    return "m";
+  }
+  if (["km", "kilometer", "kilometers", "kilometre", "kilometres"].includes(normalized)) {
+    return "km";
+  }
+  return undefined;
+}
+
+function findMeteoblueFieldUnit(
+  root: Record<string, unknown>,
+  aliases: readonly string[],
+): unknown {
+  const unitRecords = collectMeteoblueUnitRecords(root);
+  for (const units of unitRecords) {
+    for (const alias of aliases) {
+      const entry = Object.entries(units).find(
+        ([key]) => key.toLowerCase() === alias.toLowerCase(),
+      );
+      if (entry) {
+        return entry[1];
+      }
+    }
+  }
+  return undefined;
+}
+
+function collectMeteoblueUnitRecords(input: unknown, depth = 0): readonly Record<string, unknown>[] {
+  if (depth > 3 || !isRecordValue(input)) {
+    return [];
+  }
+  const record = input as Record<string, unknown>;
+  const records = isRecordValue(record.units) ? [record.units] : [];
+  for (const [key, value] of Object.entries(record)) {
+    if (key === "units" || (!isRecordValue(value) && !Array.isArray(value))) {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        records.push(...collectMeteoblueUnitRecords(item, depth + 1));
+      }
+    } else {
+      records.push(...collectMeteoblueUnitRecords(value, depth + 1));
+    }
+  }
+  return records;
 }
 
 function buildDailyFromHourly(

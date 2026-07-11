@@ -20,6 +20,9 @@ export function parseProviderDiagnosticsArgs(argv: readonly string[]): readonly 
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (arg === "--") {
+      continue;
+    }
     if (arg === "--all") {
       all = true;
       continue;

@@ -12,6 +12,7 @@ import type {
   NormalizedWeatherData,
   WeatherAlert,
   WeatherRequestInput,
+  WeatherSourceSummary,
 } from "./types.js";
 import type { WeatherProvider } from "./provider.js";
 
@@ -32,12 +33,16 @@ export class QWeatherRealProvider implements WeatherProvider {
   readonly source = source;
 
   private readonly normalizer = new QWeatherProvider();
+  private statusCode: number | undefined;
+  private latencyMs = 0;
+  private returnedHours = 0;
 
   constructor(private readonly options: QWeatherRealProviderOptions) {}
 
   async getCurrentWeather(input: WeatherRequestInput): Promise<CurrentWeather> {
     const location = formatQWeatherLocation(input.coordinates);
     const result = await this.options.client.fetchWeatherNow(location);
+    this.recordFetch(result.statusCode, result.latencyMs);
     const now = result.body.now ?? {};
     const weatherCode = typeof now.icon === "string" ? now.icon : null;
     const temperature = Number(now.temp);
@@ -72,7 +77,8 @@ export class QWeatherRealProvider implements WeatherProvider {
     const location = formatQWeatherLocation(input.coordinates);
     const hours = Math.min(Math.max(requestedHourlyResponseHours(input), 1), 168);
     const result = await this.options.client.fetchWeatherHourly(location, hours);
-    return this.normalizer
+    this.recordFetch(result.statusCode, result.latencyMs);
+    const normalized = this.normalizer
       .normalizeHourlyWeather(result.body)
       .slice(0, hours)
       .map((hour) => ({
@@ -80,11 +86,14 @@ export class QWeatherRealProvider implements WeatherProvider {
         providerLabelZh: source.providerLabelZh,
         dataMode: source.mode,
       }));
+    this.returnedHours = normalized.length;
+    return normalized;
   }
 
   async getDailyForecast(input: WeatherRequestInput): Promise<readonly NormalizedDailyWeather[]> {
     const location = formatQWeatherLocation(input.coordinates);
     const result = await this.options.client.fetchWeatherDaily(location, input.days ?? 7);
+    this.recordFetch(result.statusCode, result.latencyMs);
     return this.normalizer
       .normalizeDailyWeather(result.body)
       .slice(0, Math.min(Math.max(input.days ?? 7, 1), 16))
@@ -103,10 +112,11 @@ export class QWeatherRealProvider implements WeatherProvider {
     return {
       provider: source.providerCode,
       observedAt: new Date().toISOString(),
-      aqi: 0,
-      category: "good",
-      pm25: 0,
-      pm10: 0,
+      availability: "unavailable",
+      aqi: null,
+      category: null,
+      pm25: null,
+      pm10: null,
     };
   }
 
@@ -134,6 +144,21 @@ export class QWeatherRealProvider implements WeatherProvider {
       dataMode: source.mode,
       noticeZh: "天气数据：和风天气",
     };
+  }
+
+  getSourceSummaryMetadata(): Partial<WeatherSourceSummary> {
+    return {
+      providerId: "qweather",
+      sourceFamily: "qweather",
+      statusCode: this.statusCode,
+      latencyMs: this.latencyMs,
+      returnedHours: this.returnedHours,
+    };
+  }
+
+  private recordFetch(statusCode: number, latencyMs: number): void {
+    this.statusCode = statusCode;
+    this.latencyMs = Math.max(this.latencyMs, latencyMs);
   }
 }
 

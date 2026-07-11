@@ -4,6 +4,7 @@ import {
   buildQWeatherBaseUrl,
   InMemoryWeatherCache,
   InMemoryWeatherProviderUsageLogger,
+  StructuredWeatherProviderUsageLogger,
   MockWeatherProvider,
   maskQWeatherApiHost,
   normalizeQWeatherApiHost,
@@ -54,6 +55,10 @@ const openMeteoForecastModelListMaxLimit = 8;
 export type WeatherProviderRuntimeOptions = {
   readonly dbClient?: DatabaseClient;
   readonly env?: NodeJS.ProcessEnv;
+  readonly logger?: {
+    readonly info: (fields: Record<string, unknown>, message: string) => void;
+    readonly warn?: (fields: Record<string, unknown>, message: string) => void;
+  };
 };
 
 export type WeatherDataServiceLike = {
@@ -132,10 +137,14 @@ export type RuntimeMeteoblueConfig = ResolvedMeteoblueRuntimeConfig & {
 
 export class RuntimeWeatherDataService implements WeatherDataServiceLike {
   private readonly cache = new InMemoryWeatherCache();
-  private readonly usageLogger = new InMemoryWeatherProviderUsageLogger();
+  private readonly usageLogger;
   private cacheNamespace: string | undefined;
 
-  constructor(private readonly options: WeatherProviderRuntimeOptions = {}) {}
+  constructor(private readonly options: WeatherProviderRuntimeOptions = {}) {
+    this.usageLogger = options.logger
+      ? new StructuredWeatherProviderUsageLogger(options.logger)
+      : new InMemoryWeatherProviderUsageLogger();
+  }
 
   async getWeatherDataBundle(input: WeatherRequestInput): Promise<WeatherDataBundle> {
     const resolution = await resolveRuntimeWeatherProviders(this.options);
@@ -151,7 +160,9 @@ export class RuntimeWeatherDataService implements WeatherDataServiceLike {
       cacheNamespace: resolution.cacheNamespace,
     }).getWeatherDataBundle(input);
 
-    return appendRuntimeResolution(bundle, resolution);
+    const resolvedBundle = appendRuntimeResolution(bundle, resolution);
+    logWeatherProviderParticipation(this.options.logger, resolvedBundle, resolution.runtimeSnapshot);
+    return resolvedBundle;
   }
 }
 
@@ -777,14 +788,14 @@ export function createMeteoblueRealProviderFromRuntimeConfig(
   });
 }
 
-type RuntimeWeatherProviderResolution = {
+export type RuntimeWeatherProviderResolution = {
   readonly providers: readonly WeatherProvider[];
   readonly sourceSummaries: readonly WeatherSourceSummary[];
   readonly runtimeSnapshot: readonly ForecastProviderRuntimeSnapshot[];
   readonly cacheNamespace: string;
 };
 
-async function resolveRuntimeWeatherProviders(
+export async function resolveRuntimeWeatherProviders(
   options: WeatherProviderRuntimeOptions,
 ): Promise<RuntimeWeatherProviderResolution> {
   const [qweather, openMeteo, meteoblue] = await Promise.all([
@@ -805,9 +816,12 @@ async function resolveRuntimeWeatherProviders(
             timeoutMs: qweather.timeoutMs,
             retryCount: qweather.retryCount,
             language: qweather.language,
-            unit: qweather.unit,
+            // Fusion has one normalized contract (C, m/s, mm, km, hPa).
+            // Always request metric data; the admin preference is not a license
+            // to pass imperial values into normalized weather fields.
+            unit: "metric",
           }),
-          unit: qweather.unit,
+          unit: "metric",
         }),
       );
     } else if (!qweather.realCallEnabled) {
@@ -829,6 +843,12 @@ async function resolveRuntimeWeatherProviders(
     const customerModeMissingKey =
       openMeteo.realCallEnabled && openMeteo.mode === "customer" && !openMeteo.apiKey;
     if (openMeteo.realCallEnabled && !customerModeMissingKey) {
+      const dedicatedModelName = openMeteo.modelPreference ?? openMeteo.iconModel;
+      const airQualityClient = new OpenMeteoAirQualityClient({
+        timezone: openMeteo.timezone,
+        timeoutMs: openMeteo.timeoutMs,
+        retryCount: openMeteo.retryCount,
+      });
       providers.push(
         new OpenMeteoIconCloudLayerProvider({
           client: new OpenMeteoIconCloudLayerClient({
@@ -838,16 +858,12 @@ async function resolveRuntimeWeatherProviders(
             timezone: openMeteo.timezone,
             timeoutMs: openMeteo.timeoutMs,
             retryCount: openMeteo.retryCount,
-            modelName: openMeteo.modelPreference ?? openMeteo.iconModel,
+            modelName: dedicatedModelName,
           }),
-          airQualityClient: new OpenMeteoAirQualityClient({
-            timezone: openMeteo.timezone,
-            timeoutMs: openMeteo.timeoutMs,
-            retryCount: openMeteo.retryCount,
-          }),
+          airQualityClient,
         }),
       );
-      for (const modelName of openMeteo.modelList) {
+      for (const modelName of openMeteo.modelList.filter((model) => model !== dedicatedModelName)) {
         providers.push(
           new OpenMeteoForecastCloudLayerProvider({
             client: new OpenMeteoForecastCloudLayerClient({
@@ -859,11 +875,7 @@ async function resolveRuntimeWeatherProviders(
               retryCount: openMeteo.retryCount,
               modelName,
             }),
-            airQualityClient: new OpenMeteoAirQualityClient({
-              timezone: openMeteo.timezone,
-              timeoutMs: openMeteo.timeoutMs,
-              retryCount: openMeteo.retryCount,
-            }),
+            airQualityClient,
           }),
         );
       }
@@ -938,7 +950,9 @@ function buildRuntimeSnapshot(
       modelListLimit: openMeteo.modelListLimit,
       configUpdatedAt: openMeteo.configUpdatedAt,
     },
-    ...openMeteo.modelList.map((modelName) => ({
+    ...openMeteo.modelList
+      .filter((modelName) => modelName !== (openMeteo.modelPreference ?? openMeteo.iconModel))
+      .map((modelName) => ({
       providerCode: "open_meteo",
       enabled: openMeteo.enabled,
       realCallEnabled: openMeteo.realCallEnabled,
@@ -950,7 +964,7 @@ function buildRuntimeSnapshot(
       modelName,
       modelListLimit: openMeteo.modelListLimit,
       configUpdatedAt: openMeteo.configUpdatedAt,
-    })),
+      })),
     {
       providerCode: "meteoblue",
       enabled: meteoblue.enabled,
@@ -1070,4 +1084,100 @@ function mergeSourceSummaries(
 
 function sourceSummaryMergeKey(summary: WeatherSourceSummary): string {
   return summary.providerId ?? `${summary.providerCode}:${summary.modelName ?? "default"}`;
+}
+
+function logWeatherProviderParticipation(
+  logger: WeatherProviderRuntimeOptions["logger"],
+  bundle: WeatherDataBundle,
+  runtimeSnapshot: readonly ForecastProviderRuntimeSnapshot[],
+): void {
+  if (!logger) {
+    return;
+  }
+  try {
+    const summaries = bundle.sourceSummaries ?? [];
+    const matched = new Set<WeatherSourceSummary>();
+    const participation = runtimeSnapshot.map((runtime, index) => {
+      const summary = summaries.find((candidate) => {
+        if (matched.has(candidate) || candidate.providerCode !== runtime.providerCode) {
+          return false;
+        }
+        return runtime.modelName ? candidate.modelName === runtime.modelName : !candidate.modelName;
+      });
+      if (summary) {
+        matched.add(summary);
+      }
+      return participationLogItem(
+        summary,
+        runtime,
+        runtime.modelName
+          ? `${runtime.providerCode}:${runtime.modelName}`
+          : `${runtime.providerCode}:default:${index}`,
+      );
+    });
+    for (const summary of summaries) {
+      if (!matched.has(summary)) {
+        participation.push(participationLogItem(summary));
+      }
+    }
+    logger.info(
+      {
+        cacheHit: participation.length > 0 && participation.every((item) => item.cacheHit),
+        sourceSummaryCount: summaries.length,
+        providers: participation,
+      },
+      "Weather provider participation summary",
+    );
+  } catch {
+    // Diagnostics are best-effort and must never fail a forecast.
+  }
+}
+
+function participationLogItem(
+  summary: WeatherSourceSummary | undefined,
+  runtime?: ForecastProviderRuntimeSnapshot,
+  fallbackProviderId?: string,
+): {
+  readonly providerCode: string;
+  readonly providerId: string;
+  readonly providerFamily: string;
+  readonly modelName: string | null;
+  readonly enabled: boolean;
+  readonly realCallEnabled: boolean;
+  readonly attempted: boolean;
+  readonly success: boolean;
+  readonly status: string;
+  readonly dataMode: string;
+  readonly cacheHit: boolean;
+  readonly statusCode: number | null;
+  readonly latencyMs: number | null;
+  readonly returnedHours: number;
+  readonly availableFields: readonly string[];
+  readonly missingFields: readonly string[];
+  readonly errorCategory: string | null;
+} {
+  const providerCode = summary?.providerCode ?? runtime?.providerCode ?? "unknown";
+  const enabled = summary?.enabled ?? runtime?.enabled ?? false;
+  return {
+    providerCode,
+    providerId:
+      summary?.providerId ??
+      fallbackProviderId ??
+      `${providerCode}:${summary?.modelName ?? runtime?.modelName ?? "default"}`,
+    providerFamily: summary?.sourceFamily ?? providerCode,
+    modelName: summary?.modelName ?? runtime?.modelName ?? null,
+    enabled,
+    realCallEnabled: summary?.realCallEnabled ?? runtime?.realCallEnabled ?? false,
+    attempted: summary?.attempted ?? false,
+    success: summary?.success ?? false,
+    status: summary?.status ?? "skipped",
+    dataMode: summary?.dataMode ?? (runtime?.realCallEnabled ? "real" : "mock"),
+    cacheHit: summary?.cacheHit ?? false,
+    statusCode: summary?.statusCode ?? null,
+    latencyMs: summary?.latencyMs ?? null,
+    returnedHours: summary?.returnedHours ?? 0,
+    availableFields: summary?.availableFields ?? [],
+    missingFields: summary?.missingFields ?? (enabled ? ["weather"] : []),
+    errorCategory: summary?.errorCategory ?? (enabled ? null : "skipped"),
+  };
 }

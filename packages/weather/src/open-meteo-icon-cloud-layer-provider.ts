@@ -129,6 +129,8 @@ type OpenMeteoIconCloudLayerMetadata = {
   readonly elevationBasis: "explicit_elevation" | "default_dem";
   readonly parserVersion: string;
   readonly fallbackRequestUsed: boolean;
+  readonly statusCode: number;
+  readonly latencyMs: number;
 };
 
 export type OpenMeteoIconCloudLayerUrlOptions = Required<
@@ -399,6 +401,8 @@ export class OpenMeteoIconCloudLayerProvider implements WeatherProvider {
       elevationBasis: metadata.elevationBasis,
       parserVersion: metadata.parserVersion,
       fallbackRequestUsed: metadata.fallbackRequestUsed,
+      statusCode: metadata.statusCode,
+      latencyMs: metadata.latencyMs,
       availableFields: [...openMeteoIconRequiredCloudLayerFields],
       extractedFields: [...openMeteoIconRequiredCloudLayerFields],
       messageZh: "云层分层源可用。",
@@ -434,6 +438,8 @@ export class OpenMeteoIconCloudLayerProvider implements WeatherProvider {
           elevationBasis: result.elevationBasis,
           parserVersion: openMeteoIconCloudLayerParserVersion,
           fallbackRequestUsed: !hasOptionalHourlyFields(result.body),
+          statusCode: result.statusCode,
+          latencyMs: result.latencyMs,
         });
         return result;
       });

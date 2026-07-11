@@ -118,6 +118,8 @@ type OpenMeteoForecastCloudLayerMetadata = {
   readonly timezone: string;
   readonly elevationBasis: "explicit_elevation" | "default_dem";
   readonly parserVersion: string;
+  readonly statusCode: number;
+  readonly latencyMs: number;
 };
 
 export type OpenMeteoForecastCloudLayerUrlOptions = Required<
@@ -384,6 +386,8 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
       timezone: metadata.timezone,
       elevationBasis: metadata.elevationBasis,
       parserVersion: metadata.parserVersion,
+      statusCode: metadata.statusCode,
+      latencyMs: metadata.latencyMs,
       availableFields: [...openMeteoForecastHourlyFields],
       extractedFields: [...openMeteoForecastHourlyFields],
       messageZh: "云层分层补全源可用。",
@@ -418,6 +422,8 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
           timezone: result.timezone,
           elevationBasis: result.elevationBasis,
           parserVersion: openMeteoForecastCloudLayerParserVersion,
+          statusCode: result.statusCode,
+          latencyMs: result.latencyMs,
         });
         return result;
       });

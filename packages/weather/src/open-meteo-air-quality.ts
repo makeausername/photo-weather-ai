@@ -14,6 +14,7 @@ export type OpenMeteoAirQualityClientOptions = {
   readonly timezone?: string;
   readonly timeoutMs?: number;
   readonly retryCount?: number;
+  readonly cacheTtlMs?: number;
   readonly fetcher?: typeof fetch;
 };
 
@@ -38,6 +39,14 @@ export type OpenMeteoAirQualityUrlOptions = Required<
 export class OpenMeteoAirQualityClient {
   private readonly fetcher: typeof fetch;
   private readonly options: OpenMeteoAirQualityUrlOptions;
+  private readonly cacheTtlMs: number;
+  private readonly requestCache = new Map<
+    string,
+    {
+      readonly expiresAt: number;
+      readonly promise: Promise<OpenMeteoAirQualityFetchResult<Record<string, unknown>>>;
+    }
+  >();
 
   constructor(options: OpenMeteoAirQualityClientOptions = {}) {
     this.options = {
@@ -46,13 +55,30 @@ export class OpenMeteoAirQualityClient {
       timeoutMs: options.timeoutMs ?? 10000,
       retryCount: options.retryCount ?? 1,
     };
+    this.cacheTtlMs = Math.max(1_000, options.cacheTtlMs ?? 5 * 60 * 1_000);
     this.fetcher = options.fetcher ?? fetch;
   }
 
   async fetchAirQuality(
     request: OpenMeteoAirQualityRequest,
   ): Promise<OpenMeteoAirQualityFetchResult<Record<string, unknown>>> {
-    return this.fetchJson(buildOpenMeteoAirQualityUrl(this.options, request), request);
+    const key = airQualityRequestKey(request, this.options.timezone);
+    const now = Date.now();
+    const cached = this.requestCache.get(key);
+    if (cached && cached.expiresAt > now) {
+      return cached.promise;
+    }
+
+    const promise = this.fetchJson(buildOpenMeteoAirQualityUrl(this.options, request), request);
+    this.requestCache.set(key, { expiresAt: now + this.cacheTtlMs, promise });
+    try {
+      return await promise;
+    } catch (error) {
+      if (this.requestCache.get(key)?.promise === promise) {
+        this.requestCache.delete(key);
+      }
+      throw error;
+    }
   }
 
   private async fetchJson(
@@ -214,8 +240,9 @@ export function normalizeOpenMeteoAirQuality(
     provider: options.providerCode,
     observedAt:
       firstReal?.aerosolObservedAt ?? options.fallbackObservedAt ?? new Date(0).toISOString(),
-    aqi: estimateAqiFromParticulate(pm25, pm10),
-    category: categoryFromParticulate(pm25, pm10),
+    availability: firstReal?.aerosolAvailability ?? "unavailable",
+    aqi: firstReal ? estimateAqiFromParticulate(pm25, pm10) : null,
+    category: firstReal ? categoryFromParticulate(pm25, pm10) : null,
     pm25,
     pm10,
     hourly: rows,
@@ -226,9 +253,22 @@ function emptyAirQualityEnvelope(providerCode: string, fallbackObservedAt?: stri
   return {
     provider: providerCode,
     observedAt: fallbackObservedAt ?? new Date(0).toISOString(),
-    category: "good",
+    availability: "unavailable",
+    aqi: null,
+    category: null,
+    pm25: null,
+    pm10: null,
     hourly: [],
   };
+}
+
+function airQualityRequestKey(request: OpenMeteoAirQualityRequest, defaultTimezone: string): string {
+  return JSON.stringify({
+    latitude: request.coordinates.latitude.toFixed(4),
+    longitude: request.coordinates.longitude.toFixed(4),
+    timezone: request.timezone ?? defaultTimezone,
+    forecastHours: requestedForecastHours(request.forecastHours),
+  });
 }
 
 function normalizeOpenMeteoAirQualityEndpoint(endpoint: string): string {

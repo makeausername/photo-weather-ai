@@ -130,13 +130,15 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
     return emptyFusionResult();
   }
 
-  const primaryBundle = choosePrimaryBundle(usableBundles);
+  const openMeteoFamilyBundle = aggregateOpenMeteoFamily(usableBundles, input.target);
+  const providerFamilyBundles = buildProviderFamilyBundles(usableBundles, openMeteoFamilyBundle);
+  const primaryBundle = choosePrimaryBundle(providerFamilyBundles);
   const hourlyTimes = [
-    ...new Set(usableBundles.flatMap((bundle) => bundle.hourly.map((hour) => hour.time))),
+    ...new Set(providerFamilyBundles.flatMap((bundle) => bundle.hourly.map((hour) => hour.time))),
   ].sort();
-  const baseConflictFlags = detectConflicts(usableBundles);
+  const baseConflictFlags = detectConflicts(providerFamilyBundles);
   const multiSourceAgreementContext = buildMultiSourceAgreementContext({
-    providerBundles: usableBundles,
+    providerBundles: providerFamilyBundles,
     target: input.target,
     targetWindow: {
       startTime: input.forecastStart,
@@ -144,36 +146,54 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
     },
   });
   const baseFusedHourly = hourlyTimes
-    .map((time) => fuseHourlyAt(time, usableBundles, primaryBundle, input.target))
+    .map((time) => fuseHourlyAt(time, providerFamilyBundles, primaryBundle, input.target))
     .filter((hour): hour is NormalizedHourlyWeather => hour !== null);
-  const cloudLayerCoverage = resolveCloudLayerHourlyCoverage({
+  const providerFamilyCloudLayerCoverage = resolveCloudLayerHourlyCoverage({
+    providerBundles: providerFamilyBundles,
+    baseHourlyRows: baseFusedHourly,
+    forecastHours: expectedForecastHours(input, baseFusedHourly.length),
+    timezone: timezoneFromWeather(input.forecastStart),
+  });
+  const modelCloudLayerCoverage = resolveCloudLayerHourlyCoverage({
     providerBundles: usableBundles,
     baseHourlyRows: baseFusedHourly,
     forecastHours: expectedForecastHours(input, baseFusedHourly.length),
     timezone: timezoneFromWeather(input.forecastStart),
   });
+  const cloudLayerCoverage = {
+    ...providerFamilyCloudLayerCoverage,
+    providerCoverageSummary: modelCloudLayerCoverage.providerCoverageSummary,
+    fallbackSourcesUsed: modelCloudLayerCoverage.fallbackSourcesUsed,
+    selectedPrimaryCloudLayerSource:
+      modelCloudLayerCoverage.selectedPrimaryCloudLayerSource ??
+      providerFamilyCloudLayerCoverage.selectedPrimaryCloudLayerSource,
+  };
   const fusedHourly = cloudLayerCoverage.hourlyRows;
-  const multiModelConsensusDiagnostics = buildMultiModelConsensusDiagnostics(fusedHourly, input);
-  const multiModelConflictFlags = buildMultiModelConflictFlags(fusedHourly, input);
+  const openMeteoFamilyHours = openMeteoFamilyBundle?.hourly ?? [];
+  const multiModelConsensusDiagnostics = buildMultiModelConsensusDiagnostics(
+    openMeteoFamilyHours,
+    input,
+  );
+  const multiModelConflictFlags = buildMultiModelConflictFlags(openMeteoFamilyHours, input);
   const aerosolConflictFlags = buildAerosolConflictFlags(fusedHourly, input);
   const conflictFlags = [...baseConflictFlags, ...multiModelConflictFlags, ...aerosolConflictFlags];
   const aerosolDiagnostics = buildAerosolDiagnostics(fusedHourly);
   const transparencyPenaltyByTarget = buildTransparencyPenaltyByTarget(fusedHourly, input);
-  const fusedDaily = fuseDailyByDate(usableBundles, primaryBundle);
+  const fusedDaily = fuseDailyByDate(providerFamilyBundles, primaryBundle);
   const sourceSummaries = annotateSourceSummariesWithCoverage(
     usableBundles.map(sourceSummary),
     cloudLayerCoverage,
   );
   const confidenceByField = applyCloudLayerCoverageConfidence(
-    buildConfidenceByField(usableBundles, conflictFlags),
+    buildConfidenceByField(providerFamilyBundles, baseConflictFlags),
     cloudLayerCoverage.fieldCoverageSummary,
   );
   const confidenceByTarget = applyAerosolTargetConfidencePenalty(
     applyMultiModelTargetConfidencePenalty(
       applyProviderConfidenceFloor(
-        buildConfidenceByTarget(confidenceByField, conflictFlags, input.terrainSummary),
-        usableBundles,
-        conflictFlags,
+        buildConfidenceByTarget(confidenceByField, baseConflictFlags, input.terrainSummary),
+        providerFamilyBundles,
+        baseConflictFlags,
       ),
       multiModelConsensusDiagnostics.multiModelConfidencePenaltyByTarget,
     ),
@@ -187,7 +207,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
   ];
   const recommendedPrimarySource = primaryBundle.providerCode;
   const confidenceLevel = confidenceLevelFromScore(confidenceByTarget[input.target]);
-  const dataStatusZh = buildDataStatus(usableBundles, confidenceLevel);
+  const dataStatusZh = buildDataStatus(providerFamilyBundles, confidenceLevel);
   const conflictStatusZh = conflictFlags.length === 0 ? "无明显冲突" : "存在差异，请谨慎参考";
   const meteoblueBundle = usableBundles.find(
     (bundle) => bundle.providerCode === "meteoblue" && bundle.dataMode === "real",
@@ -199,7 +219,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
       : "专业增强：meteoblue 通过"
     : "专业增强：meteoblue 未启用";
   const fusionNotesZh = buildFusionNotes({
-    usableBundles,
+    usableBundles: providerFamilyBundles,
     conflictFlags,
     confidenceLevel,
     target: input.target,
@@ -221,9 +241,10 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
     generatedAt: primaryBundle.generatedAt,
     summary: {
       primarySource: primaryBundle.providerLabelZh,
-      auxiliarySources: usableBundles
+      auxiliarySources: providerFamilyBundles
         .filter((bundle) => bundle.providerCode !== primaryBundle.providerCode)
-        .map((bundle) => bundle.providerLabelZh),
+        .map((bundle) => bundle.providerLabelZh)
+        .filter((label, index, labels) => labels.indexOf(label) === index),
       professionalSourceStatus,
       confidenceLevel,
       confidenceByTarget,
@@ -238,6 +259,8 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
       cloudLayerCoverage,
       aerosolDiagnostics,
       multiModelConsensusDiagnostics,
+      providerFamilyCount: providerFamilyBundles.length,
+      modelCount: usableBundles.filter((bundle) => bundle.providerCode === "open_meteo").length,
     },
   };
 }
@@ -562,6 +585,87 @@ function choosePrimaryBundle(bundles: readonly WeatherDataBundle[]): WeatherData
   );
 }
 
+function buildProviderFamilyBundles(
+  bundles: readonly WeatherDataBundle[],
+  openMeteoFamilyBundle: WeatherDataBundle | undefined,
+): readonly WeatherDataBundle[] {
+  return [
+    ...bundles.filter((bundle) => bundle.providerCode !== "open_meteo"),
+    ...(openMeteoFamilyBundle ? [openMeteoFamilyBundle] : []),
+  ];
+}
+
+function aggregateOpenMeteoFamily(
+  bundles: readonly WeatherDataBundle[],
+  target: ForecastTarget,
+): WeatherDataBundle | undefined {
+  const modelBundles = bundles.filter((bundle) => bundle.providerCode === "open_meteo");
+  if (modelBundles.length === 0) {
+    return undefined;
+  }
+
+  const primaryBundle = modelBundles[0]!;
+  const hourlyTimes = [
+    ...new Set(modelBundles.flatMap((bundle) => bundle.hourly.map((hour) => hour.time))),
+  ].sort();
+  const baseHourly = hourlyTimes
+    .map((time) => fuseHourlyAt(time, modelBundles, primaryBundle, target))
+    .filter((hour): hour is NormalizedHourlyWeather => hour !== null)
+    .map((hour) => ({
+      ...hour,
+      providerCode: "open_meteo",
+      providerLabelZh: "Open-Meteo",
+    }));
+  const hourly = resolveCloudLayerHourlyCoverage({
+    providerBundles: modelBundles,
+    baseHourlyRows: baseHourly,
+    forecastHours: Math.max(1, baseHourly.length),
+    timezone: timezoneFromWeather(primaryBundle.generatedAt),
+  }).hourlyRows;
+  const modelNames = modelBundles
+    .map((bundle) => sourceSummary(bundle).modelName)
+    .filter((modelName): modelName is string => Boolean(modelName));
+  const missingFields = [...new Set(modelBundles.flatMap(collectBundleMissingFields))];
+  const dataMode = modelBundles.some((bundle) => bundle.dataMode === "real")
+    ? "real"
+    : primaryBundle.dataMode;
+
+  return {
+    ...primaryBundle,
+    current: primaryBundle.current,
+    currentWeather: fuseCurrent(primaryBundle, hourly[0]),
+    hourly,
+    daily: fuseDailyByDate(modelBundles, primaryBundle),
+    alerts: modelBundles.flatMap((bundle) => bundle.alerts),
+    airQuality: modelBundles.find((bundle) => bundle.airQuality)?.airQuality,
+    providerCode: "open_meteo",
+    providerLabelZh: "Open-Meteo",
+    dataMode,
+    missingFields,
+    sourceSummaries: [
+      {
+        providerId: "open_meteo:family",
+        providerCode: "open_meteo",
+        providerLabelZh: "Open-Meteo",
+        dataMode,
+        enabled: true,
+        realCallEnabled: dataMode === "real",
+        attempted: true,
+        success: true,
+        status: "available",
+        availableFields: [
+          ...new Set(modelBundles.flatMap((bundle) => sourceSummary(bundle).availableFields)),
+        ],
+        missingFields,
+        sourceFamily: "open_meteo",
+        modelFamily: "open_meteo",
+        returnedHours: hourly.length,
+        messageZh: `Open-Meteo family aggregate (${modelNames.length || modelBundles.length} models)`,
+      },
+    ],
+  };
+}
+
 function fuseHourlyAt(
   time: string,
   bundles: readonly WeatherDataBundle[],
@@ -620,6 +724,9 @@ function fuseHourlyAt(
       medianValue: selected.medianValue,
       spread: selected.spread,
       consensusStrategy: selected.consensusStrategy,
+      sourceId: selected.sourceId,
+      modelName: selected.modelName,
+      basis: selected.basis,
     };
     if (selected.estimated) {
       estimatedFields.add(field);
@@ -740,6 +847,9 @@ type SelectedNumericField = {
   readonly medianValue?: number;
   readonly spread?: number;
   readonly consensusStrategy?: string;
+  readonly sourceId?: string;
+  readonly modelName?: string;
+  readonly basis?: "explicit_layer" | "total_cloud" | "fallback_same_field" | "missing";
 };
 
 function isCloudLayerGroupField(
@@ -765,6 +875,7 @@ function selectPreferredCloudLayerGroup(
   }
 
   const partialOpenMeteo = openMeteoCandidates.find((candidate) =>
+    !isNormalizedFieldMissing(candidate.hour, "cloudTotal") &&
     hasUsableNumber(candidate.hour.cloudTotal),
   );
   if (partialOpenMeteo) {
@@ -776,6 +887,9 @@ function selectPreferredCloudLayerGroup(
 
 function hasCompleteCloudLayerGroup(hour: NormalizedHourlyWeather): boolean {
   return (
+    !["cloudTotal", "cloudLow", "cloudMid", "cloudHigh"].some((field) =>
+      isNormalizedFieldMissing(hour, field),
+    ) &&
     hasUsableNumber(hour.cloudTotal) &&
     hasUsableNumber(hour.cloudLow) &&
     hasUsableNumber(hour.cloudMid) &&
@@ -842,6 +956,12 @@ function selectConsensusFieldValue(
   );
   const reference =
     values.find((entry) => entry.candidate.hour === primaryHour)?.candidate ?? values[0]!.candidate;
+  const withinOpenMeteoFamily =
+    providerCodes.size === 1 && values.every((entry) => entry.providerCode === "open_meteo");
+  const openMeteoInternalMetadata = values
+    .filter((entry) => entry.providerCode === "open_meteo")
+    .map((entry) => entry.candidate.hour.fieldMetadata?.[field])
+    .find((metadata) => (metadata?.modelCount ?? 0) >= 2);
 
   return {
     value: selectedValue,
@@ -855,12 +975,24 @@ function selectConsensusFieldValue(
     elevationDifferenceMeters:
       reference.hour.elevationDifferenceMeters ??
       reference.bundle.terrainMetadata?.elevationDifferenceMeters,
-    modelCount: sourceKeys.size,
+    modelCount: withinOpenMeteoFamily
+      ? sourceKeys.size
+      : (openMeteoInternalMetadata?.modelCount ??
+        (values.some((entry) => entry.providerCode === "open_meteo") ? 1 : 0)),
     providerCount: providerCodes.size,
-    minValue: stats.min,
-    maxValue: stats.max,
-    medianValue: stats.median,
-    spread: stats.spread,
+    minValue: withinOpenMeteoFamily
+      ? stats.min
+      : (openMeteoInternalMetadata?.minValue ??
+        values.find((entry) => entry.providerCode === "open_meteo")?.value),
+    maxValue: withinOpenMeteoFamily
+      ? stats.max
+      : (openMeteoInternalMetadata?.maxValue ??
+        values.find((entry) => entry.providerCode === "open_meteo")?.value),
+    medianValue: withinOpenMeteoFamily
+      ? stats.median
+      : (openMeteoInternalMetadata?.medianValue ??
+        values.find((entry) => entry.providerCode === "open_meteo")?.value),
+    spread: withinOpenMeteoFamily ? stats.spread : (openMeteoInternalMetadata?.spread ?? 0),
     consensusStrategy: strategy,
   };
 }
@@ -879,6 +1011,9 @@ function consensusValueForField(
   hour: NormalizedHourlyWeather,
   field: ConsensusEligibleField,
 ): number | null {
+  if (isNormalizedFieldMissing(hour, field)) {
+    return null;
+  }
   if (field === "visibility") {
     return asNumber(hour.rawVisibilityKm ?? hour.visibility);
   }
@@ -1052,11 +1187,12 @@ function selectCloudLayerGroupField(
   candidate: HourlyCandidate,
 ): SelectedNumericField {
   const value = candidate.hour[field] ?? null;
+  const metadata = candidate.hour.fieldMetadata?.[field];
 
   return {
     value,
-    providerCode: candidate.bundle.providerCode,
-    providerLabelZh: candidate.bundle.providerLabelZh,
+    providerCode: metadata?.providerCode ?? candidate.bundle.providerCode,
+    providerLabelZh: metadata?.providerLabelZh ?? candidate.bundle.providerLabelZh,
     estimated: candidate.hour.estimatedFields?.includes(field) ?? false,
     providerElevationMeters: candidate.hour.providerElevationMeters,
     selectedSpotElevationMeters:
@@ -1065,6 +1201,16 @@ function selectCloudLayerGroupField(
     elevationDifferenceMeters:
       candidate.hour.elevationDifferenceMeters ??
       candidate.bundle.terrainMetadata?.elevationDifferenceMeters,
+    modelCount: metadata?.modelCount,
+    providerCount: metadata?.providerCount,
+    minValue: metadata?.minValue,
+    maxValue: metadata?.maxValue,
+    medianValue: metadata?.medianValue,
+    spread: metadata?.spread,
+    consensusStrategy: metadata?.consensusStrategy,
+    sourceId: metadata?.sourceId,
+    modelName: metadata?.modelName,
+    basis: metadata?.basis,
   };
 }
 
@@ -1084,7 +1230,10 @@ function selectFieldValue(
   );
 
   const selected = sorted.find(
-    (candidate) => candidate.hour[field] !== null && candidate.hour[field] !== undefined,
+    (candidate) =>
+      !isNormalizedFieldMissing(candidate.hour, field) &&
+      candidate.hour[field] !== null &&
+      candidate.hour[field] !== undefined,
   );
   if (!selected) {
     return {
@@ -1097,11 +1246,12 @@ function selectFieldValue(
       elevationDifferenceMeters: primaryHour.elevationDifferenceMeters,
     };
   }
+  const metadata = selected.hour.fieldMetadata?.[field];
 
   return {
     value: selected.hour[field] as number | null | undefined,
-    providerCode: selected.bundle.providerCode,
-    providerLabelZh: selected.bundle.providerLabelZh,
+    providerCode: metadata?.providerCode ?? selected.bundle.providerCode,
+    providerLabelZh: metadata?.providerLabelZh ?? selected.bundle.providerLabelZh,
     estimated: selected.hour.estimatedFields?.includes(field) ?? false,
     providerElevationMeters: selected.hour.providerElevationMeters,
     selectedSpotElevationMeters:
@@ -1110,6 +1260,16 @@ function selectFieldValue(
     elevationDifferenceMeters:
       selected.hour.elevationDifferenceMeters ??
       selected.bundle.terrainMetadata?.elevationDifferenceMeters,
+    modelCount: metadata?.modelCount,
+    providerCount: metadata?.providerCount,
+    minValue: metadata?.minValue,
+    maxValue: metadata?.maxValue,
+    medianValue: metadata?.medianValue,
+    spread: metadata?.spread,
+    consensusStrategy: metadata?.consensusStrategy,
+    sourceId: metadata?.sourceId,
+    modelName: metadata?.modelName,
+    basis: metadata?.basis,
   };
 }
 
@@ -1177,7 +1337,7 @@ function detectConflicts(bundles: readonly WeatherDataBundle[]): readonly Weathe
       const values = bundles
         .map((bundle) => ({
           providerCode: bundle.providerCode,
-          value: asNumber(bundle.hourly.find((hour) => hour.time === time)?.[field]),
+          value: valueForConflict(bundle.hourly.find((hour) => hour.time === time), field),
         }))
         .filter(
           (entry): entry is { providerCode: WeatherProviderCode; value: number } =>
@@ -1553,7 +1713,11 @@ function sourceSummary(bundle: WeatherDataBundle): WeatherSourceSummary {
   const missingFields = collectBundleMissingFields(bundle);
   const availableFields = [
     ...new Set(
-      numericFields.filter((field) => bundle.hourly.some((hour) => asNumber(hour[field]) !== null)),
+      numericFields.filter((field) =>
+        bundle.hourly.some(
+          (hour) => !isNormalizedFieldMissing(hour, field) && asNumber(hour[field]) !== null,
+        ),
+      ),
     ),
   ];
 
@@ -1639,18 +1803,36 @@ function countSourcesForConfidenceField(
     return bundles.filter((bundle) =>
       bundle.hourly.some(
         (hour) =>
-          asNumber(hour.precipitationProbability) !== null ||
-          asNumber(hour.precipitation) !== null ||
-          asNumber(hour.precipitationAmountMm) !== null,
+          (!isNormalizedFieldMissing(hour, "precipitationProbability") &&
+            asNumber(hour.precipitationProbability) !== null) ||
+          (!isNormalizedFieldMissing(hour, "precipitation") &&
+            asNumber(hour.precipitation) !== null) ||
+          (!isNormalizedFieldMissing(hour, "precipitationAmountMm") &&
+            asNumber(hour.precipitationAmountMm) !== null),
       ),
     ).length;
   }
   const sourceField = field === "wind" ? "windSpeed" : field;
   return bundles.filter((bundle) =>
     bundle.hourly.some(
-      (hour) => asNumber(hour[sourceField as keyof NormalizedHourlyWeather]) !== null,
+      (hour) =>
+        !isNormalizedFieldMissing(hour, sourceField) &&
+        asNumber(hour[sourceField as keyof NormalizedHourlyWeather]) !== null,
     ),
   ).length;
+}
+
+function valueForConflict(
+  hour: NormalizedHourlyWeather | undefined,
+  field: (typeof numericFields)[number],
+): number | null {
+  return !hour || isNormalizedFieldMissing(hour, field) ? null : asNumber(hour[field]);
+}
+
+function isNormalizedFieldMissing(hour: NormalizedHourlyWeather, field: string): boolean {
+  return (hour.missingFields ?? []).some(
+    (missing) => missing === field || missing === `invalid:${field}`,
+  );
 }
 
 function fieldMatchesConfidenceKey(field: string, key: keyof WeatherConfidenceByField): boolean {

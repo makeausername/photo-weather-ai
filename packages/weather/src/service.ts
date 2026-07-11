@@ -20,6 +20,7 @@ import { MockWeatherProvider } from "./mock-provider.js";
 import { buildWeatherCacheKey, InMemoryWeatherCache, weatherCacheTtlMs } from "./weather-cache.js";
 import { InMemoryWeatherProviderUsageLogger, type WeatherProviderUsageLogger } from "./usage.js";
 import { isWeatherProviderError } from "./provider-error.js";
+import { validateWeatherBundleSanity } from "./sanity-validation.js";
 
 export class WeatherDataService {
   constructor(private readonly provider: WeatherProvider = createWeatherProvider()) {}
@@ -83,6 +84,7 @@ export class WeatherDataService {
             generatedAt: generated,
             availableFields: collectAvailableFields(hourlyWithAirQuality),
             missingFields,
+            returnedHours: hourlyWithAirQuality.length,
           }),
           ...sourceSummaryMetadata,
           availableFields:
@@ -325,9 +327,11 @@ export class WeatherIntelligenceService {
     });
     const cached = this.cache.get<WeatherDataBundle>(key);
     if (cached) {
-      await this.usageLogger.recordUsage({
+      await recordUsageSafely(this.usageLogger, {
         providerCode: provider.source.providerCode,
+        providerId: provider.source.displayName,
         endpoint: "weather.bundle",
+        endpointCategory: "forecast_bundle",
         success: true,
         latencyMs: 0,
         cacheHit: true,
@@ -338,30 +342,54 @@ export class WeatherIntelligenceService {
 
     const startedAt = Date.now();
     try {
-      const bundle = await new WeatherDataService(provider).getWeatherDataBundle(input);
+      const bundle = validateWeatherBundleSanity(
+        await new WeatherDataService(provider).getWeatherDataBundle(input),
+      );
       const latencyMs = Date.now() - startedAt;
       const annotatedBundle = annotateProviderBundle(bundle, latencyMs, false);
       this.cache.set(key, annotatedBundle, weatherCacheTtlMs.fusion);
-      await this.usageLogger.recordUsage({
+      const source = sourceSummaryFromBundle(annotatedBundle);
+      await recordUsageSafely(this.usageLogger, {
         providerCode: provider.source.providerCode,
+        providerId: source.providerId ?? provider.source.displayName,
+        modelName: source.modelName,
         endpoint: "weather.bundle",
+        endpointCategory: "forecast_bundle",
         success: true,
         latencyMs,
         cacheHit: false,
+        statusCode: source.statusCode,
+        returnedHours: annotatedBundle.hourly.length,
         createdAt: new Date().toISOString(),
       });
       return annotatedBundle;
     } catch (error) {
-      await this.usageLogger.recordUsage({
+      const classified = classifyProviderError(provider, error);
+      await recordUsageSafely(this.usageLogger, {
         providerCode: provider.source.providerCode,
+        providerId: provider.source.displayName,
         endpoint: "weather.bundle",
+        endpointCategory: "forecast_bundle",
         success: false,
         latencyMs: Date.now() - startedAt,
         cacheHit: false,
+        statusCode: classified.statusCode,
+        errorCategory: classified.errorCategory,
         createdAt: new Date().toISOString(),
       });
       throw error;
     }
+  }
+}
+
+async function recordUsageSafely(
+  logger: WeatherProviderUsageLogger,
+  entry: Parameters<WeatherProviderUsageLogger["recordUsage"]>[0],
+): Promise<void> {
+  try {
+    await logger.recordUsage(entry);
+  } catch {
+    // Logging failures are intentionally isolated from forecast execution.
   }
 }
 
@@ -569,7 +597,10 @@ function normalizeCurrentWeather(input: {
     input.firstHour?.dewPointSpread ??
     (dewPoint === null
       ? null
-      : Math.round((input.current.temperatureCelsius - dewPoint) * 10) / 10);
+        : Math.round((input.current.temperatureCelsius - dewPoint) * 10) / 10);
+  const visibility = missingFields.has("visibility")
+    ? null
+    : (input.firstHour?.visibility ?? input.current.visibilityKilometers);
 
   if (input.firstHour?.pressure === null || input.firstHour?.pressure === undefined) {
     missingFields.add("pressure");
@@ -595,7 +626,7 @@ function normalizeCurrentWeather(input: {
     windDirection: input.firstHour?.windDirection ?? null,
     windGust: input.firstHour?.windGust ?? null,
     pressure: input.firstHour?.pressure ?? null,
-    visibility: input.current.visibilityKilometers,
+    visibility,
     cloudTotal: input.current.cloudCoverPercent,
     cloudLow: input.firstHour?.cloudLow ?? null,
     cloudMid: input.firstHour?.cloudMid ?? null,
@@ -619,7 +650,7 @@ function normalizeCurrentWeather(input: {
     precipitationProbability: input.firstHour?.precipitationProbability ?? null,
     precipitationProbabilityPercent: input.firstHour?.precipitationProbability ?? null,
     precipitationType: input.firstHour?.precipitationType,
-    rawVisibilityKm: input.firstHour?.rawVisibilityKm ?? input.current.visibilityKilometers,
+    rawVisibilityKm: visibility,
     photographyTransparencyScore: input.firstHour?.photographyTransparencyScore,
     transparencyGrade: input.firstHour?.transparencyGrade,
     cloudFogObstructionRisk: input.firstHour?.cloudFogObstructionRisk,
@@ -739,7 +770,7 @@ function normalizeCurrentAirQuality(
 
   return {
     aqi: airQuality?.aqi ?? undefined,
-    category: airQuality?.category,
+    category: airQuality?.category ?? undefined,
     pm25: reference?.pm25 ?? airQuality?.pm25 ?? undefined,
     pm10: reference?.pm10 ?? airQuality?.pm10 ?? undefined,
     aerosolOpticalDepth550: reference?.aerosolOpticalDepth550 ?? null,
@@ -872,6 +903,7 @@ function successfulSourceSummary(input: {
   readonly availableFields: readonly string[];
   readonly missingFields: readonly string[];
   readonly latencyMs?: number;
+  readonly returnedHours?: number;
 }): WeatherSourceSummary {
   return {
     providerCode: input.providerCode,
@@ -887,6 +919,7 @@ function successfulSourceSummary(input: {
     missingFields: input.missingFields,
     partial: input.providerCode === "meteoblue" && input.missingFields.length > 0,
     latencyMs: input.latencyMs,
+    returnedHours: input.returnedHours,
     cacheHit: false,
     generatedAt: input.generatedAt,
     messageZh: successfulSourceMessageZh(
@@ -917,6 +950,7 @@ function sourceSummaryFromBundle(bundle: WeatherDataBundle): WeatherSourceSummar
       generatedAt: bundle.generatedAt,
       availableFields: collectAvailableFields(bundle.hourly),
       missingFields: bundle.missingFields ?? [],
+      returnedHours: bundle.hourly.length,
     }),
     ...existing,
     ...terrainSummaryFields(terrainMetadata),
