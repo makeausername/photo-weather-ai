@@ -5872,6 +5872,44 @@ function formatProfessionalDate(value: string, timezone: string): string {
   }).format(new Date(timestamp));
 }
 
+function professionalDateKey(value: string, timezone: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(timestamp));
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function formatProfessionalDayHeading(
+  value: string,
+  timezone: string,
+  fallback: string,
+): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return fallback;
+  }
+  const date = new Date(timestamp);
+  const dateLabel = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: timezone,
+    month: "long",
+    day: "numeric",
+  }).format(date);
+  const weekdayLabel = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: timezone,
+    weekday: "short",
+  }).format(date);
+  return `${dateLabel} · ${weekdayLabel}`;
+}
+
 function formatProfessionalTime(value: string, timezone: string): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) {
@@ -6864,7 +6902,10 @@ export function GeneralHourlyWeatherSection({
       </div>
 
       {expanded ? (
-        <div className="mt-4 grid min-w-0 max-w-full gap-3" data-general-hourly-body="true">
+        <div
+          className="mx-auto mt-4 grid w-full min-w-0 max-w-5xl gap-3"
+          data-general-hourly-body="true"
+        >
           <dl className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-4">
             <CompactDefinition
               label="目标有效时间"
@@ -6968,9 +7009,21 @@ export function GeneralRainHourlyTable({
     filterMode === "rain"
       ? generalRainfallSectionCopy.rainFilterLabel
       : generalRainfallSectionCopy.allFilterLabel;
+  const timezone = data.timeBasis?.timezone ?? "Asia/Shanghai";
+  const dayGroups = useMemo(() => groupGeneralRainRowsByDay(rows, timezone), [rows, timezone]);
+  const columnLabels = [
+    "时间",
+    "天气",
+    generalRainfallSectionCopy.rainAmountColumnLabel,
+    generalRainfallSectionCopy.rainProbabilityColumnLabel,
+  ];
 
   return (
-    <section data-general-rain-table="true">
+    <section
+      className="mx-auto w-full max-w-5xl"
+      data-general-rain-table="true"
+      data-general-rain-content-width="centered"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div
           className="flex flex-wrap gap-2"
@@ -7001,63 +7054,118 @@ export function GeneralRainHourlyTable({
           ))}
         </div>
         <p className="text-xs leading-5 text-muted-foreground">
-          当前筛选：{activeFilterLabel}，筛选 {rows.length} / {data.rows.length} 小时。
+          当前筛选：{activeFilterLabel} · 显示 {rows.length} / {data.rows.length} 小时
         </p>
       </div>
 
-      <ResponsiveDataScroller bare data-general-rain-scroll="true">
-        <table
-          className="w-full min-w-[640px] border-separate border-spacing-0 text-left text-[12px] leading-5"
-          data-general-rain-table-layout="rain-focused"
-        >
-          <thead className="bg-muted text-xs text-muted-foreground">
-            <tr>
-              {[
-                "日期",
-                "时间",
-                "天气",
-                generalRainfallSectionCopy.rainAmountColumnLabel,
-                generalRainfallSectionCopy.rainProbabilityColumnLabel,
-              ].map((label, index) => (
-                <th
-                  key={label}
-                  scope="col"
-                  className={cn(
-                    "whitespace-nowrap border-b border-border px-2 py-2 font-semibold",
-                    index === 0 && professionalHourlyDateHeaderClassName(),
-                    index === 1 && "w-[5rem] min-w-[5rem]",
-                  )}
-                >
-                  {label}
-                </th>
+      {rows.length > 0 ? (
+        <>
+          <div
+            className="mt-3 hidden overflow-hidden rounded-lg border border-border sm:block"
+            data-general-rain-desktop-layout="true"
+          >
+            <table
+              className="w-full table-fixed border-separate border-spacing-0 text-left text-[12px] leading-5"
+              data-general-rain-table-layout="grouped-days"
+            >
+              <colgroup>
+                <col className="w-[14%]" />
+                <col className="w-[30%]" />
+                <col className="w-[18%]" />
+                <col className="w-[38%]" />
+              </colgroup>
+              <thead className="bg-muted text-xs text-muted-foreground">
+                <tr>
+                  {columnLabels.map((label) => (
+                    <th
+                      key={label}
+                      scope="col"
+                      className="whitespace-nowrap border-b border-border px-4 py-2 font-semibold"
+                    >
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              {dayGroups.map((group) => (
+                <tbody key={group.key} data-general-rain-day={group.key}>
+                  <tr className="bg-secondary/35">
+                    <th
+                      colSpan={4}
+                      scope="rowgroup"
+                      className="border-b border-border px-4 py-2 text-left text-xs font-bold text-card-foreground"
+                    >
+                      <span>{group.label}</span>
+                      <span className="ml-2 font-normal text-muted-foreground">
+                        {group.rows.length} 小时
+                      </span>
+                    </th>
+                  </tr>
+                  {group.rows.map((row, rowIndex) => (
+                    <GeneralRainHourlyRow
+                      key={row.time}
+                      row={row}
+                      rowIndex={rowIndex}
+                      timezone={timezone}
+                    />
+                  ))}
+                </tbody>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length > 0 ? (
-              rows.map((row, rowIndex) => (
-                <GeneralRainHourlyRow
-                  key={row.time}
-                  row={row}
-                  rowIndex={rowIndex}
-                  timezone={data.timeBasis?.timezone ?? "Asia/Shanghai"}
-                />
-              ))
-            ) : (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="border-t border-border px-3 py-4 text-center text-sm text-muted-foreground"
-                >
-                  {generalRainfallSectionCopy.emptyMessage}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </ResponsiveDataScroller>
+            </table>
+          </div>
+
+          <div className="mt-3 grid gap-3 sm:hidden" data-general-rain-mobile-layout="true">
+            {dayGroups.map((group) => (
+              <section key={group.key} data-general-rain-mobile-day={group.key}>
+                <div className="flex items-center justify-between rounded-t-lg border border-border bg-secondary/35 px-3 py-2">
+                  <h3 className="text-xs font-bold text-card-foreground">{group.label}</h3>
+                  <span className="text-xs text-muted-foreground">{group.rows.length} 小时</span>
+                </div>
+                <div className="divide-y divide-border overflow-hidden rounded-b-lg border-x border-b border-border">
+                  {group.rows.map((row) => (
+                    <GeneralRainMobileHourlyRow key={row.time} row={row} timezone={timezone} />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </>
+      ) : (
+        <p className="mt-3 rounded-lg border border-border bg-muted px-3 py-4 text-center text-sm text-muted-foreground">
+          {generalRainfallSectionCopy.emptyMessage}
+        </p>
+      )}
     </section>
   );
+}
+
+type GeneralRainDayGroup = {
+  readonly key: string;
+  readonly label: string;
+  readonly rows: readonly ProfessionalHourlyRow[];
+};
+
+function groupGeneralRainRowsByDay(
+  rows: readonly ProfessionalHourlyRow[],
+  timezone: string,
+): readonly GeneralRainDayGroup[] {
+  const groups: Array<{ key: string; label: string; rows: ProfessionalHourlyRow[] }> = [];
+
+  for (const row of rows) {
+    const key = professionalDateKey(row.time, timezone);
+    const previous = groups.at(-1);
+    if (previous?.key === key) {
+      previous.rows.push(row);
+      continue;
+    }
+    groups.push({
+      key,
+      label: formatProfessionalDayHeading(row.time, timezone, row.dateLabel),
+      rows: [row],
+    });
+  }
+
+  return groups;
 }
 
 function GeneralRainHourlyRow({
@@ -7071,28 +7179,19 @@ function GeneralRainHourlyRow({
 }) {
   const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "—";
   const weatherGlyph = weatherGlyphForProfessionalHour(row, weatherText);
-  const hasRain =
-    professionalHourlyHasPrecipitation(row) ||
-    (isFiniteNumber(row.precipitationProbabilityPercent) &&
-      row.precipitationProbabilityPercent >= 60);
-  const rowBackgroundClassName = generalRainRowBackgroundClassName(rowIndex, hasRain);
+  const hasMeasuredRain = professionalHourlyHasPrecipitation(row);
+  const rowBackgroundClassName = generalRainRowBackgroundClassName(rowIndex, hasMeasuredRain);
 
   return (
     <tr
       className={rowBackgroundClassName}
       data-general-rain-row={row.time}
-      data-general-rain-has-precipitation={hasRain ? "true" : "false"}
+      data-general-rain-has-precipitation={hasMeasuredRain ? "true" : "false"}
     >
-      <ProfessionalHourlyCell
-        cell="date"
-        className={professionalHourlyDateCellClassName(rowBackgroundClassName)}
-      >
-        {row.dateLabel || formatProfessionalDate(row.time, timezone)}
-      </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell cell="time" className={professionalHourlyTimeCellClassName()}>
+      <ProfessionalHourlyCell cell="time" className="px-4 font-semibold text-card-foreground">
         {row.timeLabel || formatProfessionalTime(row.time, timezone)}
       </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell cell="weather">
+      <ProfessionalHourlyCell cell="weather" className="px-4">
         <span className="inline-flex items-center gap-1.5">
           {weatherGlyph ? (
             <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-border bg-muted text-[11px] font-bold text-primary">
@@ -7104,25 +7203,132 @@ function GeneralRainHourlyRow({
       </ProfessionalHourlyCell>
       <ProfessionalHourlyCell
         cell="rain-amount"
-        className={hasRain ? "font-semibold text-accent-strong" : undefined}
+        className={cn("px-4 tabular-nums", hasMeasuredRain && "font-semibold text-accent-strong")}
       >
         {formatProfessionalRainAmount(row)}
       </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell
-        cell="rain-probability"
-        className={hasRain ? "font-semibold text-accent-strong" : undefined}
-      >
-        {formatProfessionalRainProbability(row)}
+      <ProfessionalHourlyCell cell="rain-probability" className="px-4">
+        <GeneralRainProbabilityDisplay row={row} />
       </ProfessionalHourlyCell>
     </tr>
   );
 }
 
-function generalRainRowBackgroundClassName(rowIndex: number, hasRain: boolean): string {
-  if (hasRain) {
+function GeneralRainMobileHourlyRow({
+  row,
+  timezone,
+}: {
+  readonly row: ProfessionalHourlyRow;
+  readonly timezone: string;
+}) {
+  const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "—";
+  const weatherGlyph = weatherGlyphForProfessionalHour(row, weatherText);
+  const hasMeasuredRain = professionalHourlyHasPrecipitation(row);
+
+  return (
+    <article
+      className={cn("grid gap-2 px-3 py-2.5", hasMeasuredRain ? "bg-accent/10" : "bg-card")}
+      data-general-rain-mobile-row={row.time}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-semibold tabular-nums text-card-foreground">
+          {row.timeLabel || formatProfessionalTime(row.time, timezone)}
+        </p>
+        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          {weatherGlyph ? (
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-border bg-muted text-[11px] font-bold text-primary">
+              {weatherGlyph}
+            </span>
+          ) : null}
+          {weatherText}
+        </span>
+      </div>
+      <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] items-center gap-3 text-xs">
+        <p
+          className={cn(
+            "tabular-nums text-muted-foreground",
+            hasMeasuredRain && "font-semibold text-accent-strong",
+          )}
+        >
+          降水 {formatProfessionalRainAmount(row)}
+        </p>
+        <GeneralRainProbabilityDisplay row={row} compact />
+      </div>
+    </article>
+  );
+}
+
+function GeneralRainProbabilityDisplay({
+  row,
+  compact = false,
+}: {
+  readonly row: ProfessionalHourlyRow;
+  readonly compact?: boolean;
+}) {
+  const probability = isFiniteNumber(row.precipitationProbabilityPercent)
+    ? Math.max(0, Math.min(100, Math.round(row.precipitationProbabilityPercent)))
+    : null;
+
+  if (probability === null) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  return (
+    <div
+      className={cn("flex min-w-0 items-center gap-2", compact && "justify-end")}
+      data-general-rain-probability={probability}
+    >
+      <div
+        className={cn(
+          "h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted",
+          compact ? "max-w-24" : "max-w-44",
+        )}
+        role="progressbar"
+        aria-label={`降水概率 ${probability}%`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={probability}
+        data-general-rain-probability-bar="true"
+      >
+        <span
+          className={cn(
+            "block h-full rounded-full",
+            generalRainProbabilityBarClassName(probability),
+          )}
+          style={{ width: `${probability}%` }}
+        />
+      </div>
+      <span
+        className={cn(
+          "w-10 shrink-0 text-right font-semibold tabular-nums",
+          generalRainProbabilityTextClassName(probability),
+        )}
+      >
+        {formatProfessionalRainProbability(row)}
+      </span>
+    </div>
+  );
+}
+
+function generalRainRowBackgroundClassName(rowIndex: number, hasMeasuredRain: boolean): string {
+  if (hasMeasuredRain) {
     return "bg-accent/10";
   }
   return rowIndex % 2 === 0 ? "bg-card" : "bg-muted/35";
+}
+
+function generalRainProbabilityBarClassName(probability: number): string {
+  if (probability >= 60) {
+    return "bg-accent";
+  }
+  if (probability >= 30) {
+    return "bg-primary/60";
+  }
+  return "bg-primary/30";
+}
+
+function generalRainProbabilityTextClassName(probability: number): string {
+  return probability >= 60 ? "text-accent-strong" : "text-muted-foreground";
 }
 
 function formatProfessionalRainAmount(row: ProfessionalHourlyRow): string {

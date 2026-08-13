@@ -3229,7 +3229,13 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("时区");
     expect(html).toContain("降水 mm");
     expect(html).toContain("概率 %");
-    expect(html).toContain("min-w-[640px]");
+    expect(html).toContain("max-w-5xl");
+    expect(html).toContain('data-general-rain-content-width="centered"');
+    expect(html).toContain('data-general-rain-table-layout="grouped-days"');
+    expect(html).toContain('data-general-rain-desktop-layout="true"');
+    expect(html).toContain('data-general-rain-mobile-layout="true"');
+    expect(html).toContain('data-general-rain-probability-bar="true"');
+    expect(html).not.toContain("min-w-[640px]");
     expect(html).not.toContain("max-w-max");
     expect(html).not.toContain("云量口径");
     expect(html).not.toContain("分层覆盖");
@@ -3265,6 +3271,11 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("0.8 mm");
     expect(html).toContain("55%");
     expect(html).toContain('data-general-rain-row="2026-05-20T05:00:00+08:00"');
+    expect(html).toContain('data-general-rain-day="2026-05-20"');
+    expect(html).toContain("5月20日 · 周三");
+    expect(html).toContain('data-general-rain-table-layout="grouped-days"');
+    expect(html).toContain('data-general-rain-mobile-row="2026-05-20T05:00:00+08:00"');
+    expect(html).toContain('role="progressbar"');
     expect(html).not.toContain("朝霞最佳");
     expect(html).not.toContain("星空窗口");
     expect(html).not.toContain("银河推荐");
