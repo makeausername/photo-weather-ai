@@ -98,11 +98,15 @@ export type CloudSeaProfessionalHourlyWindow = {
   readonly label?: string;
 };
 
-export type ProfessionalHourlyRowAnnotation = {
-  readonly rowTime: string;
+export type ProfessionalHourlyRowBadge = {
   readonly label: string;
   readonly detail: string;
   readonly tone?: "default" | "success" | "warning" | "danger" | "info";
+};
+
+export type ProfessionalHourlyRowAnnotation = ProfessionalHourlyRowBadge & {
+  readonly rowTime: string;
+  readonly badges?: readonly ProfessionalHourlyRowBadge[];
 };
 
 export type ProfessionalHourlyDisplayData = {
