@@ -158,7 +158,10 @@ const weatherFieldMetadataSchema = z
     z.object({
       value: z.union([z.string(), z.number().finite(), z.boolean(), z.null()]).optional(),
       providerCode: z.string().trim().min(1),
+      sourceId: z.string().trim().min(1).optional(),
       providerLabelZh: z.string().trim().min(1).optional(),
+      modelName: z.string().trim().min(1).optional(),
+      basis: z.enum(["explicit_layer", "total_cloud", "fallback_same_field", "missing"]).optional(),
       estimated: z.boolean(),
       missingReason: z.string().trim().min(1).optional(),
       providerElevationMeters: z.number().finite().optional(),
@@ -171,6 +174,11 @@ const weatherFieldMetadataSchema = z
       medianValue: z.number().finite().optional(),
       spread: z.number().finite().min(0).optional(),
       consensusStrategy: z.string().trim().min(1).optional(),
+      rawValue: z.union([z.string(), z.number().finite(), z.null()]).optional(),
+      sourceUnit: z.string().trim().min(1).optional(),
+      validationStatus: z
+        .enum(["valid", "clamped_boundary", "rejected_outlier", "unit_uncertain"])
+        .optional(),
     }),
   )
   .optional();
