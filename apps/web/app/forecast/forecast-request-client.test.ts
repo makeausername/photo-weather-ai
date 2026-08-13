@@ -29,6 +29,17 @@ function resultForTarget(target: ForecastQueryInput["target"]): ForecastCalculat
     target,
     generatedAt: "2026-05-20T00:00:00+08:00",
     summary: `${target} result`,
+    ...(target === "general"
+      ? {
+          professionalHourlyData: [{ time: "2026-05-20T01:00:00+08:00" }],
+          professionalHourlyDataTimeBasis: {
+            startTime: "2026-05-20T01:00:00+08:00",
+            endTime: "2026-05-20T02:00:00+08:00",
+            stepMinutes: 60,
+            timezone: "Asia/Shanghai",
+          },
+        }
+      : {}),
   } as unknown as ForecastCalculationResult;
 }
 
@@ -368,5 +379,82 @@ describe("forecast request client", () => {
     expect(loggedInFetcher).toHaveBeenCalledTimes(1);
     expect(guestFetcher).toHaveBeenCalledTimes(1);
     expect(sessionStorage.dumpKeys().join(" ")).not.toContain("full-access-token");
+  });
+
+  it("ignores the previous cache schema after an hourly result rollout", async () => {
+    const { sessionStorage } = installBrowserStorage();
+    const query = { ...baseQuery, horizon: "24h", target: "general" } as const;
+    const previousResult = {
+      ...resultForTarget("general"),
+      summary: "previous cached result",
+    };
+    const currentResult = {
+      ...resultForTarget("general"),
+      summary: "current result",
+    };
+    const seedFetcher = vi.fn().mockResolvedValue(jsonResponse(previousResult));
+
+    await requestForecastCalculation(query, {
+      fetcher: seedFetcher as unknown as typeof fetch,
+      retryDelayMs: [0, 0],
+      successCacheTtlMs: 60_000,
+      staleCacheTtlMs: 60_000,
+    });
+
+    const currentKey = sessionStorage
+      .dumpKeys()
+      .find((key) => key.startsWith("photo_weather_forecast_calculation:v2:"));
+    expect(currentKey).toBeDefined();
+    const currentRecord = sessionStorage.getItem(currentKey!);
+    expect(currentRecord).not.toBeNull();
+    sessionStorage.removeItem(currentKey!);
+    sessionStorage.setItem(
+      currentKey!.replace(":v2:", ":v1:"),
+      currentRecord!.replace('"version":2', '"version":1'),
+    );
+    clearForecastRequestClientCachesForTest();
+
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse(currentResult));
+    await expect(
+      requestForecastCalculation(query, {
+        fetcher: fetcher as unknown as typeof fetch,
+        retryDelayMs: [0, 0],
+        successCacheTtlMs: 60_000,
+        staleCacheTtlMs: 60_000,
+      }),
+    ).resolves.toEqual(currentResult);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retain general forecast results that cannot render hourly data", async () => {
+    installBrowserStorage();
+    const query = { ...baseQuery, horizon: "24h", target: "general" } as const;
+    const incompleteResult = {
+      ...resultForTarget("general"),
+      professionalHourlyData: undefined,
+      professionalHourlyDataTimeBasis: undefined,
+    } as ForecastCalculationResult;
+
+    await requestForecastCalculation(query, {
+      fetcher: vi.fn().mockResolvedValue(jsonResponse(incompleteResult)) as unknown as typeof fetch,
+      retryDelayMs: [0, 0],
+      successCacheTtlMs: 60_000,
+      staleCacheTtlMs: 60_000,
+    });
+    clearForecastRequestClientCachesForTest();
+
+    const currentResult = resultForTarget("general");
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse(currentResult));
+    await expect(
+      requestForecastCalculation(query, {
+        fetcher: fetcher as unknown as typeof fetch,
+        retryDelayMs: [0, 0],
+        successCacheTtlMs: 60_000,
+        staleCacheTtlMs: 60_000,
+      }),
+    ).resolves.toEqual(currentResult);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });
