@@ -16,7 +16,7 @@ import {
   ComprehensiveForecastView,
   AstroResultPage,
   CloudSeaProfessionalHourlyDataPanel,
-  generalProfessionalHourlySectionConfig,
+  GeneralRainHourlyTable,
   CloudSeaResultPage,
   ForecastDecisionErrorState,
   ForecastDecisionLoadingState,
@@ -3184,14 +3184,19 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-general-section="GeneralHourlyWeatherSection"');
     expect(html).toContain('data-general-professional-hourly-expanded="false"');
     expect(html).toContain('data-general-hourly-toggle="true"');
-    expect(html).toContain("未来小时天气");
-    expect(html).toContain("降水与拍摄窗口");
-    expect(html).toContain("展开完整小时表");
+    expect(html).toContain("未来小时降雨");
+    expect(html).toContain("逐小时降水");
+    expect(html).toContain("展开小时降雨");
+    expect(html).not.toContain('data-general-rain-row="');
     expect(html).not.toContain('data-professional-hourly-target="general"');
-    expect(html).not.toContain('data-professional-hourly-row="');
+
+    const actionPlanIndex = html.indexOf('data-testid="action-plan"');
+    const hourlySectionIndex = html.indexOf('data-general-section="GeneralHourlyWeatherSection"');
+    expect(actionPlanIndex).toBeGreaterThan(-1);
+    expect(hourlySectionIndex).toBeGreaterThan(actionPlanIndex);
   });
 
-  it("expands the general result hourly rainfall table with window annotations", () => {
+  it("expands the general result hourly rainfall table with rain-only details", () => {
     const hourlyRange = resultWithGlowHourlyRange("48h", 48);
     const result: ForecastCalculationResult = {
       ...resultForTarget("general"),
@@ -3207,22 +3212,59 @@ describe("forecast result target-aware view model", () => {
 
     expect(hourlyData).toBeDefined();
     const html = renderToStaticMarkup(
-      React.createElement(CloudSeaProfessionalHourlyDataPanel, {
-        target: "general",
+      React.createElement(GeneralRainHourlyTable, {
         data: hourlyData!,
-        config: generalProfessionalHourlySectionConfig,
-        variant: "embedded",
+        filterMode: "all",
+        onFilterModeChange: () => {},
       }),
     );
 
-    expect(html).toContain('data-professional-hourly-target="general"');
-    expect(html).toContain('data-professional-hourly-expanded="true"');
-    expect(html).toContain("未来小时天气");
-    expect(html).toContain("0.8 mm / 55%");
-    expect(html).toContain("朝霞最佳");
-    expect(html).toContain("星空窗口");
-    expect(html).toContain("银河推荐");
-    expect(html).toContain('data-professional-hourly-row="2026-05-20T05:00:00+08:00"');
+    expect(html).toContain('data-general-rain-table="true"');
+    expect(html).toContain("0.8 mm");
+    expect(html).toContain("55%");
+    expect(html).toContain('data-general-rain-row="2026-05-20T05:00:00+08:00"');
+    expect(html).not.toContain("朝霞最佳");
+    expect(html).not.toContain("星空窗口");
+    expect(html).not.toContain("银河推荐");
+    expect(html).not.toContain("总云量");
+    expect(html).not.toContain("露点");
+    expect(html).not.toContain("能见度");
+  });
+
+  it("filters the general result hourly rainfall table to precipitation hours", () => {
+    const hourlyRange = resultWithGlowHourlyRange("48h", 48);
+    const result: ForecastCalculationResult = {
+      ...resultForTarget("general"),
+      horizon: "48h",
+      forecastEnd: hourlyRange.forecastEnd,
+      targetDates: hourlyRange.targetDates,
+      calendarBasis: hourlyRange.calendarBasis,
+      professionalHourlyData: hourlyRange.professionalHourlyData,
+      professionalHourlyDataTimeBasis: hourlyRange.professionalHourlyDataTimeBasis,
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const hourlyData = viewModel.professionalHourlyData;
+
+    expect(hourlyData).toBeDefined();
+    const rainRows = hourlyData!.rows.filter(
+      (row) =>
+        (row.precipitationAmountMm !== null && row.precipitationAmountMm > 0) ||
+        (row.precipitationProbabilityPercent !== null && row.precipitationProbabilityPercent >= 60),
+    );
+
+    const html = renderToStaticMarkup(
+      React.createElement(GeneralRainHourlyTable, {
+        data: hourlyData!,
+        filterMode: "rain",
+        onFilterModeChange: () => {},
+      }),
+    );
+
+    expect(html).toContain("只看降水时段");
+    expect(html.match(/data-general-rain-row="/g)?.length).toBe(rainRows.length);
+    for (const row of rainRows) {
+      expect(html).toContain(`data-general-rain-row="${row.time}"`);
+    }
   });
 
   it("does not render unknown terrain elevation or local relief as zero", () => {

@@ -4457,32 +4457,6 @@ const glowProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
   initiallyExpanded: true,
 };
 
-export const generalProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
-  sectionTitle: "未来小时天气",
-  sectionBadge: "降水与拍摄窗口",
-  sectionDescription: "优先查看未来逐小时降水量和降水概率，并标记朝霞、晚霞、星空与银河窗口。",
-  usageText: "窗口标签来自对应题材的时间区间；降水量与概率分别展示，不互相替代。",
-  signalColumnLabel: "题材窗口",
-  signalColumnDescription: "标记朝霞、晚霞、星空和银河的候选或推荐时段。",
-  focusFilterLabel: "只看拍摄窗口",
-  allFilterLabel: "全部小时",
-  riskFilterLabel: "风险小时",
-  defaultFilterMode: "all",
-  ordinarySignalLabel: "普通时段",
-  initiallyExpanded: true,
-  expandButtonLabel: "展开完整小时表",
-  collapseButtonLabel: "收起完整小时表",
-  previewTitle: "未来小时降水与重点窗口",
-  showCoverageNote: false,
-  showCollapsedPreview: false,
-  showMorningFilter: false,
-  showRainFilter: true,
-  previewRowLimit: 12,
-  focusPaddingHours: 0,
-  showBasisSummary: false,
-  showEmbeddedLeadDescription: false,
-};
-
 function professionalHourlyFiltersForContext(
   terrainContext: CloudSeaTerrainContext | undefined,
   config: ProfessionalHourlySectionConfig | undefined,
@@ -6672,23 +6646,38 @@ export function ComprehensiveForecastView({
         mainRisk={mainRisk}
       />
       <WeatherEssentialsPanel result={result} />
-      {viewModel.professionalHourlyData ? (
-        <GeneralHourlyWeatherSection data={viewModel.professionalHourlyData} />
-      ) : null}
       {result.dailySummaries.length > 0 ? (
         <ComprehensiveMultiDaySummary query={query} result={result} />
       ) : null}
       <OpportunityWindowSection query={query} result={result} />
       <RiskDecisionSection result={result} mainRisk={mainRisk} />
       <ActionableAdviceSection result={result} bestSubject={bestSubject} mainRisk={mainRisk} />
+      {viewModel.professionalHourlyData ? (
+        <GeneralHourlyWeatherSection data={viewModel.professionalHourlyData} />
+      ) : null}
     </DecisionResultTemplate>
   );
 }
+
+const generalRainfallSectionCopy = {
+  sectionTitle: "未来小时降雨",
+  sectionBadge: "逐小时降水",
+  sectionDescription: "逐小时查看未来降雨量与降水概率，重点复核降水时段，辅助判断拍摄可行性。",
+  expandButtonLabel: "展开小时降雨",
+  collapseButtonLabel: "收起小时降雨",
+  allFilterLabel: "全部小时",
+  rainFilterLabel: "只看降水时段",
+  tableAriaLabel: "小时降雨筛选",
+  rainAmountColumnLabel: "降水 mm",
+  rainProbabilityColumnLabel: "概率 %",
+  emptyMessage: "当前筛选下暂无降水小时，请切换筛选复核完整预报。",
+};
 
 function GeneralHourlyWeatherSection({ data }: { readonly data: ProfessionalHourlyDisplayData }) {
   const rows = data.rows;
   const basis = data.timeBasis;
   const [expanded, setExpanded] = useState(false);
+  const [filterMode, setFilterMode] = useState<"all" | "rain">("all");
 
   if (!isValidProfessionalHourlyTimeBasis(basis) || rows.length === 0) {
     return null;
@@ -6704,12 +6693,12 @@ function GeneralHourlyWeatherSection({ data }: { readonly data: ProfessionalHour
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-bold text-card-foreground">
-              {generalProfessionalHourlySectionConfig.sectionTitle}
+              {generalRainfallSectionCopy.sectionTitle}
             </h2>
-            <Badge variant="accent">{generalProfessionalHourlySectionConfig.sectionBadge}</Badge>
+            <Badge variant="accent">{generalRainfallSectionCopy.sectionBadge}</Badge>
           </div>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-            {generalProfessionalHourlySectionConfig.sectionDescription}
+            {generalRainfallSectionCopy.sectionDescription}
           </p>
         </div>
         <Button
@@ -6723,23 +6712,208 @@ function GeneralHourlyWeatherSection({ data }: { readonly data: ProfessionalHour
           data-general-hourly-toggle="true"
         >
           {expanded
-            ? (generalProfessionalHourlySectionConfig.collapseButtonLabel ?? "收起完整小时表")
-            : (generalProfessionalHourlySectionConfig.expandButtonLabel ?? "展开完整小时表")}
+            ? generalRainfallSectionCopy.collapseButtonLabel
+            : generalRainfallSectionCopy.expandButtonLabel}
         </Button>
       </div>
 
       {expanded ? (
-        <div className="mt-4 grid gap-3" data-general-hourly-body="true">
-          <CloudSeaProfessionalHourlyDataPanel
-            target="general"
+        <div className="mt-4 grid min-w-0 max-w-full gap-3" data-general-hourly-body="true">
+          <GeneralRainHourlyTable
             data={data}
-            config={generalProfessionalHourlySectionConfig}
-            variant="embedded"
+            filterMode={filterMode}
+            onFilterModeChange={setFilterMode}
           />
         </div>
       ) : null}
     </Card>
   );
+}
+
+export function GeneralRainHourlyTable({
+  data,
+  filterMode,
+  onFilterModeChange,
+}: {
+  readonly data: ProfessionalHourlyDisplayData;
+  readonly filterMode: "all" | "rain";
+  readonly onFilterModeChange: (mode: "all" | "rain") => void;
+}) {
+  const rows = useMemo(
+    () =>
+      filterMode === "rain"
+        ? filterProfessionalHourlyRows(data.rows, data, "rain", 0)
+        : data.rows,
+    [data, filterMode],
+  );
+
+  const activeFilterLabel =
+    filterMode === "rain"
+      ? generalRainfallSectionCopy.rainFilterLabel
+      : generalRainfallSectionCopy.allFilterLabel;
+
+  return (
+    <section data-general-rain-table="true">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2" role="group" aria-label={generalRainfallSectionCopy.tableAriaLabel}>
+          {(
+            [
+              { mode: "all", label: generalRainfallSectionCopy.allFilterLabel },
+              { mode: "rain", label: generalRainfallSectionCopy.rainFilterLabel },
+            ] as const
+          ).map((filter) => (
+            <button
+              key={filter.mode}
+              type="button"
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                filterMode === filter.mode
+                  ? "border-primary bg-secondary text-secondary-foreground"
+                  : "border-border bg-card text-muted-foreground hover:border-primary hover:text-foreground",
+              )}
+              onClick={() => {
+                onFilterModeChange(filter.mode);
+              }}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs leading-5 text-muted-foreground">
+          当前筛选：{activeFilterLabel}，筛选 {rows.length} / {data.rows.length} 小时。
+        </p>
+      </div>
+
+      <ResponsiveDataScroller data-general-rain-scroll="true">
+        <table
+          className="w-full min-w-[560px] border-separate border-spacing-0 text-left text-[12px] leading-5"
+          data-general-rain-table-layout="rain-focused"
+        >
+          <thead className="bg-muted text-xs text-muted-foreground">
+            <tr>
+              {[
+                "日期",
+                "时间",
+                "天气",
+                generalRainfallSectionCopy.rainAmountColumnLabel,
+                generalRainfallSectionCopy.rainProbabilityColumnLabel,
+              ].map((label, index) => (
+                <th
+                  key={label}
+                  scope="col"
+                  className={cn(
+                    "whitespace-nowrap border-b border-border px-2 py-2 font-semibold",
+                    index === 0 && professionalHourlyDateHeaderClassName(),
+                    index === 1 && "w-[5rem] min-w-[5rem]",
+                  )}
+                >
+                  {label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length > 0 ? (
+              rows.map((row, rowIndex) => (
+                <GeneralRainHourlyRow
+                  key={row.time}
+                  row={row}
+                  rowIndex={rowIndex}
+                  timezone={data.timeBasis?.timezone ?? "Asia/Shanghai"}
+                />
+              ))
+            ) : (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="border-t border-border px-3 py-4 text-center text-sm text-muted-foreground"
+                >
+                  {generalRainfallSectionCopy.emptyMessage}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </ResponsiveDataScroller>
+    </section>
+  );
+}
+
+function GeneralRainHourlyRow({
+  row,
+  rowIndex,
+  timezone,
+}: {
+  readonly row: ProfessionalHourlyRow;
+  readonly rowIndex: number;
+  readonly timezone: string;
+}) {
+  const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "—";
+  const weatherGlyph = weatherGlyphForProfessionalHour(row, weatherText);
+  const hasRain =
+    professionalHourlyHasPrecipitation(row) ||
+    (isFiniteNumber(row.precipitationProbabilityPercent) &&
+      row.precipitationProbabilityPercent >= 60);
+  const rowBackgroundClassName = generalRainRowBackgroundClassName(rowIndex, hasRain);
+
+  return (
+    <tr
+      className={rowBackgroundClassName}
+      data-general-rain-row={row.time}
+      data-general-rain-has-precipitation={hasRain ? "true" : "false"}
+    >
+      <ProfessionalHourlyCell
+        cell="date"
+        className={professionalHourlyDateCellClassName(rowBackgroundClassName)}
+      >
+        {row.dateLabel || formatProfessionalDate(row.time, timezone)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell cell="time" className={professionalHourlyTimeCellClassName()}>
+        {row.timeLabel || formatProfessionalTime(row.time, timezone)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell cell="weather">
+        <span className="inline-flex items-center gap-1.5">
+          {weatherGlyph ? (
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-border bg-muted text-[11px] font-bold text-primary">
+              {weatherGlyph}
+            </span>
+          ) : null}
+          <span>{weatherText}</span>
+        </span>
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell
+        cell="rain-amount"
+        className={hasRain ? "font-semibold text-accent" : undefined}
+      >
+        {formatProfessionalRainAmount(row)}
+      </ProfessionalHourlyCell>
+      <ProfessionalHourlyCell
+        cell="rain-probability"
+        className={hasRain ? "font-semibold text-accent" : undefined}
+      >
+        {formatProfessionalRainProbability(row)}
+      </ProfessionalHourlyCell>
+    </tr>
+  );
+}
+
+function generalRainRowBackgroundClassName(rowIndex: number, hasRain: boolean): string {
+  if (hasRain) {
+    return "bg-accent/10";
+  }
+  return rowIndex % 2 === 0 ? "bg-card" : "bg-muted/35";
+}
+
+function formatProfessionalRainAmount(row: ProfessionalHourlyRow): string {
+  return isFiniteNumber(row.precipitationAmountMm)
+    ? `${roundDisplay(row.precipitationAmountMm)} mm`
+    : "—";
+}
+
+function formatProfessionalRainProbability(row: ProfessionalHourlyRow): string {
+  return isFiniteNumber(row.precipitationProbabilityPercent)
+    ? `${Math.round(row.precipitationProbabilityPercent)}%`
+    : "—";
 }
 
 function ComprehensiveContextBar({
