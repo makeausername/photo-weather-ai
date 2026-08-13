@@ -3229,8 +3229,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("时区");
     expect(html).toContain("降水 mm");
     expect(html).toContain("概率 %");
-    expect(html).toContain("max-w-5xl");
-    expect(html).toContain('data-general-rain-content-width="centered"');
+    expect(html).toContain('data-general-rain-content-width="full"');
+    expect(html).not.toContain("max-w-5xl");
     expect(html).toContain('data-general-rain-table-layout="grouped-days"');
     expect(html).toContain('data-general-rain-desktop-layout="true"');
     expect(html).toContain('data-general-rain-mobile-layout="true"');
