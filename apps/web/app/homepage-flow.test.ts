@@ -573,7 +573,7 @@ describe("homepage forecast flow", () => {
     expect(html).toContain(forecastHorizonLabels["7d"]);
   });
 
-  it("does not render popular spot sections on the homepage", () => {
+  it("keeps the homepage limited to the primary forecast workbench", () => {
     const panelHtml = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
     const pageHtml = renderToStaticMarkup(React.createElement(HomePage));
 
@@ -587,6 +587,10 @@ describe("homepage forecast flow", () => {
     expect(pageHtml).not.toContain("老君山金顶");
     expect(pageHtml).not.toContain("三清山女神峰");
     expect(pageHtml).not.toContain("武功山金顶");
+    expect(pageHtml).not.toContain("专项拍摄场景");
+    expect(pageHtml).not.toContain("三步得出判断");
+    expect(pageHtml).not.toContain("值得一去的机位");
+    expect(pageHtml).not.toContain('data-homepage-discovery="true"');
   });
 
   it("renders the current-location control as an embedded input icon button", () => {

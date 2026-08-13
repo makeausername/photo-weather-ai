@@ -1,4 +1,3 @@
-import { HomepageDiscoverySection } from "../components/homepage-discovery";
 import { HomepageWorkbench } from "../components/homepage-workbench";
 import { PublicShell } from "../components/public-shell";
 import { Badge } from "../components/ui";
@@ -19,8 +18,6 @@ export default function HomePage() {
       </header>
 
       <HomepageWorkbench />
-
-      <HomepageDiscoverySection />
     </PublicShell>
   );
 }
