@@ -363,6 +363,78 @@ describe("homepage forecast flow", () => {
     expect(html).not.toContain('data-homepage-layer-visual="true"');
   });
 
+  it("renders future hourly rain and photography windows inside the homepage result", () => {
+    const location = selectedLocationFromSearchResult(laojunshanPlace);
+    const hourlyResult = {
+      ...homepageLayerResult,
+      professionalHourlyData: Array.from({ length: 13 }, (_, index) => ({
+        time: `2026-05-25T${String(index + 4).padStart(2, "0")}:00:00+08:00`,
+        dateLabel: "05月25日",
+        timeLabel: `${String(index + 4).padStart(2, "0")}:00`,
+        weatherText: index === 2 ? "小雨" : "多云",
+        precipitationAmountMm: index === 2 ? 0.8 : 0,
+        precipitationProbabilityPercent: index === 2 ? 55 : 10,
+        cloudTotalPercent: 62,
+        cloudHighPercent: 45,
+        cloudMidPercent: 35,
+        cloudLowPercent: 20,
+        windSpeedMs: 3.2,
+      })),
+      professionalHourlyDataTimeBasis: {
+        startTime: "2026-05-25T04:00:00+08:00",
+        endTime: "2026-05-25T16:00:00+08:00",
+        stepMinutes: 60,
+        timezone: "Asia/Shanghai",
+        expectedRowCount: 13,
+      },
+      astroSummaries: [
+        {
+          sunriseGlowBestStartAt: "2026-05-25T04:30:00+08:00",
+          sunriseGlowBestEndAt: "2026-05-25T06:00:00+08:00",
+        },
+      ],
+      astroAnalysis: {
+        dailyAstro: [
+          {
+            astronomicalNightWindow: {
+              start: "2026-05-25T05:30:00+08:00",
+              end: "2026-05-25T07:30:00+08:00",
+            },
+            astroShootable: true,
+            keyReason: "天文黑夜且云量可用",
+            riskNote: "",
+          },
+        ],
+        recommendedMilkyWayWindows: [
+          {
+            start: "2026-05-25T05:30:00+08:00",
+            end: "2026-05-25T07:30:00+08:00",
+            noteZh: "银河核心可见窗口",
+          },
+        ],
+        milkyWayCandidateWindows: [],
+      },
+    } as unknown as ForecastCalculationResult;
+
+    const html = renderToStaticMarkup(
+      React.createElement(HomepageGuidancePanel, {
+        location,
+        state: { status: "ready", result: hourlyResult },
+        horizon: homepageDefaultHorizon,
+      }),
+    );
+
+    expect(html).toContain('data-homepage-hourly-weather="true"');
+    expect(html).toContain("未来小时天气");
+    expect(html).toContain("降水与拍摄窗口");
+    expect(html).toContain("降水 0.8 mm / 55%");
+    expect(html).toContain("朝霞最佳");
+    expect(html).toContain("星空窗口");
+    expect(html).toContain("银河推荐");
+    expect(html).toContain("展开完整 13 小时表");
+    expect((html.match(/data-homepage-hourly-preview-row="true"/g) ?? [])).toHaveLength(12);
+  });
+
   it("keeps selected location visible when homepage card data is unavailable", () => {
     const location = selectedLocationFromSearchResult(laojunshanPlace);
     const html = renderToStaticMarkup(

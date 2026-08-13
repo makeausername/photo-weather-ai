@@ -1137,7 +1137,7 @@ type GeneralProfessionalHourlyInterval = {
   readonly badge: ProfessionalHourlyRowBadge;
 };
 
-function buildGeneralProfessionalHourlyData(
+export function buildGeneralProfessionalHourlyData(
   result: ForecastCalculationResult,
 ): ProfessionalHourlyDisplayData {
   const intervals = buildGeneralProfessionalHourlyIntervals(result);
@@ -1172,7 +1172,7 @@ function buildGeneralProfessionalHourlyIntervals(
       },
     }),
   );
-  const starIntervals = result.astroAnalysis.dailyAstro
+  const starIntervals = (result.astroAnalysis?.dailyAstro ?? [])
     .filter((day) => day.astronomicalNightWindow)
     .map((day): GeneralProfessionalHourlyInterval => {
       const window = day.astronomicalNightWindow!;
@@ -1188,12 +1188,12 @@ function buildGeneralProfessionalHourlyIntervals(
       };
     });
   const recommendedKeys = new Set(
-    result.astroAnalysis.recommendedMilkyWayWindows.map(
+    (result.astroAnalysis?.recommendedMilkyWayWindows ?? []).map(
       (window) => `${window.start}|${window.end}`,
     ),
   );
   const milkyWayIntervals = [
-    ...result.astroAnalysis.recommendedMilkyWayWindows.map(
+    ...(result.astroAnalysis?.recommendedMilkyWayWindows ?? []).map(
       (window): GeneralProfessionalHourlyInterval => ({
         subject: "milkyWay",
         start: window.start,
@@ -1205,7 +1205,7 @@ function buildGeneralProfessionalHourlyIntervals(
         },
       }),
     ),
-    ...result.astroAnalysis.milkyWayCandidateWindows
+    ...(result.astroAnalysis?.milkyWayCandidateWindows ?? [])
       .filter((window) => !recommendedKeys.has(`${window.start}|${window.end}`))
       .map(
         (window): GeneralProfessionalHourlyInterval => ({
@@ -8301,7 +8301,7 @@ function buildGlowProfessionalHourlyAnnotations(
 }
 
 function buildGlowSunPhaseAnnotationIntervals(result: ForecastCalculationResult) {
-  return result.astroSummaries.flatMap((astro) => {
+  return (result.astroSummaries ?? []).flatMap((astro) => {
     const intervals: Array<{
       readonly start: string;
       readonly end: string;
