@@ -16,6 +16,7 @@ import {
   ComprehensiveForecastView,
   AstroResultPage,
   CloudSeaProfessionalHourlyDataPanel,
+  generalProfessionalHourlySectionConfig,
   CloudSeaResultPage,
   ForecastDecisionErrorState,
   ForecastDecisionLoadingState,
@@ -3146,7 +3147,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("当前天气或地形仍包含演示数据");
   });
 
-  it("adds a future hourly rainfall panel with glow, stars, and Milky Way window annotations", () => {
+  it("shows the general result hourly rainfall panel collapsed by default", () => {
     const hourlyRange = resultWithGlowHourlyRange("48h", 48);
     const result: ForecastCalculationResult = {
       ...resultForTarget("general"),
@@ -3181,13 +3182,47 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain('data-general-section="GeneralHourlyWeatherSection"');
-    expect(html).toContain('data-professional-hourly-target="general"');
-    expect(html).toContain('data-professional-hourly-expanded="false"');
+    expect(html).toContain('data-general-professional-hourly-expanded="false"');
+    expect(html).toContain('data-general-hourly-toggle="true"');
     expect(html).toContain("未来小时天气");
-    expect(html).toContain("未来小时降水与重点窗口");
-    expect(html).toContain("降水 0.8 mm / 55%");
-    expect(html).toContain("朝霞最佳");
+    expect(html).toContain("降水与拍摄窗口");
+    expect(html).toContain("展开完整小时表");
+    expect(html).not.toContain('data-professional-hourly-target="general"');
     expect(html).not.toContain('data-professional-hourly-row="');
+  });
+
+  it("expands the general result hourly rainfall table with window annotations", () => {
+    const hourlyRange = resultWithGlowHourlyRange("48h", 48);
+    const result: ForecastCalculationResult = {
+      ...resultForTarget("general"),
+      horizon: "48h",
+      forecastEnd: hourlyRange.forecastEnd,
+      targetDates: hourlyRange.targetDates,
+      calendarBasis: hourlyRange.calendarBasis,
+      professionalHourlyData: hourlyRange.professionalHourlyData,
+      professionalHourlyDataTimeBasis: hourlyRange.professionalHourlyDataTimeBasis,
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const hourlyData = viewModel.professionalHourlyData;
+
+    expect(hourlyData).toBeDefined();
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaProfessionalHourlyDataPanel, {
+        target: "general",
+        data: hourlyData!,
+        config: generalProfessionalHourlySectionConfig,
+        variant: "embedded",
+      }),
+    );
+
+    expect(html).toContain('data-professional-hourly-target="general"');
+    expect(html).toContain('data-professional-hourly-expanded="true"');
+    expect(html).toContain("未来小时天气");
+    expect(html).toContain("0.8 mm / 55%");
+    expect(html).toContain("朝霞最佳");
+    expect(html).toContain("星空窗口");
+    expect(html).toContain("银河推荐");
+    expect(html).toContain('data-professional-hourly-row="2026-05-20T05:00:00+08:00"');
   });
 
   it("does not render unknown terrain elevation or local relief as zero", () => {
