@@ -6801,6 +6801,27 @@ function GeneralHourlyWeatherSection({ data }: { readonly data: ProfessionalHour
 
       {expanded ? (
         <div className="mt-4 grid min-w-0 max-w-full gap-3" data-general-hourly-body="true">
+          <dl className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-4">
+            <CompactDefinition
+              label="目标有效时间"
+              value={`${formatFullDateTimeForTimezone(
+                basis.anchorStartLocal ?? basis.startTime,
+                basis.timezone,
+              )} - ${formatFullDateTimeForTimezone(
+                basis.anchorEndLocal ?? basis.endTime,
+                basis.timezone,
+              )}`}
+            />
+            <CompactDefinition
+              label="覆盖小时"
+              value={`${rows.length} / ${basis.expectedRowCount ?? basis.requestedHours ?? rows.length} 小时`}
+            />
+            <CompactDefinition
+              label="时间步长"
+              value={basis.stepMinutes === 60 ? "逐小时" : `${basis.stepMinutes} 分钟`}
+            />
+            <CompactDefinition label="时区" value={basis.timezone} />
+          </dl>
           <GeneralRainHourlyTable
             data={data}
             filterMode={filterMode}

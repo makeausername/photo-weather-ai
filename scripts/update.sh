@@ -178,7 +178,7 @@ wait_for_postgres() {
         unhealthy|exited|dead)
           echo "PostgreSQL container status: ${container_status}"
           print_database_diagnostics
-          exit 1
+          return 1
           ;;
       esac
     fi
@@ -195,7 +195,7 @@ wait_for_postgres() {
 
   echo "PostgreSQL did not become ready in time."
   print_database_diagnostics
-  exit 1
+  return 1
 }
 
 run_postgres_select_one() {
@@ -207,12 +207,12 @@ run_postgres_select_one() {
 
   echo "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"
   print_database_diagnostics
-  exit 1
+  return 1
 }
 
 preflight_database_connection() {
-  wait_for_postgres
-  run_postgres_select_one
+  wait_for_postgres || return 1
+  run_postgres_select_one || return 1
 
   echo "Checking database connectivity from the API image..."
   if compose run --rm api node -e 'async function main() { let prisma; try { const { PrismaClient } = require("@prisma/client"); prisma = new PrismaClient(); await prisma.$queryRawUnsafe("SELECT 1"); } catch { console.error("数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"); process.exitCode = 1; } finally { if (prisma) { await prisma.$disconnect().catch(() => {}); } } } main();'; then
@@ -221,7 +221,7 @@ preflight_database_connection() {
 
   echo "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"
   print_database_diagnostics
-  exit 1
+  return 1
 }
 
 run_migrations() {
@@ -233,7 +233,7 @@ run_migrations() {
   echo "数据库迁移失败。"
   echo "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"
   print_database_diagnostics
-  exit 1
+  return 1
 }
 
 create_and_verify_admin() {
@@ -317,17 +317,34 @@ build_production_images
 echo "Starting database dependencies..."
 compose up -d postgres redis astro-service
 
-preflight_database_connection
-run_migrations
-
-echo "Running database seed..."
-compose run --rm api corepack pnpm db:seed
-
-create_and_verify_admin
-
 echo "Restarting services..."
 compose up -d --remove-orphans --force-recreate api web worker caddy
 verify_web_revision
+
+db_steps_failed=0
+if ! preflight_database_connection; then
+  db_steps_failed=1
+fi
+if ! run_migrations; then
+  db_steps_failed=1
+fi
+
+echo "Running database seed..."
+if ! compose run --rm api corepack pnpm db:seed; then
+  db_steps_failed=1
+fi
+
+if ! create_and_verify_admin; then
+  db_steps_failed=1
+fi
+
+if [[ "${db_steps_failed}" -ne 0 ]]; then
+  echo
+  echo "ERROR: 数据库相关步骤失败；服务已用新代码重启（web revision 已验证），"
+  echo "但依赖数据库的功能可能不可用。请检查下方诊断，修复后重新运行 bash scripts/update.sh。"
+  print_database_diagnostics
+  exit 1
+fi
 
 echo "Update complete."
 compose ps
