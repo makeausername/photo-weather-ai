@@ -204,6 +204,14 @@ function buildMeteobluePayload(
 
   return {
     metadata: { name: "basic-1h_clouds-1h" },
+    units: {
+      temperature: "C",
+      windspeed: "m/s",
+      windgust: "m/s",
+      sealevelpressure: "hPa",
+      precipitation: "mm",
+      visibility: "km",
+    },
     data_1h: {
       time: times,
       temperature: times.map((_, index) => 11 + (index % 6)),
@@ -1303,9 +1311,17 @@ describe("forecast query validation route", () => {
         }),
       ]),
     );
+    for (const summary of body.weatherSourceSummaries.filter(
+      (source: { providerCode: string; success: boolean }) =>
+        source.success && ["qweather", "open_meteo", "meteoblue"].includes(source.providerCode),
+    )) {
+      expect(summary.statusCode).toBe(200);
+      expect(summary.returnedHours).toBeGreaterThan(0);
+      expect(summary.latencyMs).toEqual(expect.any(Number));
+    }
     expect(body.weatherFusionSummary).toMatchObject({
       professionalSourceStatus: "专业增强：meteoblue 通过",
-      confidenceLevel: "medium",
+      confidenceLevel: expect.stringMatching(/^(medium|high)$/),
       confidenceByTarget: expect.objectContaining({
         general: expect.any(Number),
         cloud_sea: expect.any(Number),

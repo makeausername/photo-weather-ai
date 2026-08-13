@@ -61,7 +61,7 @@ describe("database seed data", () => {
           enabled: false,
           configJson: expect.objectContaining({
             realCallEnabled: false,
-            mode: "native",
+            mode: "auto",
             apiBaseUrl: "https://api.mch.weixin.qq.com",
           }),
           secretJson: {

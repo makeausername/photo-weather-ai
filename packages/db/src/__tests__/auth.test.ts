@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   createOrUpdateAdmin,
   createOrUpdateSuperAdmin,
@@ -22,7 +23,7 @@ import {
   verifySuperAdmin,
   verifyPassword,
 } from "../index.js";
-import type { DatabaseClient } from "../types.js";
+import type { AuthVerificationPurpose, DatabaseClient } from "../types.js";
 import { describe, expect, it } from "vitest";
 
 function createAdminScriptClient(): {
@@ -278,6 +279,15 @@ function seedPublicUserRole(state: ReturnType<typeof createAdminScriptClient>["s
 }
 
 describe("admin auth helpers", () => {
+  it("includes login as an auth verification purpose", () => {
+    const loginPurpose: AuthVerificationPurpose = "login";
+    const schema = readFileSync(new URL("../../prisma/schema.prisma", import.meta.url), "utf8");
+
+    expect(loginPurpose).toBe("login");
+    expect(schema).toContain("enum AuthVerificationPurpose");
+    expect(schema).toContain("  login");
+  });
+
   it("hashes and verifies passwords without storing plain text", async () => {
     const password = "CorrectHorseBattery99!";
     const passwordHash = await hashPassword(password);

@@ -11,7 +11,17 @@ describe("provider diagnostics CLI helpers", () => {
       "qweather",
       "amap",
     ]);
+    expect(parseProviderDiagnosticsArgs(["--", "--all"])).toEqual([
+      "meteoblue",
+      "open_meteo",
+      "qweather",
+      "amap",
+    ]);
+    expect(parseProviderDiagnosticsArgs(["--", "--provider", "qweather"])).toEqual([
+      "qweather",
+    ]);
     expect(() => parseProviderDiagnosticsArgs(["--provider=openai"])).toThrow();
+    expect(() => parseProviderDiagnosticsArgs(["--", "--unknown"])).toThrow();
   });
 
   it("runs without browser cookies and never prints provider secrets", async () => {

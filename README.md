@@ -31,6 +31,8 @@ The China wrapper defaults to Ubuntu/Debian Docker packages, Docker registry mir
 
 The installer creates `.env.production`, renders the Caddy config, installs Docker if needed, creates optional local light-pollution, sky-brightness, and terrain DEM raster directories, starts PostgreSQL/Redis/astro-service, downloads and verifies `/app/data/de421.bsp`, runs migrations and seed data, creates the first admin account, starts web/API/worker/Caddy, and enables automatic HTTPS through Caddy. See [docs/deployment.md](docs/deployment.md) for update, backup, status, local raster import, uninstall, and troubleshooting commands.
 
+Production updates regenerate the persistent `deploy/Caddyfile` from `deploy/Caddyfile.template`; `/billing/*` is routed to `api:4000` before the `web:3000` catch-all so mobile payment callbacks and page-pay URLs do not hit Next.js.
+
 Optional light-pollution data uses a local VIIRS-compatible nighttime-light GeoTIFF under `deploy/light-pollution/`; real raster files are ignored by Git. Import with:
 
 ```bash

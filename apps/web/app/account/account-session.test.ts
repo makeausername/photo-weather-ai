@@ -1,5 +1,6 @@
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   changeAccountPassword,
@@ -37,6 +38,8 @@ import { publicHeaderActionLabels, publicHeaderNavLabels } from "../../component
 import AccountPage, { metadata as accountMetadata } from "./page";
 import {
   accountCenterSectionLabels,
+  AccountCenterClient,
+  AccountPaymentReturnCard,
   AuthenticatedAccountCenter,
   buildForecastHistoryHref,
   formatAccountRoleLabels,
@@ -65,6 +68,20 @@ vi.mock("next/navigation", () => ({
 
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
+const accountCenterClientSource = readFileSync(
+  new URL("./account-center-client.tsx", import.meta.url),
+  "utf8",
+);
+const publicAuthSource = readFileSync(
+  new URL("../../components/public-auth.tsx", import.meta.url),
+  "utf8",
+);
+const loginFormSource = readFileSync(new URL("../login/login-form.tsx", import.meta.url), "utf8");
+const registerFormSource = readFileSync(
+  new URL("../register/register-form.tsx", import.meta.url),
+  "utf8",
+);
+const globalsCssSource = readFileSync(new URL("../globals.css", import.meta.url), "utf8");
 
 const baseAccountSession: PublicAccountSession = {
   user: {
@@ -371,7 +388,7 @@ describe("public account navigation", () => {
 
 describe("account center foundation", () => {
   it("keeps the account route importable with account center metadata", () => {
-    expect(AccountPage()).toBeTruthy();
+    expect(AccountPage({})).toBeTruthy();
     expect(accountMetadata.title).toBe("账户中心 - 逐光天气");
     expect(accountCenterSectionLabels).toEqual([
       "账户概览",
@@ -383,6 +400,21 @@ describe("account center foundation", () => {
       "注销账户",
     ]);
     expect(accountCenterSectionLabels).not.toContain("管理入口");
+  });
+
+  it("passes payment return params from the account route to the account center", () => {
+    const page = AccountPage({
+      searchParams: {
+        payment_return: "alipay",
+        orderNo: ["ML202606290001"],
+      },
+    });
+    const accountCenter = findElementByType(page, AccountCenterClient);
+
+    expect(accountCenter?.props).toMatchObject({
+      paymentReturn: "alipay",
+      paymentReturnOrderNo: "ML202606290001",
+    });
   });
 
   it("shows the unauthenticated account login prompt", () => {
@@ -467,6 +499,93 @@ describe("account center foundation", () => {
     ]) {
       expect(html).not.toContain(removedDashboardLabel);
     }
+  });
+
+  it("renders a payment return card before membership summary on account center", () => {
+    const html = renderAuthenticatedAccountCenter(
+      baseAccountSession,
+      [],
+      {
+        orders: [],
+        entitlements: [],
+        access: baseFreeAccess,
+      },
+      {
+        paymentReturn: "alipay",
+        paymentReturnOrderNo: "ML202606290001",
+      },
+    );
+
+    expect(html).toContain('data-account-payment-return="status-card"');
+    expect(html).toContain('data-payment-return-provider="alipay"');
+    expect(html).toContain('data-payment-return-status="pending"');
+    expect(html).toContain("支付结果同步中");
+    expect(html).toContain("ML202606290001");
+    expect(html.indexOf('data-account-payment-return="status-card"')).toBeLessThan(
+      html.indexOf('data-account-membership-panel="compact"'),
+    );
+    expect(html).not.toContain("打开支付宝支付");
+    expect(html).not.toContain("选择支付方式");
+  });
+
+  it("maps account payment return order states to professional return messages", () => {
+    const paidHtml = renderToStaticMarkup(
+      React.createElement(AccountPaymentReturnCard, {
+        paymentReturn: "alipay",
+        orderNo: "ML202606290002",
+        initialOrder: createBillingOrderRecord({
+          orderNo: "ML202606290002",
+          provider: "alipay",
+          status: "paid",
+        }),
+      }),
+    );
+    const pendingHtml = renderToStaticMarkup(
+      React.createElement(AccountPaymentReturnCard, {
+        paymentReturn: "alipay",
+        orderNo: "ML202606290003",
+        initialOrder: createBillingOrderRecord({
+          orderNo: "ML202606290003",
+          provider: "alipay",
+          status: "pending",
+          paidAt: null,
+          entitlementGrantedAt: null,
+        }),
+      }),
+    );
+    const noOrderHtml = renderToStaticMarkup(
+      React.createElement(AccountPaymentReturnCard, {
+        paymentReturn: "alipay",
+      }),
+    );
+
+    expect(paidHtml).toContain('data-payment-return-status="paid"');
+    expect(paidHtml).toContain("支付成功");
+    expect(paidHtml).toContain("会员权益已生效");
+    expect(paidHtml).toContain("开始使用");
+    expect(paidHtml).toContain("查看账户权益");
+    expect(paidHtml).not.toContain("打开支付宝支付");
+    expect(paidHtml).not.toContain("选择支付方式");
+
+    expect(pendingHtml).toContain('data-payment-return-status="pending"');
+    expect(pendingHtml).toContain("支付结果同步中");
+    expect(pendingHtml).toContain("正在等待支付通知确认");
+    expect(pendingHtml).toContain("刷新状态");
+    expect(pendingHtml).toContain("返回定价");
+    expect(pendingHtml).not.toContain("打开支付宝支付");
+
+    expect(noOrderHtml).toContain('data-payment-return-status="no_order"');
+    expect(noOrderHtml).toContain("已从支付页面返回");
+    expect(noOrderHtml).toContain("查看当前会员状态");
+  });
+
+  it("keeps account payment return polling read-only and membership refresh driven", () => {
+    expect(accountCenterClientSource).toContain("getBillingOrder(orderNoForLookup)");
+    expect(accountCenterClientSource).toContain("paymentReturnPollIntervalMs = 4000");
+    expect(accountCenterClientSource).toContain("paymentReturnPollMaxMs = 30000");
+    expect(accountCenterClientSource).toContain("onRefreshAccountAccess?.()");
+    expect(accountCenterClientSource).not.toContain("grantPaymentEntitlement");
+    expect(accountCenterClientSource).not.toContain("markPaymentOrderPaid");
   });
 
   it("keeps forecast history collapsed by default while preserving target jump links", () => {
@@ -955,7 +1074,20 @@ describe("account center foundation", () => {
 
     expect(html).toContain('data-auth-layout="centered-public-auth"');
     expect(html).toContain('data-auth-card="centered-form-card"');
-    expect(html).toContain("max-w-[500px]");
+    const layoutClass = getAuthLayoutClass(html);
+    expect(layoutClass).toContain("max-w-lg");
+    expect(layoutClass).toContain("w-full");
+    expect(layoutClass).toContain("mx-auto");
+    expect(layoutClass).not.toContain("max-w-full");
+    expect(html).not.toContain("max-w-[500px]");
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain('id="login-password-tab"');
+    expect(html).toContain('aria-controls="login-password-panel"');
+    expect(html).toContain('role="tabpanel"');
+    expect(html).toContain('id="login-identifier"');
+    expect(html).toContain('name="identifier"');
+    expect(html).toContain('id="login-password"');
+    expect(html).toContain('name="password"');
     expect(html).not.toContain('data-auth-product-panel="practical-account-intro"');
     expect(html).not.toContain("lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)]");
     expect(html).not.toContain("登录账户，继续查看你的拍摄记录");
@@ -975,6 +1107,15 @@ describe("account center foundation", () => {
     expect(html).toContain('href="/register"');
     expect(html).toContain('href="/"');
     expect(html).toContain("sm:grid-cols-2");
+    expect(loginFormSource).toContain('autoComplete="username"');
+    expect(loginFormSource).toContain('autoComplete="current-password"');
+    expect(loginFormSource).toContain('autoComplete="tel"');
+    expect(loginFormSource).toContain('autoComplete="one-time-code"');
+    expect(loginFormSource).toContain('aria-controls="login-sms-panel"');
+    expect(loginFormSource).toContain('id="login-sms-phone"');
+    expect(loginFormSource).toContain('name="code"');
+    expect(loginFormSource).toContain('loginMode === "sms"');
+    expect(loginFormSource).toContain("loginPublicAccountBySms");
     for (const phrase of [
       "账户系统",
       "账户工作流",
@@ -1013,7 +1154,20 @@ describe("account center foundation", () => {
 
     expect(html).toContain('data-auth-layout="centered-public-auth"');
     expect(html).toContain('data-auth-card="centered-form-card"');
-    expect(html).toContain("max-w-[580px]");
+    const layoutClass = getAuthLayoutClass(html);
+    expect(layoutClass).toContain("max-w-xl");
+    expect(layoutClass).toContain("w-full");
+    expect(layoutClass).toContain("mx-auto");
+    expect(layoutClass).not.toContain("max-w-full");
+    expect(html).not.toContain("max-w-[580px]");
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain('id="register-email-tab"');
+    expect(html).toContain('aria-controls="register-email-panel"');
+    expect(html).toContain('role="tabpanel"');
+    expect(html).toContain('id="register-display-name"');
+    expect(html).toContain('name="displayName"');
+    expect(html).toContain('id="register-email"');
+    expect(html).toContain('name="email"');
     expect(html).not.toContain('data-auth-product-panel="practical-account-intro"');
     expect(html).not.toContain("lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)]");
     expect(html).not.toContain("创建账户，保存你的拍摄判断");
@@ -1037,6 +1191,15 @@ describe("account center foundation", () => {
     expect(html).not.toContain("两次输入一致");
     expect(html).toContain("已有账户，去登录");
     expect(html).toContain("sm:grid-cols-[minmax(0,1fr)_136px]");
+    expect(registerFormSource).toContain('autoComplete="email"');
+    expect(registerFormSource).toContain('autoComplete="tel"');
+    expect(registerFormSource).toContain('autoComplete="one-time-code"');
+    expect(registerFormSource).toContain('autoComplete="new-password"');
+    expect(registerFormSource).toContain("aria-controls={`register-${item.value}-panel`}");
+    expect(registerFormSource).toContain('id="register-phone"');
+    expect(registerFormSource).toContain('name="confirmPassword"');
+    expect(registerFormSource).toContain('{ value: "sms"');
+    expect(registerFormSource).toContain('id="register-sms-panel"');
     for (const phrase of [
       "账户体系",
       "工作流",
@@ -1072,6 +1235,22 @@ describe("account center foundation", () => {
     expect(buildRegisteredLoginHref("13800138000")).toBe(
       "/login?registered=1&identifier=13800138000",
     );
+  });
+
+  it("keeps the shared public auth layout capped without disabling autofill", () => {
+    expect(publicAuthSource).toContain('size === "wide" ? "max-w-xl" : "max-w-lg"');
+    expect(publicAuthSource).toContain("mx-auto grid w-full min-w-0 justify-items-center");
+    expect(publicAuthSource).not.toContain("max-w-[500px]");
+    expect(publicAuthSource).not.toContain("max-w-[580px]");
+    expect(publicAuthSource).not.toContain("grid w-full max-w-full min-w-0 justify-items-center");
+    expect(publicAuthSource).toContain("w-full max-w-full min-w-0 p-5 shadow-sm sm:p-6");
+
+    expect(globalsCssSource).toContain("input:-webkit-autofill");
+    expect(globalsCssSource).toContain("input:-webkit-autofill:hover");
+    expect(globalsCssSource).toContain("input:-webkit-autofill:focus");
+    expect(globalsCssSource).toContain("-webkit-text-fill-color: var(--foreground)");
+    expect(globalsCssSource).toContain("caret-color: var(--foreground)");
+    expect(globalsCssSource).toContain("0 0 0 1000px var(--card) inset");
   });
 
   it("keeps register password validation blocking short or mismatched passwords", () => {
@@ -1133,14 +1312,49 @@ function renderAuthenticatedAccountCenter(
     readonly entitlements: readonly AccountEntitlementRecord[];
     readonly access?: AccountAccessStatus;
   },
+  extraProps: Partial<React.ComponentProps<typeof AuthenticatedAccountCenter>> = {},
 ): string {
   return renderToStaticMarkup(
     React.createElement(AuthenticatedAccountCenter, {
       session,
       initialHistory,
       initialBillingSummary,
+      ...extraProps,
     }),
   );
+}
+
+function getAuthLayoutClass(html: string): string {
+  return (
+    html.match(/<section[^>]*data-auth-layout="centered-public-auth"[^>]*class="([^"]+)"/)?.[1] ??
+    html.match(/<section[^>]*class="([^"]+)"[^>]*data-auth-layout="centered-public-auth"/)?.[1] ??
+    ""
+  );
+}
+
+function findElementByType(
+  value: React.ReactNode,
+  type: React.ElementType,
+): React.ReactElement<Record<string, unknown>> | null {
+  if (Array.isArray(value)) {
+    for (const child of value) {
+      const match = findElementByType(child, type);
+      if (match) {
+        return match;
+      }
+    }
+    return null;
+  }
+
+  if (!React.isValidElement(value)) {
+    return null;
+  }
+
+  if (value.type === type) {
+    return value as React.ReactElement<Record<string, unknown>>;
+  }
+
+  return findElementByType((value.props as { readonly children?: React.ReactNode }).children, type);
 }
 
 function renderPublicAccountMenu(extraProps: Record<string, unknown> = {}): string {
@@ -1441,7 +1655,7 @@ describe("public registration session API", () => {
         productCode: "monthly_full",
         provider: "wechat_pay",
         clientMode: "mobile_browser",
-        returnUrl: "/checkout?product=monthly_full&payment_return=wechat_pay",
+        returnUrl: "/account?payment_return=wechat_pay",
       }),
     ).resolves.toMatchObject({
       order: {
@@ -1461,7 +1675,7 @@ describe("public registration session API", () => {
       productCode: "monthly_full",
       provider: "wechat_pay",
       clientMode: "mobile_browser",
-      returnUrl: "/checkout?product=monthly_full&payment_return=wechat_pay",
+      returnUrl: "/account?payment_return=wechat_pay",
     });
     expect(String((init as RequestInit).body)).not.toContain("amountCents");
     expect(String((init as RequestInit).body)).not.toContain("durationDays");

@@ -416,6 +416,19 @@ function buildReplayResultInputs(options: {
       confidenceLabel: confidenceLabelForResult(options.forecastResult),
       predictedJson: toJsonValue({
         ruleVersion: options.ruleVersion,
+        target: options.run.target,
+        horizon: options.forecastResult.horizon,
+        forecastDate: dailySummary.date,
+        providerFamilyPredictions:
+          options.forecastResult.weatherFusionSummary?.sourceSummaries?.map((source) => ({
+            providerCode: source.providerCode,
+            providerId: source.providerId ?? null,
+            modelName: source.modelName ?? null,
+            success: source.success,
+            status: source.status,
+            returnedHours: source.returnedHours ?? 0,
+          })) ?? [],
+        finalFusedPrediction: dailySummary.weather ?? null,
         recommendationLevel: options.forecastResult.recommendationLevel,
         dailySummary,
         bestWindow,

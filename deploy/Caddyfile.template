@@ -1,11 +1,15 @@
 DOMAIN_PLACEHOLDER {
   encode zstd gzip
 
-  handle_path /api/* {
-    reverse_proxy api:4000
-  }
+  @billing_api path /billing/*
 
-  handle {
+  route {
+    reverse_proxy @billing_api api:4000
+
+    handle_path /api/* {
+      reverse_proxy api:4000
+    }
+
     reverse_proxy web:3000
   }
 }

@@ -56,12 +56,17 @@ export function requiredRounded(value: unknown, fieldName: string, digits = 1): 
 }
 
 export function percent(value: unknown, fieldName: string): number {
-  return clampPercent(requiredNumber(value, fieldName));
+  const parsed = requiredNumber(value, fieldName);
+  const normalized = normalizePercentBoundary(parsed);
+  if (normalized === null) {
+    throw new Error(`Weather percent field out of range: ${fieldName}`);
+  }
+  return normalized;
 }
 
 export function nullablePercent(value: unknown): number | null {
   const parsed = toNumber(value);
-  return parsed === null ? null : clampPercent(parsed);
+  return parsed === null ? null : normalizePercentBoundary(parsed);
 }
 
 export function kmhToMetersPerSecond(value: unknown): number | null {
@@ -167,7 +172,10 @@ export function averageNullable(values: readonly (number | null)[]): number | nu
   );
 }
 
-function clampPercent(value: number): number {
+function normalizePercentBoundary(value: number): number | null {
+  if (value < -0.05 || value > 100.05) {
+    return null;
+  }
   return Math.min(100, Math.max(0, roundTo(value, 1)));
 }
 

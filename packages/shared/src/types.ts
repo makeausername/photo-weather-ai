@@ -147,6 +147,9 @@ export type NormalizedWeatherFieldMetadata = {
   readonly medianValue?: number;
   readonly spread?: number;
   readonly consensusStrategy?: string;
+  readonly rawValue?: number | string | null;
+  readonly sourceUnit?: string;
+  readonly validationStatus?: "valid" | "clamped_boundary" | "rejected_outlier" | "unit_uncertain";
 };
 
 export type NormalizedWeatherFieldMetadataMap = Partial<
@@ -2328,6 +2331,8 @@ export type WeatherFusionSummary = {
   readonly cloudLayerCoverage?: CloudLayerCoverageSummary;
   readonly aerosolDiagnostics?: WeatherAerosolDiagnostics;
   readonly multiModelConsensusDiagnostics?: WeatherMultiModelConsensusDiagnostics;
+  readonly providerFamilyCount?: number;
+  readonly modelCount?: number;
 };
 
 export type WeatherMultiModelConsensusDiagnostics = {

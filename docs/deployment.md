@@ -426,7 +426,7 @@ It uses `.env.production`, rebuilds images, starts dependencies, reruns database
 bash scripts/update.sh
 ```
 
-The update script pulls latest Git code when an upstream is configured, rebuilds images sequentially, reruns database preflight, runs migrations and seed data, bootstraps/verifies the admin account from `.env.production`, restarts services, and prints Compose status.
+The update script pulls latest Git code when an upstream is configured, regenerates the persistent `deploy/Caddyfile` from `deploy/Caddyfile.template`, rebuilds images sequentially, reruns database preflight, runs migrations and seed data, bootstraps/verifies the admin account from `.env.production`, restarts services, and prints Compose status. The Caddy template routes `/billing/*` directly to `api:4000` before the `web:3000` catch-all, without stripping the billing path; `/admin/*` remains owned by the web/admin frontend unless a narrower API route handles it.
 
 After provider configuration changes or forecast pipeline updates, run the public forecast smoke test:
 
@@ -538,6 +538,7 @@ bash scripts/test-real-weather.sh
 - Docker installation waits on apt/dpkg: the installer waits up to `APT_LOCK_TIMEOUT_SECONDS` seconds, prints the real blocking apt/dpkg process list, ignores `unattended-upgrade-shutdown --wait-for-signal`, and never deletes apt lock files.
 - Docker build fails on a small server: enable the offered 4 GB swap file or move the build to a larger machine.
 - Caddy certificate failure: confirm DNS and ports `80`/`443`, then run `bash scripts/status.sh`.
+- Billing or mobile Alipay URLs return a Next.js 404: run `bash scripts/update.sh` to regenerate `deploy/Caddyfile`, restart Caddy, and confirm `https://your-domain/billing/products` returns JSON instead of the web catch-all.
 - Web cannot call API: confirm `.env.production` has `NEXT_PUBLIC_API_BASE_URL=https://your-domain/api`, rebuild with `bash scripts/update.sh`, and check `https://your-domain/api/health`.
 
 ## Security
