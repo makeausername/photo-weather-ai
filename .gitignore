@@ -9,10 +9,12 @@ __pycache__/
 .env
 .env.local
 .env.production
+.env.production.bak.*
 deploy/Caddyfile
+deploy/Caddyfile.bak.*
 deploy/generated/
 deploy/assets/*.bsp
-deploy/ephemeris/*.bsp
+deploy/ephemeris/
 deploy/light-pollution/incoming/*
 deploy/light-pollution/current/*
 deploy/light-pollution/backups/*
@@ -43,6 +45,7 @@ deploy/terrain-dem/**/*.ovr
 deploy/terrain-dem/**/*.aux.xml
 deploy/terrain-dem/**/metadata.json
 deploy/terrain-dem/**/checksum.sha256
+deploy/terrain-dem/*.txt
 deploy/calibration/runtime/*
 !deploy/light-pollution/
 !deploy/light-pollution/incoming/
@@ -74,4 +77,5 @@ apps/astro-service/data/*.bsp
 *.tsbuildinfo
 packages/db/.env
 apps/astro-service/.venv/
+apps/astro-service/Dockerfile.bak
 astro-result.json

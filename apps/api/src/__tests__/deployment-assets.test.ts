@@ -216,10 +216,12 @@ describe("production deployment assets", () => {
     const gitignore = readRepoFile(".gitignore");
     for (const entry of [
       ".env.production",
+      ".env.production.bak.*",
       "deploy/Caddyfile",
+      "deploy/Caddyfile.bak.*",
       "deploy/generated/",
       "deploy/assets/*.bsp",
-      "deploy/ephemeris/*.bsp",
+      "deploy/ephemeris/",
       "deploy/light-pollution/incoming/*",
       "deploy/light-pollution/current/*",
       "deploy/light-pollution/backups/*",
@@ -241,12 +243,14 @@ describe("production deployment assets", () => {
       "deploy/terrain-dem/**/*.tiff",
       "deploy/terrain-dem/**/metadata.json",
       "deploy/terrain-dem/**/checksum.sha256",
+      "deploy/terrain-dem/*.txt",
       "!deploy/terrain-dem/**/.gitkeep",
       "deploy/calibration/runtime/*",
       "!deploy/calibration/runtime/.gitkeep",
       ".runtime/",
       "backups/",
       "apps/astro-service/.venv/",
+      "apps/astro-service/Dockerfile.bak",
       "*.backup",
       "*.log",
     ]) {
