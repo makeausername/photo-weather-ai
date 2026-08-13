@@ -8,7 +8,7 @@ import {
   type MoonCalendarDay,
   type MoonCalendarMonthKey,
 } from "@photo-weather/astro";
-import { Badge, Button, Card, cn } from "./ui";
+import { Badge, Button, cn } from "./ui";
 
 const defaultTimezone = "Asia/Shanghai";
 const weekLabels = ["一", "二", "三", "四", "五", "六", "日"] as const;
@@ -32,6 +32,7 @@ type MoonPhaseCalendarProps = {
   readonly initialYear?: number;
   readonly initialMonth?: number;
   readonly today?: string | Date | number;
+  readonly embedded?: boolean;
 };
 
 export function MoonPhaseCalendar({
@@ -42,6 +43,7 @@ export function MoonPhaseCalendar({
   initialYear,
   initialMonth,
   today,
+  embedded = false,
 }: MoonPhaseCalendarProps) {
   const currentMonth = useMemo(
     () => getCurrentMoonCalendarMonthKey(timezone, today ?? new Date()),
@@ -71,7 +73,13 @@ export function MoonPhaseCalendar({
   }
 
   return (
-    <Card className={cn("max-w-full min-w-0 overflow-hidden p-3 shadow-sm sm:p-5", className)}>
+    <section
+      className={cn(
+        "max-w-full min-w-0",
+        embedded ? "" : "overflow-hidden rounded-lg border border-border bg-card p-3 shadow-sm sm:p-5",
+        className,
+      )}
+    >
       <div className="flex flex-col gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -130,7 +138,7 @@ export function MoonPhaseCalendar({
           ))}
         </div>
       </div>
-    </Card>
+    </section>
   );
 }
 

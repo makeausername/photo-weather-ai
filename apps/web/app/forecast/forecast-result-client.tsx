@@ -2146,6 +2146,10 @@ function CloudSeaDecisionSupportSection({
   );
 }
 
+const cloudSeaEmbeddedProfessionalHourlyConfig: ProfessionalHourlySectionConfig = {
+  showEmbeddedLeadDescription: false,
+};
+
 function CloudSeaProfessionalDataSection({
   viewModel,
 }: {
@@ -2156,16 +2160,17 @@ function CloudSeaProfessionalDataSection({
   return (
     <Card
       className={cloudSeaPanelClassName(
-        "CloudSeaProfessionalData cloud-sea-professional-data p-3 sm:p-4",
+        "CloudSeaProfessionalData cloud-sea-professional-data p-4",
       )}
       data-cloud-sea-section="CloudSeaProfessionalData"
       data-cloud-sea-professional-data-expanded={expanded ? "true" : "false"}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="text-base font-bold text-card-foreground">专业数据</h2>
+          <h2 className="text-lg font-bold text-card-foreground">专业数据</h2>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-            查看逐小时云层、湿度、露点、降水、能见度和风的专业小时表。
+            {viewModel.terrainContext?.vocabulary.professionalDescription ??
+              "查看逐小时云层、湿度、露点、降水、能见度和风的专业小时表。"}
           </p>
         </div>
         <Button
@@ -2179,6 +2184,7 @@ function CloudSeaProfessionalDataSection({
           data-cloud-sea-professional-data-toggle="true"
         >
           {expanded ? "收起专业数据" : "展开专业数据"}
+          <ExpandChevron expanded={expanded} />
         </Button>
       </div>
 
@@ -2192,10 +2198,40 @@ function CloudSeaProfessionalDataSection({
             data={viewModel.displayData.professionalHourlyData}
             terrainContext={viewModel.terrainContext}
             variant="embedded"
+            config={cloudSeaEmbeddedProfessionalHourlyConfig}
           />
         </div>
+      ) : viewModel.displayData.professionalHourlyData.rows.length > 0 ? (
+        <CloudSeaHourlyFocusPreview
+          target="cloud_sea"
+          rows={viewModel.displayData.professionalHourlyData.rows.slice(0, 4)}
+          timezone={
+            viewModel.displayData.professionalHourlyData.timeBasis?.timezone ?? "Asia/Shanghai"
+          }
+          rowAnnotations={new Map(
+            (viewModel.displayData.professionalHourlyData.rowAnnotations ?? []).map((item) => [
+              item.rowTime,
+              item,
+            ]),
+          )}
+        />
       ) : null}
     </Card>
+  );
+}
+
+function ExpandChevron({ expanded }: { readonly expanded: boolean }) {
+  return (
+    <svg
+      className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-180")}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      aria-hidden="true"
+    >
+      <path d="M3 6l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -2642,7 +2678,7 @@ const astroProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
 };
 
 const astroProfessionalDataGroupsGridClassName =
-  "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))]";
+  "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr))]";
 
 const astroProfessionalFullWidthGroupKeys = new Set(["terrain-horizon-evidence"]);
 
@@ -2679,7 +2715,7 @@ function AstroProfessionalDataSection({
         <div className="min-w-0">
           <h2 className="text-lg font-bold text-card-foreground">专业数据</h2>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-            查看逐小时云量、月球位置、天文黑夜、银河高度、能见度、湿度、降水和风等判断依据
+            查看逐小时云量、月球位置、天文黑夜、银河高度、能见度、湿度、降水和风等判断依据。
           </p>
         </div>
         <Button
@@ -2693,6 +2729,7 @@ function AstroProfessionalDataSection({
           data-astro-professional-data-toggle="true"
         >
           {expanded ? "收起专业数据" : "展开专业数据"}
+          <ExpandChevron expanded={expanded} />
         </Button>
       </div>
 
@@ -2718,12 +2755,23 @@ function AstroProfessionalDataSection({
             variant="embedded"
           />
 
-          <details className="rounded-md border border-border bg-muted p-3">
-            <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
+          <details className="group rounded-md border border-border bg-muted p-3">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold text-card-foreground [&::-webkit-details-marker]:hidden">
               查看整月月相
+              <svg
+                className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                aria-hidden="true"
+              >
+                <path d="M3 6l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </summary>
-            <div className="mt-4">
+            <div className="mt-3">
               <MoonPhaseCalendar
+                embedded
                 latitudeWgs84={query.latitudeWgs84}
                 longitudeWgs84={query.longitudeWgs84}
                 timezone={result.calendarBasis.timezone}
@@ -2751,7 +2799,7 @@ function AstroHourlySummaryGrid({
         <h3 className="text-sm font-bold text-card-foreground">逐小时摘要</h3>
         <Badge variant="muted">关键小时摘要</Badge>
       </div>
-      <dl className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))]">
+      <dl className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))]">
         {items.map((item) => (
           <div key={item.key} className="rounded-md border border-border bg-card px-3 py-2">
             <dt className="text-[11px] leading-4 text-muted-foreground">{item.label}</dt>
@@ -3369,7 +3417,7 @@ function GlowProfessionalDataSection({ viewModel }: { readonly viewModel: GlowFo
         <div className="min-w-0">
           <h2 className="text-lg font-bold text-card-foreground">专业数据</h2>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-            查看逐小时云量、能见度、湿度、降水和风等判断依据
+            查看逐小时云量、能见度、湿度、降水和风等判断依据。
           </p>
         </div>
         <Button
@@ -3383,19 +3431,20 @@ function GlowProfessionalDataSection({ viewModel }: { readonly viewModel: GlowFo
           data-glow-professional-data-toggle="true"
         >
           {expanded ? "收起专业数据" : "展开专业数据"}
+          <ExpandChevron expanded={expanded} />
         </Button>
       </div>
 
       {expanded ? (
         <div className="mt-4 grid gap-4" data-glow-professional-data-body="true">
           <div
-            className="flex flex-wrap gap-3"
+            className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))]"
             data-glow-professional-evidence-layout="balanced-flex"
           >
             {items.map((item) => (
               <article
                 key={item.key}
-                className="min-w-[min(100%,190px)] flex-1 rounded-lg border border-border bg-muted p-3"
+                className="rounded-lg border border-border bg-muted p-3"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="font-semibold text-card-foreground">{item.label}</h3>
@@ -3408,11 +3457,20 @@ function GlowProfessionalDataSection({ viewModel }: { readonly viewModel: GlowFo
             ))}
           </div>
           {missingDataNotes.length > 0 ? (
-            <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
-              {missingDataNotes[0]}
-            </p>
+            <div className="grid gap-2">
+              {missingDataNotes.map((note) => (
+                <p
+                  key={note}
+                  className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5 text-warning-strong"
+                >
+                  {note}
+                </p>
+              ))}
+            </div>
           ) : null}
-          <p className="text-xs leading-5 text-muted-foreground">{dataNotice}</p>
+          {dataNotice ? (
+            <p className="text-xs leading-5 text-muted-foreground">{dataNotice}</p>
+          ) : null}
           <CloudSeaProfessionalHourlyDataPanel
             target="glow"
             data={viewModel.professionalHourlyData}
@@ -4455,6 +4513,7 @@ const glowProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
   defaultFilterMode: "all",
   ordinarySignalLabel: "普通时段",
   initiallyExpanded: true,
+  previewTitle: "霞光窗口附近关键小时",
 };
 
 function professionalHourlyFiltersForContext(
@@ -4644,6 +4703,24 @@ function ProfessionalHourlyCloudSection({
   const showCoverageNote = target !== "astro" && (config?.showCoverageNote ?? true);
   const showCollapsedPreview = target !== "astro" && (config?.showCollapsedPreview ?? true);
   const previewRowLimit = Math.max(1, config?.previewRowLimit ?? 4);
+  const hourlyTableHeaders = [
+    "日期",
+    "时间",
+    "天气",
+    signalColumnLabel,
+    "总云量 %",
+    "高云量 %",
+    "中云量 %",
+    "低云量 %",
+    ...temperatureColumnLabels,
+    "露点 °C",
+    "露点差 °C",
+    "湿度 %",
+    "降水 mm / 降水概率 %",
+    "能见度 km",
+    "风速 m/s",
+    "风向",
+  ];
 
   const content = (
     <>
@@ -4673,6 +4750,7 @@ function ProfessionalHourlyCloudSection({
             {expanded
               ? config?.collapseButtonLabel ?? "收起小时表"
               : config?.expandButtonLabel ?? "展开小时表"}
+            <ExpandChevron expanded={expanded} />
           </Button>
         </div>
       ) : config?.showEmbeddedLeadDescription === false ? null : (
@@ -4776,31 +4854,14 @@ function ProfessionalHourlyCloudSection({
             {rows.length} / {expectedRowCount} 小时。{professionalUsageText}
           </p>
 
-          <ResponsiveDataScroller data-cloud-sea-professional-table-scroll="true">
+          <ResponsiveDataScroller bare data-cloud-sea-professional-table-scroll="true">
             <table
               className="w-full min-w-[1280px] border-separate border-spacing-0 text-left text-[12px] leading-5"
               data-professional-hourly-table-layout="mobile-scroll-safe"
             >
               <thead className="bg-muted text-xs text-muted-foreground">
                 <tr>
-                  {[
-                    "日期",
-                    "时间",
-                    "天气",
-                    signalColumnLabel,
-                    "总云量 %",
-                    "高云量 %",
-                    "中云量 %",
-                    "低云量 %",
-                    ...temperatureColumnLabels,
-                    "露点 °C",
-                    "露点差 °C",
-                    "湿度 %",
-                    "降水 mm / 降水概率 %",
-                    "能见度 km",
-                    "风速 m/s",
-                    "风向",
-                  ].map((label, index) => (
+                  {hourlyTableHeaders.map((label, index) => (
                     <th
                       key={label}
                       scope="col"
@@ -4833,7 +4894,7 @@ function ProfessionalHourlyCloudSection({
                 ) : (
                   <tr>
                     <td
-                      colSpan={15 + temperatureColumnLabels.length}
+                      colSpan={hourlyTableHeaders.length}
                       className="border-t border-border px-3 py-4 text-center text-sm text-muted-foreground"
                     >
                       当前筛选下暂无小时数据，请切换上方筛选复核完整预报。
@@ -6689,6 +6750,7 @@ const generalRainfallSectionCopy = {
   tableAriaLabel: "小时降雨筛选",
   rainAmountColumnLabel: "降水 mm",
   rainProbabilityColumnLabel: "概率 %",
+  previewTitle: "近期降雨时段预览",
   emptyMessage: "当前筛选下暂无降水小时，请切换筛选复核完整预报。",
 };
 
@@ -6733,6 +6795,7 @@ function GeneralHourlyWeatherSection({ data }: { readonly data: ProfessionalHour
           {expanded
             ? generalRainfallSectionCopy.collapseButtonLabel
             : generalRainfallSectionCopy.expandButtonLabel}
+          <ExpandChevron expanded={expanded} />
         </Button>
       </div>
 
@@ -6744,7 +6807,17 @@ function GeneralHourlyWeatherSection({ data }: { readonly data: ProfessionalHour
             onFilterModeChange={setFilterMode}
           />
         </div>
-      ) : null}
+      ) : (
+        <CloudSeaHourlyFocusPreview
+          target="general"
+          rows={rows.slice(0, 4)}
+          timezone={basis?.timezone ?? "Asia/Shanghai"}
+          title={generalRainfallSectionCopy.previewTitle}
+          rowAnnotations={new Map(
+            (data.rowAnnotations ?? []).map((item) => [item.rowTime, item]),
+          )}
+        />
+      )}
     </Card>
   );
 }
@@ -6803,7 +6876,7 @@ export function GeneralRainHourlyTable({
         </p>
       </div>
 
-      <ResponsiveDataScroller data-general-rain-scroll="true">
+      <ResponsiveDataScroller bare data-general-rain-scroll="true">
         <table
           className="w-full min-w-[560px] border-separate border-spacing-0 text-left text-[12px] leading-5"
           data-general-rain-table-layout="rain-focused"

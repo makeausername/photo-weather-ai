@@ -156,17 +156,20 @@ export function Badge({ children, variant = "default", className }: BadgeProps) 
 
 type ResponsiveDataScrollerProps = HTMLAttributes<HTMLDivElement> & {
   readonly children: ReactNode;
+  readonly bare?: boolean;
 };
 
 export function ResponsiveDataScroller({
   children,
   className,
+  bare = false,
   ...props
 }: ResponsiveDataScrollerProps) {
   return (
     <div
       className={cn(
-        "w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain rounded-lg border border-border bg-card [-webkit-overflow-scrolling:touch]",
+        "w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]",
+        bare ? "rounded-none border-0 bg-transparent" : "rounded-lg border border-border bg-card",
         className,
       )}
       data-responsive-data-scroller="true"
