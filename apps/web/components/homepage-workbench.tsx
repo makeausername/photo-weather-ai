@@ -18,6 +18,7 @@ import {
   normalizeForecastClientErrorMessage,
   requestForecastCalculation,
 } from "../app/forecast/forecast-request-client";
+import { HomepageHourlyWeather } from "./homepage-hourly-weather";
 import { Badge, Card, cn } from "./ui";
 
 type LayerStatus = "idle" | "loading" | "ready" | "partial" | "fallback" | "error";
@@ -200,21 +201,24 @@ export function HomepageGuidancePanel({
         </p>
       </Card>
 
-      <div
-        className={cn(
-          "grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3",
-          hasResult && "min-[900px]:h-full min-[900px]:auto-rows-fr",
-        )}
-        data-homepage-card-grid="true"
-      >
-        {cards.map((card, index) => (
-          <HomepageInsightCardView
-            key={card.title}
-            card={card}
-            index={index}
-            fillHeight={hasResult}
-          />
-        ))}
+      <div className="grid min-w-0 gap-4">
+        <div
+          className={cn(
+            "grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3",
+            hasResult && "min-[900px]:h-full min-[900px]:auto-rows-fr",
+          )}
+          data-homepage-card-grid="true"
+        >
+          {cards.map((card, index) => (
+            <HomepageInsightCardView
+              key={card.title}
+              card={card}
+              index={index}
+              fillHeight={hasResult}
+            />
+          ))}
+        </div>
+        {result ? <HomepageHourlyWeather result={result} /> : null}
       </div>
     </section>
   );
