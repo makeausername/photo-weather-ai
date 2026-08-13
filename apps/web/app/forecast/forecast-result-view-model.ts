@@ -94,6 +94,7 @@ import {
   type CloudSeaProfessionalHourlyWindow,
   type ProfessionalHourlyDisplayData,
   type ProfessionalHourlyRowAnnotation,
+  type ProfessionalHourlyRowBadge,
 } from "./cloud-sea-display-data";
 import {
   buildTerrainDisplayModel,
@@ -232,6 +233,7 @@ export type ForecastResultViewModel = {
   readonly adviceSections: readonly ForecastResultSection[];
   readonly hiddenModuleKeys: readonly ForecastResultModuleKey[];
   readonly dataNotice: string;
+  readonly professionalHourlyData?: ProfessionalHourlyDisplayData;
   readonly cloudSea?: CloudSeaForecastViewModel;
   readonly glow?: GlowForecastViewModel;
   readonly astro?: AstroForecastViewModel;
@@ -1006,6 +1008,7 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
   const bestWindow = resultWindows.find(isExecutableResultWindow);
   const decisionLabel = finalRecommendationLabel(result);
   const decisionSummary = finalDecisionSummary(result, "general");
+  const professionalHourlyData = buildGeneralProfessionalHourlyData(result);
   const calibrationCard = result.calibrationHint
     ? textCard(
         "historical-calibration",
@@ -1121,7 +1124,155 @@ function buildGeneralViewModel(result: ForecastCalculationResult): ForecastResul
     ],
     hiddenModuleKeys: [],
     dataNotice: buildDataNotice(result),
+    professionalHourlyData,
   });
+}
+
+type GeneralProfessionalHourlySubject = "sunrise" | "sunset" | "stars" | "milkyWay";
+
+type GeneralProfessionalHourlyInterval = {
+  readonly subject: GeneralProfessionalHourlySubject;
+  readonly start: string;
+  readonly end: string;
+  readonly badge: ProfessionalHourlyRowBadge;
+};
+
+function buildGeneralProfessionalHourlyData(
+  result: ForecastCalculationResult,
+): ProfessionalHourlyDisplayData {
+  const intervals = buildGeneralProfessionalHourlyIntervals(result);
+  const focusWindows = intervals.map((interval) => ({
+    startTime: interval.start,
+    endTime: interval.end,
+    label: interval.badge.label,
+  }));
+  const rowAnnotations = (result.professionalHourlyData ?? [])
+    .map((row) => buildGeneralProfessionalHourlyRowAnnotation(row.time, intervals))
+    .filter((annotation): annotation is ProfessionalHourlyRowAnnotation => annotation !== null);
+
+  return buildProfessionalHourlyDisplayDataForResult({
+    result,
+    focusWindows,
+    rowAnnotations,
+  });
+}
+
+function buildGeneralProfessionalHourlyIntervals(
+  result: ForecastCalculationResult,
+): readonly GeneralProfessionalHourlyInterval[] {
+  const glowIntervals = buildGlowSunPhaseAnnotationIntervals(result).map(
+    (interval): GeneralProfessionalHourlyInterval => ({
+      subject: interval.label.startsWith("朝霞") ? "sunrise" : "sunset",
+      start: interval.start,
+      end: interval.end,
+      badge: {
+        label: interval.label,
+        detail: interval.detail,
+        tone: interval.tone,
+      },
+    }),
+  );
+  const starIntervals = result.astroAnalysis.dailyAstro
+    .filter((day) => day.astronomicalNightWindow)
+    .map((day): GeneralProfessionalHourlyInterval => {
+      const window = day.astronomicalNightWindow!;
+      return {
+        subject: "stars",
+        start: window.start,
+        end: window.end,
+        badge: {
+          label: day.astroShootable ? "星空窗口" : "星空参考",
+          detail: day.astroShootable ? day.keyReason : `${day.keyReason} ${day.riskNote}`.trim(),
+          tone: day.astroShootable ? "success" : "info",
+        },
+      };
+    });
+  const recommendedKeys = new Set(
+    result.astroAnalysis.recommendedMilkyWayWindows.map(
+      (window) => `${window.start}|${window.end}`,
+    ),
+  );
+  const milkyWayIntervals = [
+    ...result.astroAnalysis.recommendedMilkyWayWindows.map(
+      (window): GeneralProfessionalHourlyInterval => ({
+        subject: "milkyWay",
+        start: window.start,
+        end: window.end,
+        badge: {
+          label: "银河推荐",
+          detail: window.noteZh,
+          tone: "success",
+        },
+      }),
+    ),
+    ...result.astroAnalysis.milkyWayCandidateWindows
+      .filter((window) => !recommendedKeys.has(`${window.start}|${window.end}`))
+      .map(
+        (window): GeneralProfessionalHourlyInterval => ({
+          subject: "milkyWay",
+          start: window.start,
+          end: window.end,
+          badge: {
+            label: "银河候选",
+            detail: window.noteZh,
+            tone: "info",
+          },
+        }),
+      ),
+  ];
+
+  return [...glowIntervals, ...starIntervals, ...milkyWayIntervals].filter(
+    (interval) =>
+      Number.isFinite(Date.parse(interval.start)) &&
+      Number.isFinite(Date.parse(interval.end)) &&
+      Date.parse(interval.end) > Date.parse(interval.start),
+  );
+}
+
+function buildGeneralProfessionalHourlyRowAnnotation(
+  rowTime: string,
+  intervals: readonly GeneralProfessionalHourlyInterval[],
+): ProfessionalHourlyRowAnnotation | null {
+  const matchingIntervals = intervals
+    .filter((interval) =>
+      isProfessionalHourOverlappingWindow(rowTime, interval.start, interval.end),
+    )
+    .sort(
+      (left, right) =>
+        generalProfessionalHourlySubjectPriority(right.subject) -
+        generalProfessionalHourlySubjectPriority(left.subject),
+    );
+  const badges = matchingIntervals.reduce<ProfessionalHourlyRowBadge[]>((items, interval) => {
+    if (!items.some((item) => item.label === interval.badge.label)) {
+      items.push(interval.badge);
+    }
+    return items;
+  }, []);
+  const primary = badges[0];
+  if (!primary) {
+    return null;
+  }
+
+  return {
+    rowTime,
+    ...primary,
+    badges,
+  };
+}
+
+function generalProfessionalHourlySubjectPriority(
+  subject: GeneralProfessionalHourlySubject,
+): number {
+  if (subject === "milkyWay") {
+    return 4;
+  }
+  if (subject === "stars") {
+    return 3;
+  }
+  if (subject === "sunset") {
+    return 2;
+  }
+  return 1;
 }
 
 export function buildCloudSeaForecastViewModel(

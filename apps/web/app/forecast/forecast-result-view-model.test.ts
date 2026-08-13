@@ -3146,6 +3146,50 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("当前天气或地形仍包含演示数据");
   });
 
+  it("adds a future hourly rainfall panel with glow, stars, and Milky Way window annotations", () => {
+    const hourlyRange = resultWithGlowHourlyRange("48h", 48);
+    const result: ForecastCalculationResult = {
+      ...resultForTarget("general"),
+      horizon: "48h",
+      forecastEnd: hourlyRange.forecastEnd,
+      targetDates: hourlyRange.targetDates,
+      calendarBasis: hourlyRange.calendarBasis,
+      professionalHourlyData: hourlyRange.professionalHourlyData,
+      professionalHourlyDataTimeBasis: hourlyRange.professionalHourlyDataTimeBasis,
+    };
+    const viewModel = buildForecastResultViewModel(result, "general");
+    const hourlyData = viewModel.professionalHourlyData;
+
+    expect(hourlyData?.rows).toHaveLength(48);
+    expect(
+      hourlyData?.rowAnnotations
+        ?.find((annotation) => annotation.rowTime === "2026-05-20T05:00:00+08:00")
+        ?.badges?.map((badge) => badge.label),
+    ).toContain("朝霞最佳");
+    expect(
+      hourlyData?.rowAnnotations
+        ?.find((annotation) => annotation.rowTime === "2026-05-21T02:00:00+08:00")
+        ?.badges?.map((badge) => badge.label),
+    ).toEqual(expect.arrayContaining(["银河推荐", "星空窗口"]));
+
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: { ...queryForTarget("general"), horizon: "48h" },
+        result,
+        viewModel,
+      }),
+    );
+
+    expect(html).toContain('data-general-section="GeneralHourlyWeatherSection"');
+    expect(html).toContain('data-professional-hourly-target="general"');
+    expect(html).toContain('data-professional-hourly-expanded="false"');
+    expect(html).toContain("未来小时天气");
+    expect(html).toContain("未来小时降水与重点窗口");
+    expect(html).toContain("降水 0.8 mm / 55%");
+    expect(html).toContain("朝霞最佳");
+    expect(html).not.toContain('data-professional-hourly-row="');
+  });
+
   it("does not render unknown terrain elevation or local relief as zero", () => {
     const baseResult = resultForTarget("general");
     const unknownTerrain = {
