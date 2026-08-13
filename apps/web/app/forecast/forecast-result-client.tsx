@@ -4456,7 +4456,7 @@ const glowProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
   initiallyExpanded: true,
 };
 
-const generalProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
+export const generalProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
   sectionTitle: "未来小时天气",
   sectionBadge: "降水与拍摄窗口",
   sectionDescription: "优先查看未来逐小时降水量和降水概率，并标记朝霞、晚霞、星空与银河窗口。",
