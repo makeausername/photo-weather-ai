@@ -6766,7 +6766,7 @@ function GeneralHourlyWeatherSection({ data }: { readonly data: ProfessionalHour
 
   return (
     <Card
-      className="GeneralProfessionalHourlyData min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm"
+      className="GeneralProfessionalHourlyData mx-auto w-full max-w-5xl min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm"
       data-general-section="GeneralHourlyWeatherSection"
       data-general-professional-hourly-expanded={expanded ? "true" : "false"}
     >
@@ -6878,7 +6878,7 @@ export function GeneralRainHourlyTable({
 
       <ResponsiveDataScroller bare data-general-rain-scroll="true">
         <table
-          className="w-full min-w-[560px] border-separate border-spacing-0 text-left text-[12px] leading-5"
+          className="mx-auto w-full max-w-max min-w-[560px] border-separate border-spacing-0 text-left text-[12px] leading-5"
           data-general-rain-table-layout="rain-focused"
         >
           <thead className="bg-muted text-xs text-muted-foreground">
