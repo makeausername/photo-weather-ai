@@ -4434,6 +4434,7 @@ type ProfessionalHourlySectionConfig = {
   readonly previewRowLimit?: number;
   readonly focusPaddingHours?: number;
   readonly showBasisSummary?: boolean;
+  readonly showEmbeddedLeadDescription?: boolean;
 };
 
 type ProfessionalHourlyCloudSectionProps = {
@@ -4468,17 +4469,18 @@ export const generalProfessionalHourlySectionConfig: ProfessionalHourlySectionCo
   riskFilterLabel: "风险小时",
   defaultFilterMode: "all",
   ordinarySignalLabel: "普通时段",
-  initiallyExpanded: false,
+  initiallyExpanded: true,
   expandButtonLabel: "展开完整小时表",
   collapseButtonLabel: "收起完整小时表",
   previewTitle: "未来小时降水与重点窗口",
   showCoverageNote: false,
-  showCollapsedPreview: true,
+  showCollapsedPreview: false,
   showMorningFilter: false,
   showRainFilter: true,
   previewRowLimit: 12,
   focusPaddingHours: 0,
   showBasisSummary: false,
+  showEmbeddedLeadDescription: false,
 };
 
 function professionalHourlyFiltersForContext(
@@ -4699,7 +4701,7 @@ function ProfessionalHourlyCloudSection({
               : config?.expandButtonLabel ?? "展开小时表"}
           </Button>
         </div>
-      ) : (
+      ) : config?.showEmbeddedLeadDescription === false ? null : (
         <p className="text-xs leading-5 text-muted-foreground">{sectionDescription}</p>
       )}
 
@@ -6684,12 +6686,59 @@ export function ComprehensiveForecastView({
 }
 
 function GeneralHourlyWeatherSection({ data }: { readonly data: ProfessionalHourlyDisplayData }) {
+  const rows = data.rows;
+  const basis = data.timeBasis;
+  const [expanded, setExpanded] = useState(false);
+
+  if (!isValidProfessionalHourlyTimeBasis(basis) || rows.length === 0) {
+    return null;
+  }
+
   return (
-    <CloudSeaProfessionalHourlyDataPanel
-      target="general"
-      data={data}
-      config={generalProfessionalHourlySectionConfig}
-    />
+    <Card
+      className="GeneralProfessionalHourlyData min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm"
+      data-general-section="GeneralHourlyWeatherSection"
+      data-general-professional-hourly-expanded={expanded ? "true" : "false"}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-bold text-card-foreground">
+              {generalProfessionalHourlySectionConfig.sectionTitle}
+            </h2>
+            <Badge variant="accent">{generalProfessionalHourlySectionConfig.sectionBadge}</Badge>
+          </div>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+            {generalProfessionalHourlySectionConfig.sectionDescription}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          aria-expanded={expanded}
+          onClick={() => {
+            setExpanded((current) => !current);
+          }}
+          data-general-hourly-toggle="true"
+        >
+          {expanded
+            ? (generalProfessionalHourlySectionConfig.collapseButtonLabel ?? "收起完整小时表")
+            : (generalProfessionalHourlySectionConfig.expandButtonLabel ?? "展开完整小时表")}
+        </Button>
+      </div>
+
+      {expanded ? (
+        <div className="mt-4 grid gap-3" data-general-hourly-body="true">
+          <CloudSeaProfessionalHourlyDataPanel
+            target="general"
+            data={data}
+            config={generalProfessionalHourlySectionConfig}
+            variant="embedded"
+          />
+        </div>
+      ) : null}
+    </Card>
   );
 }
 

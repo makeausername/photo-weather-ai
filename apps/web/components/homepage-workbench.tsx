@@ -18,7 +18,6 @@ import {
   normalizeForecastClientErrorMessage,
   requestForecastCalculation,
 } from "../app/forecast/forecast-request-client";
-import { HomepageHourlyWeather } from "./homepage-hourly-weather";
 import { Badge, Card, cn } from "./ui";
 
 type LayerStatus = "idle" | "loading" | "ready" | "partial" | "fallback" | "error";
@@ -218,7 +217,6 @@ export function HomepageGuidancePanel({
             />
           ))}
         </div>
-        {result ? <HomepageHourlyWeather result={result} /> : null}
       </div>
     </section>
   );
