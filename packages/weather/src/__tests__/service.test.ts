@@ -25,6 +25,23 @@ const coordinates: Coordinates = {
 };
 
 describe("WeatherIntelligenceService", () => {
+  it("uses the cached provider bundle for an identical warm request", async () => {
+    const provider = new StaticProvider("qweather", "QWeather", "real", hour());
+    const currentSpy = vi.spyOn(provider, "getCurrentWeather");
+    const hourlySpy = vi.spyOn(provider, "getHourlyForecast");
+    const dailySpy = vi.spyOn(provider, "getDailyForecast");
+    const service = new WeatherIntelligenceService({ providers: [provider] });
+
+    const cold = await service.getWeatherDataBundle(requestInput());
+    const warm = await service.getWeatherDataBundle(requestInput());
+
+    expect(currentSpy).toHaveBeenCalledTimes(1);
+    expect(hourlySpy).toHaveBeenCalledTimes(1);
+    expect(dailySpy).toHaveBeenCalledTimes(1);
+    expect(cold.sourceSummaries?.[0]?.cacheHit).toBe(false);
+    expect(warm.sourceSummaries?.[0]?.cacheHit).toBe(true);
+  });
+
   it("uses available real providers and records failed auxiliary providers safely", async () => {
     const service = new WeatherIntelligenceService({
       providers: [

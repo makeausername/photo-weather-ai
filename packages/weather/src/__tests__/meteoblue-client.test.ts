@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildMeteoblueForecastUrl, MeteoblueClient, MeteoblueRealProvider } from "../index";
+import {
+  buildMeteoblueForecastUrl,
+  MeteoblueClient,
+  MeteoblueRealProvider,
+  normalizeMeteoblueVisibilityKm,
+} from "../index";
 
 const coordinates = {
   latitude: 30.1328,
@@ -28,6 +33,7 @@ function meteobluePayload() {
       midclouds: "%",
       highclouds: "%",
       precipitation: "mm",
+      visibility: "m",
     },
     data_1h: {
       time: ["2026-05-25T08:00+08:00", "2026-05-25T09:00+08:00"],
@@ -57,6 +63,46 @@ function meteobluePayloadWithSpaceSeparatedTimes() {
 }
 
 describe("MeteoblueClient", () => {
+  it("normalizes visibility only from explicit units", () => {
+    expect(normalizeMeteoblueVisibilityKm(626.9, "m")).toMatchObject({
+      value: 0.6,
+      sourceUnit: "m",
+      validationStatus: "valid",
+    });
+    expect(normalizeMeteoblueVisibilityKm(5000, "m").value).toBe(5);
+    expect(normalizeMeteoblueVisibilityKm(15, "km").value).toBe(15);
+    expect(normalizeMeteoblueVisibilityKm(15, undefined)).toMatchObject({
+      value: null,
+      validationStatus: "unit_uncertain",
+      rejectionReason: "missing_or_unsupported_visibility_unit",
+    });
+  });
+
+  it("does not interpret 626.9 metres as 626.9 kilometres", () => {
+    const provider = new MeteoblueRealProvider({
+      client: new MeteoblueClient({
+        apiKey: "meteoblue-secret",
+        baseUrl: "https://my.meteoblue.com",
+        packages: ["basic-1h", "clouds-1h"],
+        timeoutMs: 1000,
+        retryCount: 0,
+        fetcher: vi.fn() as unknown as typeof fetch,
+      }),
+    });
+    const payload = meteobluePayload();
+    const hourly = provider.normalizeHourlyWeather({
+      ...payload,
+      data_1h: { ...payload.data_1h, visibility: [626.9, 5000] },
+    });
+
+    expect(hourly[0]?.visibility).toBe(0.6);
+    expect(hourly[0]?.fieldMetadata?.visibility).toMatchObject({
+      rawValue: 626.9,
+      sourceUnit: "m",
+      validationStatus: "valid",
+    });
+  });
+
   it("builds Forecast API package requests without exposing keys as headers", () => {
     const url = new URL(
       buildMeteoblueForecastUrl(

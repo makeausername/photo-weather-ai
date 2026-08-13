@@ -182,11 +182,11 @@ export function buildMultiSourceAgreementContext(
 
   const sourceHours = sources.map((source) => ({
     source,
-    hours: hoursForWindow(source.hourly, input.targetWindow),
+    hours: hoursForWindow(source.hourly, input.targetWindow).map(sanitizeAgreementHour),
   }));
   const effectiveSourceHours = sourceHours.some((source) => source.hours.length > 0)
     ? sourceHours
-    : sources.map((source) => ({ source, hours: source.hourly }));
+    : sources.map((source) => ({ source, hours: source.hourly.map(sanitizeAgreementHour) }));
   const comparisons = fieldDefinitions
     .map((definition) => compareField(definition, effectiveSourceHours))
     .filter((comparison): comparison is FieldComparison => comparison !== null);
@@ -222,6 +222,17 @@ export function buildMultiSourceAgreementContext(
     shouldLowerConfidence: shouldLowerCloudSeaConfidence(comparisons),
     shouldShowReviewWarning: shouldShowReviewWarning(comparisons, keyWarningsZh),
   };
+}
+
+function sanitizeAgreementHour(hour: NormalizedHourlyWeather): NormalizedHourlyWeather {
+  const next: Record<string, unknown> = { ...hour };
+  for (const field of hour.missingFields ?? []) {
+    const normalizedField = field.startsWith("invalid:") ? field.slice("invalid:".length) : field;
+    if (normalizedField in next) {
+      next[normalizedField] = null;
+    }
+  }
+  return next as NormalizedHourlyWeather;
 }
 
 function compareField(

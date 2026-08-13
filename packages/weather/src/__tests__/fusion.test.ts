@@ -111,8 +111,8 @@ describe("weather source fusion", () => {
       providerCode: "multi_model",
       consensusStrategy: "upper_percentile",
       minValue: 10,
-      maxValue: 12,
-      spread: 2,
+      maxValue: 10,
+      spread: 0,
       estimated: false,
     });
     expect(result.confidenceByField.precipitation).toBeGreaterThanOrEqual(0.6);
@@ -162,12 +162,12 @@ describe("weather source fusion", () => {
     expect(result.fusedHourly[0]?.fieldMetadata?.cloudTotal).toMatchObject({
       providerCode: "multi_model",
       providerLabelZh: "多模型融合",
-      modelCount: 2,
+      modelCount: 1,
       providerCount: 2,
       minValue: 55,
-      maxValue: 88,
-      medianValue: 71.5,
-      spread: 33,
+      maxValue: 55,
+      medianValue: 55,
+      spread: 0,
       consensusStrategy: "median",
       estimated: false,
     });
@@ -398,11 +398,11 @@ describe("weather source fusion", () => {
     });
     expect(result.fusedHourly[0]?.fieldMetadata?.cloudTotal).toMatchObject({
       providerCode: "multi_model",
-      modelCount: 2,
+      modelCount: 1,
       minValue: 62,
-      maxValue: 92,
-      medianValue: 77,
-      spread: 30,
+      maxValue: 62,
+      medianValue: 62,
+      spread: 0,
     });
     expect(result.confidenceByField.cloudLow).toBeLessThanOrEqual(0.45);
     expect(result.summary.cloudLayerCoverage?.fieldCoverageSummary).toMatchObject({
@@ -577,10 +577,81 @@ describe("weather source fusion", () => {
     });
     expect(result.confidenceByTarget.general).toBeGreaterThanOrEqual(0.55);
   });
+
+  it("counts Open-Meteo models as one cross-provider family vote", () => {
+    const openMeteo = [10, 50, 90].map((cloudTotal, index) =>
+      bundle(
+        "open_meteo",
+        "Open-Meteo",
+        hour({ providerCode: "open_meteo", cloudTotal }),
+        {
+          providerId: `${openMeteoForecastCloudLayerProviderName}:model_${index}`,
+          sourceFamily: "open_meteo",
+          modelName: `model_${index}`,
+        },
+      ),
+    );
+    const result = fuseWeatherSources({
+      providerBundles: [
+        bundle("qweather", "QWeather", hour({ providerCode: "qweather", cloudTotal: 50 })),
+        bundle("meteoblue", "meteoblue", hour({ providerCode: "meteoblue", cloudTotal: 50 })),
+        ...openMeteo,
+      ],
+      target: "general",
+      location: { coordinates },
+      forecastStart: "2026-05-22T00:00:00+08:00",
+      forecastEnd: "2026-05-23T00:00:00+08:00",
+    });
+
+    expect(result.fusedHourly[0]?.fieldMetadata?.cloudTotal).toMatchObject({
+      providerCount: 3,
+      modelCount: 3,
+      minValue: 10,
+      maxValue: 90,
+      medianValue: 50,
+      spread: 80,
+    });
+    expect(result.summary).toMatchObject({ providerFamilyCount: 3, modelCount: 3 });
+    expect(result.sourceSummaries.filter((summary) => summary.providerCode === "open_meteo")).toHaveLength(3);
+    expect(result.sourceSummaries.map((summary) => summary.providerCode)).toEqual(
+      expect.arrayContaining(["qweather", "meteoblue", "open_meteo"]),
+    );
+  });
+
+  it("reports Open-Meteo internal spread only as multi-model disagreement", () => {
+    const result = fuseWeatherSources({
+      providerBundles: [
+        bundle("qweather", "QWeather", hour({ providerCode: "qweather", cloudTotal: 50 })),
+        bundle("meteoblue", "meteoblue", hour({ providerCode: "meteoblue", cloudTotal: 50 })),
+        bundle(
+          "open_meteo",
+          "Open-Meteo",
+          hour({ providerCode: "open_meteo", cloudTotal: 10 }),
+          { providerId: "open_meteo:model_a", modelName: "model_a" },
+        ),
+        bundle(
+          "open_meteo",
+          "Open-Meteo",
+          hour({ providerCode: "open_meteo", cloudTotal: 90 }),
+          { providerId: "open_meteo:model_b", modelName: "model_b" },
+        ),
+      ],
+      target: "general",
+      location: { coordinates },
+      forecastStart: "2026-05-22T00:00:00+08:00",
+      forecastEnd: "2026-05-23T00:00:00+08:00",
+    });
+
+    const cloudFlags = result.conflictFlags.filter((flag) => flag.field.includes("cloud"));
+    expect(cloudFlags.map((flag) => flag.field)).toContain("multi_model_cloud_total_spread");
+    expect(cloudFlags.map((flag) => flag.field)).not.toContain("cloudTotal");
+    expect(result.confidenceByField.cloudTotal).toBeGreaterThanOrEqual(0.8);
+    expect(result.summary.multiModelConsensusDiagnostics?.multiModelConfidencePenaltyByTarget.general).toBeGreaterThan(0);
+  });
 });
 
 function bundle(
-  providerCode: "qweather" | "open_meteo",
+  providerCode: "qweather" | "open_meteo" | "meteoblue",
   providerLabelZh: string,
   hourly: NormalizedHourlyWeather,
   sourceSummaryOverrides: Partial<WeatherSourceSummary> = {},

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { NormalizedHourlyWeather } from "@photo-weather/shared";
 import {
   attachAirQualityToHourly,
@@ -128,9 +128,38 @@ describe("Open-Meteo air-quality aerosol normalization", () => {
     expect(airQuality).toMatchObject({
       provider: "open_meteo",
       observedAt: "2026-05-20T08:00:00+08:00",
-      category: "good",
+      availability: "unavailable",
+      aqi: null,
+      category: null,
       hourly: [],
     });
+  });
+
+  it("deduplicates concurrent requests for the same coordinates, timezone, and hours", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          utc_offset_seconds: 28800,
+          hourly: {
+            time: ["2026-05-20T08:00"],
+            pm10: [30],
+            pm2_5: [16],
+            aerosol_optical_depth: [0.12],
+            dust: [8],
+          },
+        }),
+        { status: 200 },
+      ),
+    ) as unknown as typeof fetch;
+    const client = new OpenMeteoAirQualityClient({ retryCount: 0, fetcher });
+
+    await Promise.all([
+      client.fetchAirQuality({ coordinates, timezone: "Asia/Shanghai", forecastHours: 48 }),
+      client.fetchAirQuality({ coordinates, timezone: "Asia/Shanghai", forecastHours: 48 }),
+      client.fetchAirQuality({ coordinates, timezone: "Asia/Shanghai", forecastHours: 48 }),
+    ]);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });
 

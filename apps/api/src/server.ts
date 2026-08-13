@@ -443,7 +443,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   const weatherDataService =
     options.weatherProvider || !options.dbClient
       ? undefined
-      : createRuntimeWeatherDataService({ dbClient: options.dbClient, env });
+      : createRuntimeWeatherDataService({ dbClient: options.dbClient, env, logger: app.log });
   const geoProvider = options.geoProvider ?? new MockGeoProvider();
   const authConfig = options.authConfig ?? loadAuthConfig();
   const resolveRuntimeGeoProvider = () =>

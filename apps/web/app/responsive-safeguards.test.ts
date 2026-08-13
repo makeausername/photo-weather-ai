@@ -54,12 +54,13 @@ describe("responsive safeguards", () => {
     expect(moonSource).not.toContain("min-w-[480px]");
     expect(moonSource).not.toContain("overflow-x-auto");
     expect(dashboardSource).toContain("grid min-w-0 max-w-full items-stretch");
-    expect(authSource).toContain("w-full max-w-full min-w-0");
+    expect(authSource).toContain("mx-auto grid w-full min-w-0 justify-items-center");
+    expect(authSource).toContain("max-w-lg");
+    expect(authSource).toContain("max-w-xl");
+    expect(authSource).not.toContain("grid w-full max-w-full min-w-0 justify-items-center");
     expect(authSource).toContain("[overflow-wrap:anywhere]");
     expect(forecastSource).toContain('data-cloud-sea-professional-table-scroll="true"');
-    expect(forecastSource).toContain(
-      'data-professional-hourly-table-layout="mobile-scroll-safe"',
-    );
+    expect(forecastSource).toContain('data-professional-hourly-table-layout="mobile-scroll-safe"');
     expect(forecastSource).toContain("border-separate border-spacing-0");
     expect(forecastSource).toContain("min-[760px]:sticky min-[760px]:left-0");
     expect(forecastSource).not.toContain("bg-inherit");

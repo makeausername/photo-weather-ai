@@ -499,7 +499,9 @@ describe("provider field presets", () => {
           label: "支付模式",
           target: "configJson",
           control: "select",
-          defaultValue: "native",
+          defaultValue: "auto",
+          helpText:
+            "自动模式会在桌面使用 Native 扫码，在手机浏览器使用 H5 支付；微信内浏览器 JSAPI 需单独授权接入。",
         }),
         expect.objectContaining({ key: "appId", target: "configJson" }),
         expect.objectContaining({ key: "mchId", target: "configJson" }),

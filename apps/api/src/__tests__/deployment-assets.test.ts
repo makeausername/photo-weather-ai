@@ -146,13 +146,27 @@ describe("production deployment assets", () => {
     expect(compose).not.toContain('"4100:4100"');
   });
 
-  it("keeps Caddy routing same-domain API traffic with a domain placeholder", () => {
+  it("keeps Caddy routing same-domain API and billing traffic before the web catch-all", () => {
     const caddyfile = readRepoFile("deploy/Caddyfile.template");
     expect(caddyfile).toContain("DOMAIN_PLACEHOLDER");
     expect(caddyfile).toContain("encode zstd gzip");
+    expect(caddyfile).toContain("@billing_api path /billing/*");
+    expect(caddyfile).toContain("reverse_proxy @billing_api api:4000");
+    expect(caddyfile).not.toContain("handle_path /billing");
     expect(caddyfile).toContain("handle_path /api/*");
     expect(caddyfile).toContain("reverse_proxy api:4000");
     expect(caddyfile).toContain("reverse_proxy web:3000");
+    expect(caddyfile.indexOf("reverse_proxy @billing_api api:4000")).toBeLessThan(
+      caddyfile.indexOf("reverse_proxy web:3000"),
+    );
+
+    const updater = readRepoFile("scripts/update.sh");
+    expect(updater).toContain('CADDY_TEMPLATE="${PROJECT_ROOT}/deploy/Caddyfile.template"');
+    expect(updater).toContain('CADDY_FILE="${PROJECT_ROOT}/deploy/Caddyfile"');
+    expect(updater).toContain('sed "s/DOMAIN_PLACEHOLDER/${DOMAIN}/g" "${CADDY_TEMPLATE}" > "${CADDY_FILE}"');
+    expect(updater.lastIndexOf("render_caddyfile")).toBeLessThan(
+      updater.indexOf('echo "Rebuilding production images..."'),
+    );
   });
 
   it("keeps the production environment template complete and secret-free", () => {

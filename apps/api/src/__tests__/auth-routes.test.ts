@@ -48,6 +48,38 @@ async function sendRegisterCode(
   };
 }
 
+async function sendLoginSmsCode(
+  app: FastifyInstance,
+  input: {
+    readonly phone: string;
+    readonly captcha?: CaptchaTestToken;
+  },
+): Promise<{
+  readonly statusCode: number;
+  readonly body: {
+    readonly error?: string;
+    readonly message?: string;
+    readonly success?: boolean;
+    readonly channel?: string;
+    readonly targetMasked?: string;
+    readonly expiresInSeconds?: number;
+    readonly resendAfterSeconds?: number;
+    readonly mockCode?: string;
+    readonly mode?: string;
+  };
+}> {
+  const response = await app.inject({
+    method: "POST",
+    url: "/auth/login/sms/send-code",
+    payload: input,
+  });
+
+  return {
+    statusCode: response.statusCode,
+    body: response.json(),
+  };
+}
+
 type CaptchaTestToken = {
   readonly providerCode: "tencent_captcha";
   readonly ticket: string;
@@ -897,6 +929,346 @@ describe("auth routes", () => {
     });
   });
 
+  it("sends a login SMS code for an active phone user without storing the plain code", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    state.users.set("plain-user", {
+      ...state.users.get("plain-user"),
+      phone: "13800138000",
+    });
+    const verificationSender: VerificationSender = {
+      send: vi.fn(async (input) => {
+        expect(input).toMatchObject({
+          channel: "sms",
+          purpose: "login",
+          target: "13800138000",
+        });
+        expect(input.code).toMatch(/^\d{6}$/);
+        return {
+          success: true,
+          channel: "sms",
+          providerCode: "mock",
+          mode: "mock",
+          messageZh: "验证码已发送。",
+        } as const;
+      }),
+    };
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+      verificationSender,
+    });
+
+    const response = await sendLoginSmsCode(app, {
+      phone: "+86 138-0013-8000",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      channel: "sms",
+      targetMasked: "138****8000",
+      mode: "mock",
+      message: "如果该手机号已注册或已绑定，验证码将发送到该手机。",
+    });
+    expect(response.body.mockCode).toMatch(/^\d{6}$/);
+    expect(verificationSender.send).toHaveBeenCalledTimes(1);
+    expect([...state.verificationCodes.values()][0]).toMatchObject({
+      channel: "sms",
+      purpose: "login",
+      target: "13800138000",
+      consumedAt: null,
+      attemptCount: 0,
+    });
+    expect([...state.verificationCodes.values()][0].codeHash).not.toBe(response.body.mockCode);
+    expect(JSON.stringify(state.auditLogs)).not.toContain(response.body.mockCode);
+  });
+
+  it("returns a generic login SMS send response for unknown phones without sending SMS", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    const verificationSender: VerificationSender = {
+      send: vi.fn(async () => {
+        throw new Error("unknown login phones must not send SMS");
+      }),
+    };
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+      verificationSender,
+    });
+
+    const response = await sendLoginSmsCode(app, {
+      phone: "13900139000",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      channel: "sms",
+      targetMasked: "139****9000",
+      mode: "mock",
+      message: "如果该手机号已注册或已绑定，验证码将发送到该手机。",
+    });
+    expect(response.body.mockCode).toBeUndefined();
+    expect(verificationSender.send).not.toHaveBeenCalled();
+    expect(state.verificationCodes.size).toBe(0);
+    expect(state.users.size).toBe(2);
+    expect(state.auditLogs[0]).toMatchObject({
+      action: "auth.sms_login.code_send_suppressed",
+      targetId: "13900139000",
+    });
+  });
+
+  it("enforces login SMS resend cooldown without creating another code", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    state.users.set("plain-user", {
+      ...state.users.get("plain-user"),
+      phone: "13800138000",
+    });
+    const verificationSender: VerificationSender = {
+      send: vi.fn(
+        async () =>
+          ({
+            success: true,
+            channel: "sms",
+            providerCode: "mock",
+            mode: "mock",
+            messageZh: "验证码已发送。",
+          }) as const,
+      ),
+    };
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: {
+        ...registerTestEnv,
+        AUTH_VERIFICATION_RESEND_SECONDS: "60",
+      },
+      verificationSender,
+    });
+
+    const first = await sendLoginSmsCode(app, {
+      phone: "13800138000",
+    });
+    expect(first.statusCode).toBe(200);
+    const storedCode = [...state.verificationCodes.values()][0];
+    state.verificationCodes.set(storedCode.id, {
+      ...storedCode,
+      createdAt: new Date(),
+    });
+
+    const second = await sendLoginSmsCode(app, {
+      phone: "13800138000",
+    });
+
+    expect(second.statusCode).toBe(200);
+    expect(second.body).toMatchObject({
+      success: true,
+      targetMasked: "138****8000",
+    });
+    expect(second.body.resendAfterSeconds).toBeGreaterThan(0);
+    expect(verificationSender.send).toHaveBeenCalledTimes(1);
+    expect(state.verificationCodes.size).toBe(1);
+    expect(
+      state.auditLogs.some((log) => log.action === "auth.sms_login.code_send_suppressed"),
+    ).toBe(true);
+  });
+
+  it("requires login captcha before sending login SMS codes when login enforcement is enabled", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    state.users.set("plain-user", {
+      ...state.users.get("plain-user"),
+      phone: "13800138000",
+    });
+    enableCaptchaForAuth(state, {
+      enforceOnLogin: true,
+    });
+    const captchaFetcher = createCaptchaFetcher();
+    const verificationSender: VerificationSender = {
+      send: vi.fn(
+        async () =>
+          ({
+            success: true,
+            channel: "sms",
+            providerCode: "mock",
+            mode: "mock",
+            messageZh: "验证码已发送。",
+          }) as const,
+      ),
+    };
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+      captchaFetcher: captchaFetcher as unknown as typeof fetch,
+      verificationSender,
+    });
+
+    const missingResponse = await sendLoginSmsCode(app, {
+      phone: "13800138000",
+    });
+
+    expect(missingResponse.statusCode).toBe(400);
+    expect(missingResponse.body).toMatchObject({
+      error: "captcha_required",
+      message: captchaRequiredMessage,
+    });
+    expect(state.verificationCodes.size).toBe(0);
+    expect(verificationSender.send).not.toHaveBeenCalled();
+    expect(captchaFetcher).not.toHaveBeenCalled();
+
+    const validResponse = await sendLoginSmsCode(app, {
+      phone: "13800138000",
+      captcha: validCaptchaToken,
+    });
+    expect(validResponse.statusCode).toBe(200);
+    expect(state.verificationCodes.size).toBe(1);
+    expect(verificationSender.send).toHaveBeenCalledTimes(1);
+    expect(captchaFetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects wrong login SMS codes and increments the attempt count", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    state.users.set("plain-user", {
+      ...state.users.get("plain-user"),
+      phone: "13800138000",
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+    });
+
+    const sent = await sendLoginSmsCode(app, {
+      phone: "13800138000",
+    });
+    expect(sent.statusCode).toBe(200);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/login/sms/confirm",
+      payload: {
+        phone: "13800138000",
+        code: "000000",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: "verification_code_invalid",
+    });
+    expect([...state.verificationCodes.values()][0]).toMatchObject({
+      attemptCount: 1,
+      consumedAt: null,
+    });
+    expect(state.sessions.size).toBe(1);
+    expect(state.auditLogs.some((log) => log.action === "auth.sms_login.verify_failure")).toBe(
+      true,
+    );
+  });
+
+  it("logs in with a correct SMS code and creates a normal session", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    state.users.set("plain-user", {
+      ...state.users.get("plain-user"),
+      phone: "13800138000",
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+    });
+
+    const beforeLogin = new Date();
+    const sent = await sendLoginSmsCode(app, {
+      phone: "13800138000",
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/login/sms/confirm",
+      payload: {
+        phone: "+86 138-0013-8000",
+        code: sent.body.mockCode,
+      },
+    });
+    const afterLogin = new Date();
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toMatchObject({
+      accessToken: expect.any(String),
+      refreshToken: expect.any(String),
+      accessTokenExpiresAt: expect.any(String),
+      sessionExpiresAt: expect.any(String),
+      sessionTtlDays: 7,
+      sessionRoleType: "user",
+      user: {
+        id: "plain-user",
+        phone: "13800138000",
+      },
+      roleCodes: ["user"],
+      permissions: [],
+      isAdmin: false,
+    });
+    expect(response.body).not.toContain("passwordHash");
+    expect(response.body).not.toContain("refreshTokenHash");
+    expectDateWithinDaysFrom(body.accessTokenExpiresAt, 900 / 86400, beforeLogin, afterLogin);
+    expectDateWithinDaysFrom(body.sessionExpiresAt, 7, beforeLogin, afterLogin);
+    expect(state.sessions.get(hashRefreshToken(body.refreshToken))).toMatchObject({
+      userId: "plain-user",
+      expiresAt: new Date(body.sessionExpiresAt),
+    });
+    expect([...state.verificationCodes.values()][0]).toMatchObject({
+      consumedAt: expect.any(Date),
+    });
+    expect(state.auditLogs.some((log) => log.action === "auth.sms_login.success")).toBe(true);
+  });
+
+  it("does not allow disabled users to complete SMS login", async () => {
+    const { client, state } = await createFakeDatabaseClient();
+    state.users.set("plain-user", {
+      ...state.users.get("plain-user"),
+      phone: "13800138000",
+    });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      env: registerTestEnv,
+    });
+
+    const sent = await sendLoginSmsCode(app, {
+      phone: "13800138000",
+    });
+    state.users.set("plain-user", {
+      ...state.users.get("plain-user"),
+      status: "disabled",
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/login/sms/confirm",
+      payload: {
+        phone: "13800138000",
+        code: sent.body.mockCode,
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: "verification_code_invalid",
+    });
+    expect(state.sessions.size).toBe(1);
+    expect(state.auditLogs.some((log) => log.action === "auth.sms_login.failure")).toBe(true);
+  });
+
   it("rejects login with the wrong password and does not return tokens", async () => {
     const { client, state } = await createFakeDatabaseClient();
     app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
@@ -1382,19 +1754,22 @@ describe("auth routes", () => {
   it("keeps account email verification failures public-safe when SMTP fails", async () => {
     const { client } = await createFakeDatabaseClient();
     const verificationSender: VerificationSender = {
-      send: vi.fn(async () => ({
-        success: false,
-        channel: "email",
-        providerCode: "aliyun_smtp",
-        mode: "real",
-        error: "email_send_failed",
-        messageZh: "邮件服务暂不可用，请稍后重试。",
-        errorCode: "EAUTH",
-        responseCode: 526,
-        command: "AUTH PLAIN",
-        response: "526 Authentication failed smtp-auth-secret",
-        errorMessageSanitized: "Invalid login smtp-auth-secret verification 246810",
-      }) as const),
+      send: vi.fn(
+        async () =>
+          ({
+            success: false,
+            channel: "email",
+            providerCode: "aliyun_smtp",
+            mode: "real",
+            error: "email_send_failed",
+            messageZh: "邮件服务暂不可用，请稍后重试。",
+            errorCode: "EAUTH",
+            responseCode: 526,
+            command: "AUTH PLAIN",
+            response: "526 Authentication failed smtp-auth-secret",
+            errorMessageSanitized: "Invalid login smtp-auth-secret verification 246810",
+          }) as const,
+      ),
     };
     app = buildApiServer({
       dbClient: client,

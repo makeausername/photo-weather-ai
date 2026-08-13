@@ -373,7 +373,7 @@ const providerConfigs = [
     priority: 100,
     configJson: {
       realCallEnabled: false,
-      mode: "native",
+      mode: "auto",
       appId: "",
       mchId: "",
       notifyUrl: "",

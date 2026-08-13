@@ -259,13 +259,26 @@ function applySelectedNumberField(input: {
     input.fallbackSourcesUsed.add(selected.candidate.sourceId);
   }
 
+  const existingMetadata = input.base.fieldMetadata?.[field];
+  const candidateMetadata = selected.candidate?.hour.fieldMetadata?.[field];
+  const preservedMetadata = existingMetadata ?? candidateMetadata;
   input.fieldMetadata[field] = {
+    ...preservedMetadata,
     value: selected.value ?? null,
-    providerCode: selected.candidate?.bundle.providerCode ?? input.base.providerCode,
-    providerLabelZh: selected.candidate?.bundle.providerLabelZh ?? input.base.providerLabelZh,
-    sourceId: selected.candidate?.sourceId,
-    modelName: selected.candidate?.modelName,
-    basis: selected.basis,
+    providerCode:
+      preservedMetadata?.providerCode ??
+      selected.candidate?.bundle.providerCode ??
+      input.base.providerCode,
+    providerLabelZh:
+      preservedMetadata?.providerLabelZh ??
+      selected.candidate?.bundle.providerLabelZh ??
+      input.base.providerLabelZh,
+    sourceId: preservedMetadata?.sourceId ?? selected.candidate?.sourceId,
+    modelName: preservedMetadata?.modelName ?? selected.candidate?.modelName,
+    basis:
+      selected.basis === "fallback_same_field"
+        ? selected.basis
+        : (preservedMetadata?.basis ?? selected.basis),
     estimated,
     missingReason:
       selected.value === null || selected.value === undefined || estimated

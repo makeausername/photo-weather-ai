@@ -15,12 +15,19 @@ import {
   CheckoutPaymentMethods,
   checkoutClientLabels,
   checkoutPathForProduct,
+  checkoutReturnPathForProvider,
   detectPaymentClientMode,
   isCheckoutProductCode,
+  paymentReturnStatusMessage,
 } from "./checkout-client";
+
+const checkoutRouterReplaceMock = vi.hoisted(() => vi.fn());
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/checkout",
+  useRouter: () => ({
+    replace: checkoutRouterReplaceMock,
+  }),
 }));
 
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
@@ -188,6 +195,10 @@ describe("checkout cashier client", () => {
       "正在唤起微信支付...",
       "正在生成二维码...",
       "支付完成后，会员权益自动生效。",
+      "已从支付宝返回。如果已经完成支付，权益会在稍后自动生效。",
+      "支付成功，会员权益已生效。",
+      "支付结果同步中，请稍后刷新或查看账户权益。",
+      "支付未完成，请重新选择支付方式。",
       "返回定价",
       "当前暂未开放在线支付，请稍后再试。",
       "查看账户权益",
@@ -436,24 +447,70 @@ describe("checkout cashier client", () => {
     );
   });
 
-  it("shows a friendly payment-return notice and account link", () => {
+  it("redirects legacy checkout payment-return URLs to account center without payment buttons", () => {
     const html = renderToStaticMarkup(
       React.createElement(CheckoutClient, {
         initialLoggedIn: true,
         initialPaymentMethods: paymentMethods,
         initialProducts: products,
+        orderNo: "ML202606290001",
         paymentReturn: "alipay",
         productCode: "yearly_full",
       }),
     );
 
-    expect(html).toContain("如果已经完成支付，权益会在稍后自动生效。");
+    expect(html).toContain("已从支付宝返回。如果已经完成支付，权益会在稍后自动生效。");
+    expect(html).toContain("支付结果同步中，请稍后刷新或查看账户权益。");
+    expect(html).toContain("ML202606290001");
     expect(html).toContain('href="/account"');
+    expect(html).toContain('href="/pricing"');
+    expect(html).toContain("支付返回确认");
+    expect(html).not.toContain('data-checkout-payment-methods="primary"');
+    expect(html).not.toContain("选择支付方式");
+    expect(html).not.toContain("打开支付宝支付");
+    expect(html).not.toContain("打开微信支付");
+    expect(checkoutClientSource).toContain("router.replace(legacyCheckoutPaymentReturnPath)");
+    expect(checkoutClientSource).toContain("getBillingOrder(paymentReturnOrderNo)");
+    expect(checkoutClientSource).toContain("orderNo={paymentReturnOrderNo}");
+  });
+
+  it("renders a return-only checkout view when Alipay comes back with only an order number", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CheckoutClient, {
+        orderNo: "ML202606290002",
+        paymentReturn: "alipay",
+      }),
+    );
+
+    expect(html).toContain("支付返回确认");
+    expect(html).toContain("已从支付宝返回。如果已经完成支付，权益会在稍后自动生效。");
+    expect(html).toContain("支付结果同步中，请稍后刷新或查看账户权益。");
+    expect(html).toContain("ML202606290002");
+    expect(html).not.toContain("无法继续支付");
+  });
+
+  it("maps returned payment order statuses to user-facing checkout messages", () => {
+    expect(paymentReturnStatusMessage("paid")).toBe("支付成功，会员权益已生效。");
+    expect(paymentReturnStatusMessage("pending")).toBe(
+      "支付结果同步中，请稍后刷新或查看账户权益。",
+    );
+    expect(paymentReturnStatusMessage("created")).toBe(
+      "支付结果同步中，请稍后刷新或查看账户权益。",
+    );
+    expect(paymentReturnStatusMessage("failed")).toBe("支付未完成，请重新选择支付方式。");
+    expect(paymentReturnStatusMessage("closed")).toBe("支付未完成，请重新选择支付方式。");
+    expect(paymentReturnStatusMessage("canceled")).toBe("支付未完成，请重新选择支付方式。");
   });
 
   it("keeps checkout route helpers aligned with the route contract", () => {
     expect(checkoutPathForProduct("monthly_full")).toBe("/checkout?product=monthly_full");
     expect(checkoutPathForProduct("quarterly_full")).toBe("/checkout?product=quarterly_full");
     expect(checkoutPathForProduct("yearly_full")).toBe("/checkout?product=yearly_full");
+    expect(checkoutReturnPathForProvider("monthly_full", "alipay")).toBe(
+      "/account?payment_return=alipay",
+    );
+    expect(checkoutReturnPathForProvider("monthly_full", "wechat_pay")).toBe(
+      "/account?payment_return=wechat_pay",
+    );
   });
 });
