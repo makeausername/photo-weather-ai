@@ -390,6 +390,62 @@ describe("Cloud Sea display data rolling horizon", () => {
     expect(html).toContain("2026年6月4日 09:00");
     expect(html).toContain("2026年6月6日 08:00");
   });
+
+  it("recomputes field coverage after clipping provider rows to the selected horizon", () => {
+    const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
+    const baseRow = fixture.result.professionalHourlyData?.[0];
+    if (!baseRow) {
+      throw new Error("Cloud Sea regression fixture must include professional hourly rows.");
+    }
+    const rows = hourlyRowsFrom(baseRow, "2026-06-04T09:00:00+08:00", 48);
+    const future48Result = future48RollingResult(fixture.result, rows);
+    const result: ForecastCalculationResult = {
+      ...future48Result,
+      horizon: "24h",
+      forecastEnd: "2026-06-05T09:00:00+08:00",
+      calendarBasis: {
+        ...future48Result.calendarBasis,
+        forecastEnd: "2026-06-05T09:00:00+08:00",
+        horizonHours: 24,
+      },
+      professionalHourlyDataTimeBasis: {
+        ...future48Result.professionalHourlyDataTimeBasis!,
+        anchorEndLocal: "2026-06-05T08:00:00+08:00",
+        horizonHours: 24,
+        expectedRowCount: 24,
+        requestedHours: 24,
+        fieldCoverageSummary: {
+          totalHours: 48,
+          totalCloudCoverage: 48,
+          cloudLowCoverage: 48,
+          cloudMidCoverage: 48,
+          cloudHighCoverage: 48,
+          temperatureCoverage: 48,
+          terrainAdjustedTemperatureCoverage: 48,
+          dewPointCoverage: 48,
+          dewPointSpreadCoverage: 48,
+          humidityCoverage: 48,
+          precipitationAmountCoverage: 48,
+          precipitationProbabilityCoverage: 48,
+          visibilityCoverage: 48,
+          windSpeedCoverage: 48,
+          windDirectionCoverage: 48,
+          weatherCodeCoverage: 48,
+        },
+      },
+    };
+
+    const display = buildCloudSeaForecastViewModel(result).displayData.professionalHourlyData;
+
+    expect(display.rows).toHaveLength(24);
+    expect(display.timeBasis?.fieldCoverageSummary).toMatchObject({
+      totalHours: 24,
+      totalCloudCoverage: 24,
+      cloudLowCoverage: 24,
+      cloudMidCoverage: 24,
+      cloudHighCoverage: 24,
+    });
+  });
 });
 
 function cloudSeaArrivalSurfaceText(
