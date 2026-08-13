@@ -3188,7 +3188,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("逐小时降水");
     expect(html).toContain("展开小时降雨");
     expect(html).not.toContain('data-general-rain-row="');
-    expect(html).not.toContain('data-professional-hourly-target="general"');
+    expect(html).toContain('data-professional-hourly-target="general"');
 
     const actionPlanIndex = html.indexOf('data-testid="action-plan"');
     const hourlySectionIndex = html.indexOf('data-general-section="GeneralHourlyWeatherSection"');

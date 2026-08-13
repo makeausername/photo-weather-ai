@@ -4493,6 +4493,18 @@ type ProfessionalHourlySectionConfig = {
   readonly focusPaddingHours?: number;
   readonly showBasisSummary?: boolean;
   readonly showEmbeddedLeadDescription?: boolean;
+  readonly rainFilterLabel?: string;
+  readonly showFocusFilter?: boolean;
+  readonly showSignalColumn?: boolean;
+  readonly showCloudColumns?: boolean;
+  readonly showTemperatureColumns?: boolean;
+  readonly showDewPointColumns?: boolean;
+  readonly showHumidityColumn?: boolean;
+  readonly showVisibilityColumn?: boolean;
+  readonly showWindColumns?: boolean;
+  readonly precipitationColumnLabel?: string;
+  readonly compactTable?: boolean;
+  readonly cardClassName?: string;
 };
 
 type ProfessionalHourlyCloudSectionProps = {
@@ -4522,17 +4534,23 @@ function professionalHourlyFiltersForContext(
 ): readonly ProfessionalHourlyFilterDefinition[] {
   return [
     { mode: "all", label: config?.allFilterLabel ?? "全部小时" },
-    {
-      mode: "cloudSea",
-      label:
-        config?.focusFilterLabel ??
-        terrainContext?.vocabulary.professionalCloudSeaFilterLabel ??
-        "只看重点窗口",
-    },
+    ...(config?.showFocusFilter === false
+      ? []
+      : ([
+          {
+            mode: "cloudSea",
+            label:
+              config?.focusFilterLabel ??
+              terrainContext?.vocabulary.professionalCloudSeaFilterLabel ??
+              "只看重点窗口",
+          },
+        ] as const)),
     ...(config?.showMorningFilter === false
       ? []
       : ([{ mode: "morning", label: "只看清晨窗口" }] as const)),
-    ...(config?.showRainFilter ? ([{ mode: "rain", label: "只看降水时段" }] as const) : []),
+    ...(config?.showRainFilter
+      ? ([{ mode: "rain", label: config?.rainFilterLabel ?? "只看降水时段" }] as const)
+      : []),
     { mode: "risk", label: config?.riskFilterLabel ?? "只看有风险时段" },
   ];
 }
@@ -4707,19 +4725,16 @@ function ProfessionalHourlyCloudSection({
     "日期",
     "时间",
     "天气",
-    signalColumnLabel,
-    "总云量 %",
-    "高云量 %",
-    "中云量 %",
-    "低云量 %",
-    ...temperatureColumnLabels,
-    "露点 °C",
-    "露点差 °C",
-    "湿度 %",
-    "降水 mm / 降水概率 %",
-    "能见度 km",
-    "风速 m/s",
-    "风向",
+    ...(config?.showSignalColumn === false ? [] : [signalColumnLabel]),
+    ...(config?.showCloudColumns === false
+      ? []
+      : ["总云量 %", "高云量 %", "中云量 %", "低云量 %"]),
+    ...(config?.showTemperatureColumns === false ? [] : [...temperatureColumnLabels]),
+    ...(config?.showDewPointColumns === false ? [] : ["露点 °C", "露点差 °C"]),
+    ...(config?.showHumidityColumn === false ? [] : ["湿度 %"]),
+    config?.precipitationColumnLabel ?? "降水 mm / 降水概率 %",
+    ...(config?.showVisibilityColumn === false ? [] : ["能见度 km"]),
+    ...(config?.showWindColumns === false ? [] : ["风速 m/s", "风向"]),
   ];
 
   const content = (
@@ -4743,6 +4758,8 @@ function ProfessionalHourlyCloudSection({
             type="button"
             variant="secondary"
             size="sm"
+            aria-expanded={expanded}
+            data-general-hourly-toggle={target === "general" ? "true" : undefined}
             onClick={() => {
               setExpanded((current) => !current);
             }}
@@ -4856,8 +4873,15 @@ function ProfessionalHourlyCloudSection({
 
           <ResponsiveDataScroller bare data-cloud-sea-professional-table-scroll="true">
             <table
-              className="w-full min-w-[1280px] border-separate border-spacing-0 text-left text-[12px] leading-5"
-              data-professional-hourly-table-layout="mobile-scroll-safe"
+              className={cn(
+                "border-separate border-spacing-0 text-left text-[12px] leading-5",
+                config?.compactTable
+                  ? "mx-auto w-full max-w-max min-w-[560px]"
+                  : "w-full min-w-[1280px]",
+              )}
+              data-professional-hourly-table-layout={
+                config?.compactTable ? "rain-focused" : "mobile-scroll-safe"
+              }
             >
               <thead className="bg-muted text-xs text-muted-foreground">
                 <tr>
@@ -4889,6 +4913,7 @@ function ProfessionalHourlyCloudSection({
                       ordinarySignalLabel={config?.ordinarySignalLabel}
                       cloudBasisRowNote={cloudBasisConsistency.rowNotesByHour?.[row.time]}
                       showRawTemperatureColumn={showRawTemperatureColumn}
+                      config={config}
                     />
                   ))
                 ) : (
@@ -4931,6 +4956,9 @@ function ProfessionalHourlyCloudSection({
         data-professional-hourly-expanded={
           target === "general" ? (expanded ? "true" : "false") : undefined
         }
+        data-general-professional-hourly-expanded={
+          target === "general" ? (expanded ? "true" : "false") : undefined
+        }
         data-professional-hourly-variant="embedded"
         data-testid="professional-hourly-data"
       >
@@ -4943,6 +4971,7 @@ function ProfessionalHourlyCloudSection({
     <Card
       className={cn(
         "ProfessionalHourlyCloudSection min-w-0 max-w-full p-4 shadow-sm",
+        config?.cardClassName,
         target === "cloud_sea" &&
           "CloudSeaProfessionalHourlyData cloud-sea-professional-hourly-data",
         target === "glow" && "glow-professional-hourly-cloud-section",
@@ -4957,6 +4986,9 @@ function ProfessionalHourlyCloudSection({
         config?.initiallyExpanded === false ? "false" : "true"
       }
       data-professional-hourly-expanded={
+        target === "general" ? (expanded ? "true" : "false") : undefined
+      }
+      data-general-professional-hourly-expanded={
         target === "general" ? (expanded ? "true" : "false") : undefined
       }
       data-professional-hourly-variant="card"
@@ -5073,6 +5105,7 @@ function CloudSeaProfessionalHourlyRow({
   ordinarySignalLabel,
   cloudBasisRowNote,
   showRawTemperatureColumn,
+  config,
 }: {
   readonly target: ProfessionalHourlySectionTarget;
   readonly row: ProfessionalHourlyRow;
@@ -5082,6 +5115,7 @@ function CloudSeaProfessionalHourlyRow({
   readonly ordinarySignalLabel?: string;
   readonly cloudBasisRowNote?: string;
   readonly showRawTemperatureColumn: boolean;
+  readonly config?: ProfessionalHourlySectionConfig;
 }) {
   const signal = professionalHourlyDisplaySignal(row);
   const signalDisplay = professionalHourlySignalDisplayForTarget(target, signal, {
@@ -5129,59 +5163,73 @@ function CloudSeaProfessionalHourlyRow({
           <span>{weatherText}</span>
         </span>
       </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell cell="signal">
-        <span className="flex max-w-[15rem] flex-wrap gap-1">
-          {signalBadges.map((badge) => (
-            <Badge key={badge.label} variant={badge.badgeVariant}>
-              {badge.label}
-            </Badge>
-          ))}
-        </span>
-      </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell
-        cell="cloud-total"
-        className={professionalHourlyToneClass(row.cloudTotalPercent, "cloud-total")}
-      >
-        <ProfessionalCloudValue
-          value={formatProfessionalPercent(row.cloudTotalPercent)}
-          note={cloudBasisRowNote}
-        />
-      </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell cell="cloud-high">
-        {formatProfessionalPercent(row.cloudHighPercent)}
-      </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell cell="cloud-mid">
-        {formatProfessionalPercent(row.cloudMidPercent)}
-      </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell
-        cell="cloud-low"
-        className={professionalHourlyToneClass(row.cloudLowPercent, "cloud-low")}
-      >
-        {formatProfessionalPercent(row.cloudLowPercent)}
-      </ProfessionalHourlyCell>
-      {showRawTemperatureColumn ? (
+      {config?.showSignalColumn === false ? null : (
+        <ProfessionalHourlyCell cell="signal">
+          <span className="flex max-w-[15rem] flex-wrap gap-1">
+            {signalBadges.map((badge) => (
+              <Badge key={badge.label} variant={badge.badgeVariant}>
+                {badge.label}
+              </Badge>
+            ))}
+          </span>
+        </ProfessionalHourlyCell>
+      )}
+      {config?.showCloudColumns === false ? null : (
+        <>
+          <ProfessionalHourlyCell
+            cell="cloud-total"
+            className={professionalHourlyToneClass(row.cloudTotalPercent, "cloud-total")}
+          >
+            <ProfessionalCloudValue
+              value={formatProfessionalPercent(row.cloudTotalPercent)}
+              note={cloudBasisRowNote}
+            />
+          </ProfessionalHourlyCell>
+          <ProfessionalHourlyCell cell="cloud-high">
+            {formatProfessionalPercent(row.cloudHighPercent)}
+          </ProfessionalHourlyCell>
+          <ProfessionalHourlyCell cell="cloud-mid">
+            {formatProfessionalPercent(row.cloudMidPercent)}
+          </ProfessionalHourlyCell>
+          <ProfessionalHourlyCell
+            cell="cloud-low"
+            className={professionalHourlyToneClass(row.cloudLowPercent, "cloud-low")}
+          >
+            {formatProfessionalPercent(row.cloudLowPercent)}
+          </ProfessionalHourlyCell>
+        </>
+      )}
+      {showRawTemperatureColumn && config?.showTemperatureColumns !== false ? (
         <ProfessionalHourlyCell cell="raw-temperature" dataBasis="raw_grid">
           {formatProfessionalTemperature(row.rawTemperatureC)}
         </ProfessionalHourlyCell>
       ) : null}
-      <ProfessionalHourlyCell cell="temperature" dataBasis={row.temperatureBasis}>
-        {formatProfessionalTemperature(row.displayedTemperatureC)}
-      </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell cell="dew-point">
-        {formatProfessionalTemperature(row.dewPointC)}
-      </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell
-        cell="dew-point-spread"
-        className={professionalHourlyToneClass(row.dewPointSpreadC, "dew-point-spread")}
-      >
-        {formatProfessionalTemperatureDelta(row.dewPointSpreadC)}
-      </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell
-        cell="humidity"
-        className={professionalHourlyToneClass(row.relativeHumidityPercent, "humidity")}
-      >
-        {formatProfessionalPercent(row.relativeHumidityPercent)}
-      </ProfessionalHourlyCell>
+      {config?.showTemperatureColumns === false ? null : (
+        <ProfessionalHourlyCell cell="temperature" dataBasis={row.temperatureBasis}>
+          {formatProfessionalTemperature(row.displayedTemperatureC)}
+        </ProfessionalHourlyCell>
+      )}
+      {config?.showDewPointColumns === false ? null : (
+        <>
+          <ProfessionalHourlyCell cell="dew-point">
+            {formatProfessionalTemperature(row.dewPointC)}
+          </ProfessionalHourlyCell>
+          <ProfessionalHourlyCell
+            cell="dew-point-spread"
+            className={professionalHourlyToneClass(row.dewPointSpreadC, "dew-point-spread")}
+          >
+            {formatProfessionalTemperatureDelta(row.dewPointSpreadC)}
+          </ProfessionalHourlyCell>
+        </>
+      )}
+      {config?.showHumidityColumn === false ? null : (
+        <ProfessionalHourlyCell
+          cell="humidity"
+          className={professionalHourlyToneClass(row.relativeHumidityPercent, "humidity")}
+        >
+          {formatProfessionalPercent(row.relativeHumidityPercent)}
+        </ProfessionalHourlyCell>
+      )}
       <ProfessionalHourlyCell
         cell="precipitation"
         className={
@@ -5192,21 +5240,27 @@ function CloudSeaProfessionalHourlyRow({
       >
         {formatProfessionalPrecipitation(row)}
       </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell
-        cell="visibility"
-        className={professionalHourlyToneClass(row.visibilityMeters, "visibility")}
-      >
-        {formatProfessionalVisibility(row.visibilityMeters)}
-      </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell
-        cell="wind-speed"
-        className={professionalHourlyToneClass(row.windSpeedMs, "wind-speed")}
-      >
-        {formatProfessionalWindSpeed(row.windSpeedMs)}
-      </ProfessionalHourlyCell>
-      <ProfessionalHourlyCell cell="wind-direction">
-        {formatProfessionalWindDirection(row.windDirectionDeg)}
-      </ProfessionalHourlyCell>
+      {config?.showVisibilityColumn === false ? null : (
+        <ProfessionalHourlyCell
+          cell="visibility"
+          className={professionalHourlyToneClass(row.visibilityMeters, "visibility")}
+        >
+          {formatProfessionalVisibility(row.visibilityMeters)}
+        </ProfessionalHourlyCell>
+      )}
+      {config?.showWindColumns === false ? null : (
+        <>
+          <ProfessionalHourlyCell
+            cell="wind-speed"
+            className={professionalHourlyToneClass(row.windSpeedMs, "wind-speed")}
+          >
+            {formatProfessionalWindSpeed(row.windSpeedMs)}
+          </ProfessionalHourlyCell>
+          <ProfessionalHourlyCell cell="wind-direction">
+            {formatProfessionalWindDirection(row.windDirectionDeg)}
+          </ProfessionalHourlyCell>
+        </>
+      )}
     </tr>
   );
 }
@@ -6733,7 +6787,12 @@ export function ComprehensiveForecastView({
         </div>
       </div>
       {viewModel.professionalHourlyData ? (
-        <GeneralHourlyWeatherSection data={viewModel.professionalHourlyData} />
+        <CloudSeaProfessionalHourlyDataPanel
+          target="general"
+          data={viewModel.professionalHourlyData}
+          config={generalProfessionalHourlySectionConfig}
+          variant="card"
+        />
       ) : null}
     </DecisionResultTemplate>
   );
@@ -6754,94 +6813,32 @@ const generalRainfallSectionCopy = {
   emptyMessage: "当前筛选下暂无降水小时，请切换筛选复核完整预报。",
 };
 
-function GeneralHourlyWeatherSection({ data }: { readonly data: ProfessionalHourlyDisplayData }) {
-  const rows = data.rows;
-  const basis = data.timeBasis;
-  const [expanded, setExpanded] = useState(false);
-  const [filterMode, setFilterMode] = useState<"all" | "rain">("all");
-
-  if (!isValidProfessionalHourlyTimeBasis(basis) || rows.length === 0) {
-    return null;
-  }
-
-  return (
-    <Card
-      className="GeneralProfessionalHourlyData mx-auto w-full max-w-5xl min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm"
-      data-general-section="GeneralHourlyWeatherSection"
-      data-general-professional-hourly-expanded={expanded ? "true" : "false"}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-bold text-card-foreground">
-              {generalRainfallSectionCopy.sectionTitle}
-            </h2>
-            <Badge variant="accent">{generalRainfallSectionCopy.sectionBadge}</Badge>
-          </div>
-          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-            {generalRainfallSectionCopy.sectionDescription}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          aria-expanded={expanded}
-          onClick={() => {
-            setExpanded((current) => !current);
-          }}
-          data-general-hourly-toggle="true"
-        >
-          {expanded
-            ? generalRainfallSectionCopy.collapseButtonLabel
-            : generalRainfallSectionCopy.expandButtonLabel}
-          <ExpandChevron expanded={expanded} />
-        </Button>
-      </div>
-
-      {expanded ? (
-        <div className="mt-4 grid min-w-0 max-w-full gap-3" data-general-hourly-body="true">
-          <dl className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-4">
-            <CompactDefinition
-              label="目标有效时间"
-              value={`${formatFullDateTimeForTimezone(
-                basis.anchorStartLocal ?? basis.startTime,
-                basis.timezone,
-              )} - ${formatFullDateTimeForTimezone(
-                basis.anchorEndLocal ?? basis.endTime,
-                basis.timezone,
-              )}`}
-            />
-            <CompactDefinition
-              label="覆盖小时"
-              value={`${rows.length} / ${basis.expectedRowCount ?? basis.requestedHours ?? rows.length} 小时`}
-            />
-            <CompactDefinition
-              label="时间步长"
-              value={basis.stepMinutes === 60 ? "逐小时" : `${basis.stepMinutes} 分钟`}
-            />
-            <CompactDefinition label="时区" value={basis.timezone} />
-          </dl>
-          <GeneralRainHourlyTable
-            data={data}
-            filterMode={filterMode}
-            onFilterModeChange={setFilterMode}
-          />
-        </div>
-      ) : (
-        <CloudSeaHourlyFocusPreview
-          target="general"
-          rows={rows.slice(0, 4)}
-          timezone={basis?.timezone ?? "Asia/Shanghai"}
-          title={generalRainfallSectionCopy.previewTitle}
-          rowAnnotations={new Map(
-            (data.rowAnnotations ?? []).map((item) => [item.rowTime, item]),
-          )}
-        />
-      )}
-    </Card>
-  );
-}
+const generalProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
+  sectionTitle: "未来小时降雨",
+  sectionBadge: "逐小时降水",
+  sectionDescription: "逐小时查看未来降雨量与降水概率，重点复核降水时段，辅助判断拍摄可行性。",
+  usageText: "逐小时查看降雨量与降水概率，重点复核降水时段，辅助判断拍摄可行性。",
+  expandButtonLabel: "展开小时降雨",
+  collapseButtonLabel: "收起小时降雨",
+  allFilterLabel: "全部小时",
+  rainFilterLabel: "只看降水时段",
+  previewTitle: "近期降雨时段预览",
+  defaultFilterMode: "all",
+  initiallyExpanded: false,
+  showFocusFilter: false,
+  showMorningFilter: false,
+  showRainFilter: true,
+  showSignalColumn: false,
+  showCloudColumns: false,
+  showTemperatureColumns: false,
+  showDewPointColumns: false,
+  showHumidityColumn: false,
+  showVisibilityColumn: false,
+  showWindColumns: false,
+  precipitationColumnLabel: "降水 mm / 概率 %",
+  compactTable: true,
+  cardClassName: "mx-auto w-full max-w-5xl",
+};
 
 export function GeneralRainHourlyTable({
   data,
