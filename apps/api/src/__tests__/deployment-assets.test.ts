@@ -332,6 +332,21 @@ describe("production deployment assets", () => {
     }
   });
 
+  it("updates production from the intended branch and verifies the running web revision", () => {
+    const updater = readRepoFile("scripts/update.sh");
+    const compose = readRepoFile("docker-compose.prod.yml");
+    const webDockerfile = readRepoFile("apps/web/Dockerfile");
+
+    expect(updater).toContain('DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"');
+    expect(updater).toContain('git fetch origin "${DEPLOY_BRANCH}"');
+    expect(updater).toContain('git switch -- "${DEPLOY_BRANCH}"');
+    expect(updater).toContain('git pull --ff-only origin "${DEPLOY_BRANCH}"');
+    expect(updater).toContain("--force-recreate api web worker caddy");
+    expect(updater).toContain("verify_web_revision");
+    expect(compose).toContain("APP_GIT_SHA: ${APP_GIT_SHA:-unknown}");
+    expect(webDockerfile).toContain("org.opencontainers.image.revision=${APP_GIT_SHA}");
+  });
+
   it("ships optional local terrain DEM import and status scripts without downloading data", () => {
     const importer = readRepoFile("scripts/import-terrain-dem.sh");
     const checker = readRepoFile("scripts/check-terrain-dem.sh");

@@ -426,7 +426,7 @@ It uses `.env.production`, rebuilds images, starts dependencies, reruns database
 bash scripts/update.sh
 ```
 
-The update script pulls latest Git code when an upstream is configured, rebuilds images sequentially, reruns database preflight, runs migrations and seed data, bootstraps/verifies the admin account from `.env.production`, restarts services, and prints Compose status.
+The update script defaults to the production `main` branch, fetches and fast-forwards it from `origin`, rebuilds images sequentially, force-recreates the web/API/worker/Caddy containers, and verifies that the running web image carries the exact Git revision that was just built. It stops instead of reporting success when the checkout contains uncommitted files or the running web revision is stale. Staging deployments can select another branch explicitly with `DEPLOY_BRANCH=branch-name bash scripts/update.sh`.
 
 After provider configuration changes or forecast pipeline updates, run the public forecast smoke test:
 
