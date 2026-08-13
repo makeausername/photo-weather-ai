@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   getCurrentAccountSession,
   logoutPublicAccount,
@@ -24,6 +24,31 @@ export function PublicAccountEntry({ onNavigate, variant = "desktop" }: PublicAc
   const [session, setSession] = useState<PublicAccountSession | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const isMobile = variant === "mobile";
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +99,10 @@ export function PublicAccountEntry({ onNavigate, variant = "desktop" }: PublicAc
   }
 
   return (
-    <div className={cn(isMobile ? "grid w-full max-w-full min-w-0" : "relative")}>
+    <div
+      ref={menuRef}
+      className={cn(isMobile ? "grid w-full max-w-full min-w-0" : "relative")}
+    >
       <button
         type="button"
         className={cn(
@@ -87,6 +115,16 @@ export function PublicAccountEntry({ onNavigate, variant = "desktop" }: PublicAc
         onClick={() => setMenuOpen((current) => !current)}
       >
         账户
+        <svg
+          className={cn("h-3.5 w-3.5 transition-transform", menuOpen && "rotate-180")}
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          aria-hidden="true"
+        >
+          <path d="M3 6l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </button>
 
       {menuOpen ? (

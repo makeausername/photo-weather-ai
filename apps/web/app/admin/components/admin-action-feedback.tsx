@@ -18,10 +18,10 @@ type AdminActionFeedbackInput = Omit<AdminActionFeedback, "id">;
 export type { AdminActionFeedbackInput };
 
 const feedbackClasses: Record<AdminActionFeedbackVariant, string> = {
-  saving: "border-info bg-card text-info",
-  info: "border-info bg-card text-info",
+  saving: "border-info bg-card text-info-strong",
+  info: "border-info bg-card text-info-strong",
   success: "border-success bg-card text-success",
-  warning: "border-warning bg-card text-warning",
+  warning: "border-warning bg-card text-warning-strong",
   error: "border-danger bg-card text-danger",
 };
 

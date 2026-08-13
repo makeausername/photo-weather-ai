@@ -387,7 +387,7 @@ export function AdminUsersClient() {
 
       {temporaryPassword ? (
         <Card className="border-warning p-4">
-          <p className="text-sm font-semibold text-warning">临时密码仅显示一次</p>
+          <p className="text-sm font-semibold text-warning-strong">临时密码仅显示一次</p>
           <p className="mt-2 break-all rounded-md bg-muted px-3 py-2 font-mono text-sm text-foreground">
             {temporaryPassword}
           </p>

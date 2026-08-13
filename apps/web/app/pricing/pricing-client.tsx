@@ -307,7 +307,7 @@ export function PricingClient({
             role="alert"
             className={cn(
               "rounded-lg border bg-card px-3 py-2 text-sm",
-              state === "error" ? "border-danger text-danger" : "border-warning text-warning",
+              state === "error" ? "border-danger text-danger" : "border-warning text-warning-strong",
             )}
           >
             {message}

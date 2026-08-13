@@ -339,7 +339,7 @@ export function AdminUserDetailClient({ userId }: { readonly userId: string }) {
           </Badge>
           {temporaryPassword ? (
             <div className="rounded-md border border-warning bg-card p-3">
-              <p className="text-xs font-semibold text-warning">临时密码仅显示一次</p>
+              <p className="text-xs font-semibold text-warning-strong">临时密码仅显示一次</p>
               <p className="mt-2 break-all font-mono text-sm text-foreground">
                 {temporaryPassword}
               </p>

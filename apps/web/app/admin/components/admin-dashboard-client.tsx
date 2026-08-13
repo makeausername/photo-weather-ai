@@ -118,7 +118,7 @@ export function AdminDashboardClient() {
   return (
     <div className="grid gap-5">
       {state.error ? (
-        <div className="rounded-lg border border-warning bg-card px-4 py-3 text-sm text-warning">
+        <div className="rounded-lg border border-warning bg-card px-4 py-3 text-sm text-warning-strong">
           {state.error}
         </div>
       ) : null}

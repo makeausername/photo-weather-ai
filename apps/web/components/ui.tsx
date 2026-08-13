@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, useEffect, useRef } from "react";
 import type {
   ButtonHTMLAttributes,
   HTMLAttributes,
@@ -127,11 +127,11 @@ type BadgeVariant = "default" | "success" | "warning" | "danger" | "muted" | "ac
 const badgeVariants: Record<BadgeVariant, string> = {
   default: "border-primary bg-secondary text-secondary-foreground",
   success: "border-success bg-card text-success",
-  warning: "border-warning bg-card text-warning",
+  warning: "border-warning bg-card text-warning-strong",
   danger: "border-danger bg-card text-danger",
   muted: "border-border bg-muted text-muted-foreground",
-  accent: "border-accent bg-card text-accent",
-  info: "border-info bg-card text-info",
+  accent: "border-accent bg-card text-accent-strong",
+  info: "border-info bg-card text-info-strong",
 };
 
 type BadgeProps = {
@@ -326,13 +326,74 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const previousActiveElement = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialogRef.current
+      ?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+      ?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancelRef.current();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable || focusable.length === 0) {
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) {
+        return;
+      }
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousActiveElement?.focus?.();
+    };
+  }, [open]);
+
   if (!open) {
     return null;
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#17231F]/50 p-4 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#17231F]/50 p-4 backdrop-blur-sm"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onCancelRef.current();
+        }
+      }}
+    >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}

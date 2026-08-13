@@ -375,7 +375,7 @@ function CloudSeaDecisionCardView({
             "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
             index % 2 === 0
               ? "border-primary bg-secondary text-primary"
-              : "border-accent bg-card text-accent",
+              : "border-accent bg-card text-accent-strong",
           )}
         >
           {String(index + 1).padStart(2, "0")}
@@ -391,7 +391,7 @@ function CloudSeaDecisionCardView({
               card.tone === "danger"
                 ? "text-danger"
                 : card.tone === "warning"
-                  ? "text-warning"
+                  ? "text-warning-strong"
                   : card.tone === "muted"
                     ? "text-muted-foreground"
                     : "text-primary",
@@ -654,7 +654,7 @@ function GlowDecisionCardView({
             "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
             index % 2 === 0
               ? "border-primary bg-secondary text-primary"
-              : "border-accent bg-card text-accent",
+              : "border-accent bg-card text-accent-strong",
           )}
         >
           {String(index + 1).padStart(2, "0")}
@@ -670,7 +670,7 @@ function GlowDecisionCardView({
               card.tone === "danger"
                 ? "text-danger"
                 : card.tone === "warning"
-                  ? "text-warning"
+                  ? "text-warning-strong"
                   : card.tone === "muted"
                     ? "text-muted-foreground"
                     : "text-primary",
@@ -961,7 +961,7 @@ function AstroDecisionCardView({
             "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
             index % 2 === 0
               ? "border-primary bg-secondary text-primary"
-              : "border-accent bg-card text-accent",
+              : "border-accent bg-card text-accent-strong",
           )}
         >
           {String(index + 1).padStart(2, "0")}
@@ -977,7 +977,7 @@ function AstroDecisionCardView({
               card.tone === "danger"
                 ? "text-danger"
                 : card.tone === "warning"
-                  ? "text-warning"
+                  ? "text-warning-strong"
                   : card.tone === "muted"
                     ? "text-muted-foreground"
                     : "text-primary",
@@ -1794,7 +1794,7 @@ export function SubjectKnowledgeGuide({
                   "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
                   index % 2 === 0
                     ? "border-primary bg-secondary text-primary"
-                    : "border-accent bg-card text-accent",
+                    : "border-accent bg-card text-accent-strong",
                 )}
               >
                 {String(index + 1).padStart(2, "0")}

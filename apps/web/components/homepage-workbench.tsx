@@ -214,6 +214,7 @@ export function HomepageGuidancePanel({
               card={card}
               index={index}
               fillHeight={hasResult}
+              loading={state.status === "loading"}
             />
           ))}
         </div>
@@ -226,18 +227,22 @@ function HomepageInsightCardView({
   card,
   index,
   fillHeight,
+  loading,
 }: {
   readonly card: HomepageInsightCard;
   readonly index: number;
   readonly fillHeight?: boolean;
+  readonly loading?: boolean;
 }) {
   return (
     <article
       className={cn(
-        "grid min-w-0 content-start gap-3 overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm",
+        "grid min-w-0 content-start gap-3 overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm transition",
         fillHeight && "min-[900px]:h-full",
+        loading && "animate-pulse",
       )}
       data-homepage-guidance-card={card.title}
+      aria-busy={loading}
     >
       <div className="flex items-start justify-between gap-3">
         <span
@@ -245,7 +250,7 @@ function HomepageInsightCardView({
             "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
             index % 2 === 0
               ? "border-primary bg-secondary text-primary"
-              : "border-accent bg-card text-accent",
+              : "border-accent bg-card text-accent-strong",
           )}
         >
           {String(index + 1).padStart(2, "0")}
@@ -260,6 +265,12 @@ function HomepageInsightCardView({
       </div>
       <div className="min-w-0">
         <h3 className="text-base font-bold leading-6 text-card-foreground">{card.title}</h3>
+        {loading ? (
+          <div
+            className="mt-2 h-4 w-1/2 animate-pulse rounded-full bg-muted"
+            aria-hidden="true"
+          />
+        ) : null}
         {card.value ? (
           <p
             className={cn(

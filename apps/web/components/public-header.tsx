@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PublicAccountEntry } from "./public-account-entry";
 import { cn } from "./ui";
 
@@ -61,9 +61,37 @@ export function PublicHeader(props?: PublicHeaderProps) {
   const { initialMenuOpen = false } = props ?? {};
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(initialMenuOpen);
+  const headerMenuRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen]);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-card/92 backdrop-blur-xl">
+    <header
+      ref={headerMenuRef}
+      className="sticky top-0 z-40 border-b border-border bg-card/92 backdrop-blur-xl"
+    >
       <nav className="flex w-full min-w-0 items-center gap-4 px-[clamp(16px,4vw,72px)] py-3 min-[1200px]:grid min-[1200px]:grid-cols-[minmax(220px,1fr)_auto_minmax(220px,1fr)]">
         <Link
           href="/"
@@ -94,12 +122,22 @@ export function PublicHeader(props?: PublicHeaderProps) {
 
         <button
           type="button"
-          className="ml-auto inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary min-[1200px]:hidden"
+          className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary min-[1200px]:hidden"
           aria-expanded={menuOpen}
           aria-controls="public-mobile-menu"
           onClick={() => setMenuOpen((current) => !current)}
         >
           菜单
+          <svg
+            className={cn("h-3.5 w-3.5 transition-transform", menuOpen && "rotate-180")}
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            aria-hidden="true"
+          >
+            <path d="M3 6l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
       </nav>
 

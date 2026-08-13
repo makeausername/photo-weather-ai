@@ -192,6 +192,20 @@ export function DecisionLoadingCard({
           ))}
         </dl>
       ) : null}
+      <div
+        className="mt-5 grid min-w-0 max-w-full gap-3"
+        data-decision-loading-skeleton="true"
+        aria-hidden="true"
+      >
+        <div className="h-3 w-2/3 animate-pulse rounded-full bg-muted" />
+        <div className="h-3 w-1/2 animate-pulse rounded-full bg-muted" />
+        <div className="h-3 w-5/6 animate-pulse rounded-full bg-muted" />
+        <div className="mt-1 grid min-w-0 gap-2 sm:grid-cols-3">
+          <div className="h-24 animate-pulse rounded-lg bg-muted" />
+          <div className="h-24 animate-pulse rounded-lg bg-muted" />
+          <div className="h-24 animate-pulse rounded-lg bg-muted" />
+        </div>
+      </div>
       {action ? <div className="mt-4">{action}</div> : null}
     </Card>
   );
@@ -573,7 +587,19 @@ export function ResultScoreCard({
           <span className="pb-1 text-sm font-semibold text-muted-foreground">/ 100</span>
         </div>
         <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full bg-primary" style={{ width: `${safeScore}%` }} />
+          <div
+            className={cn(
+              "h-full rounded-full transition-all",
+              safeScore >= 80
+                ? "bg-primary"
+                : safeScore >= 60
+                  ? "bg-accent-strong"
+                  : safeScore >= 40
+                    ? "bg-muted-foreground"
+                    : "bg-danger",
+            )}
+            style={{ width: `${safeScore}%` }}
+          />
         </div>
       </div>
       <div className="grid gap-2">

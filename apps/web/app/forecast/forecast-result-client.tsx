@@ -871,7 +871,7 @@ function CompactInfoCard({
           </Badge>
         ) : null}
       </div>
-      {timeBasis ? <p className="mt-2 text-xs font-semibold text-accent">{timeBasis}</p> : null}
+      {timeBasis ? <p className="mt-2 text-xs font-semibold text-accent-strong">{timeBasis}</p> : null}
       <p className="mt-3 break-words text-lg font-bold leading-6 text-card-foreground">{value}</p>
       <p className="mt-2 text-xs leading-5 text-muted-foreground">{detail}</p>
     </Card>
@@ -1876,7 +1876,7 @@ function formatAstroWindowForUi(window: AstroWindowLike, timezone = "Asia/Shangh
 function InvalidQueryCard({ message }: { readonly message?: string }) {
   return (
     <Card className="border-warning p-5 shadow-sm">
-      <h2 className="text-lg font-bold text-warning">查询参数不完整</h2>
+      <h2 className="text-lg font-bold text-warning-strong">查询参数不完整</h2>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
         {message ?? "请从首页选择地点和预报范围，或从专题页进入对应题材分析。"}
       </p>
@@ -2577,9 +2577,9 @@ function AstroNightFactorChip({
       className={cn(
         "inline-flex min-h-7 items-center rounded-full border px-2.5 py-1 text-xs font-semibold leading-4",
         chip.tone === "primary" && "border-primary/30 bg-primary/10 text-primary",
-        chip.tone === "accent" && "border-accent/30 bg-accent/10 text-accent",
+        chip.tone === "accent" && "border-accent/30 bg-accent/10 text-accent-strong",
         chip.tone === "danger" && "border-danger/30 bg-danger/10 text-danger",
-        chip.tone === "info" && "border-info/30 bg-info/10 text-info",
+        chip.tone === "info" && "border-info/30 bg-info/10 text-info-strong",
         chip.tone === "muted" && "border-border bg-muted text-muted-foreground",
       )}
       data-astro-night-factor-chip={chip.key}
@@ -5125,7 +5125,7 @@ function CloudSeaProfessionalHourlyRow({
         cell="precipitation"
         className={
           professionalHourlyHasPrecipitation(row)
-            ? "bg-accent/10 font-semibold text-accent"
+            ? "bg-accent/10 font-semibold text-accent-strong"
             : undefined
         }
       >
@@ -5242,7 +5242,7 @@ function ProfessionalCloudValue({
   return (
     <span className="inline-flex items-center gap-1.5">
       <span>{value}</span>
-      <span className="rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+      <span className="rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent-strong">
         {note}
       </span>
     </span>
@@ -5646,25 +5646,25 @@ function professionalHourlyToneClass(
     return "bg-primary/10 font-semibold text-primary";
   }
   if (field === "cloud-total" && value >= 90) {
-    return "bg-accent/10 font-semibold text-accent";
+    return "bg-accent/10 font-semibold text-accent-strong";
   }
   if (field === "humidity" && value >= 90) {
     return "bg-primary/10 font-semibold text-primary";
   }
   if (field === "dew-point-spread" && value <= 2) {
-    return "bg-accent/10 font-semibold text-accent";
+    return "bg-accent/10 font-semibold text-accent-strong";
   }
   if (field === "visibility" && value <= 3000) {
     return "bg-danger/10 font-semibold text-danger";
   }
   if (field === "visibility" && value <= 8000) {
-    return "bg-accent/10 font-semibold text-accent";
+    return "bg-accent/10 font-semibold text-accent-strong";
   }
   if (field === "wind-speed" && value >= 9) {
     return "bg-danger/10 font-semibold text-danger";
   }
   if (field === "wind-speed" && value >= 6) {
-    return "bg-accent/10 font-semibold text-accent";
+    return "bg-accent/10 font-semibold text-accent-strong";
   }
 
   return undefined;
@@ -6637,7 +6637,10 @@ export function ComprehensiveForecastView({
   const primaryBestWindow = viewModel.bestWindows.find(isExecutableDisplayWindow);
 
   return (
-    <DecisionResultTemplate target="general">
+    <DecisionResultTemplate
+      target="general"
+      className="GeneralResultPage general-result-page grid gap-4"
+    >
       <ComprehensiveContextBar query={query} result={result} />
       <ComprehensiveCoreDecisionCards
         result={result}
@@ -6645,13 +6648,29 @@ export function ComprehensiveForecastView({
         bestSubject={bestSubject}
         mainRisk={mainRisk}
       />
-      <WeatherEssentialsPanel result={result} />
-      {result.dailySummaries.length > 0 ? (
-        <ComprehensiveMultiDaySummary query={query} result={result} />
-      ) : null}
-      <OpportunityWindowSection query={query} result={result} />
-      <RiskDecisionSection result={result} mainRisk={mainRisk} />
-      <ActionableAdviceSection result={result} bestSubject={bestSubject} mainRisk={mainRisk} />
+      <div
+        className="grid min-w-0 max-w-full gap-4 min-[1200px]:grid-cols-[minmax(0,1fr)_clamp(300px,26vw,380px)] min-[1200px]:items-start"
+        data-general-result-dashboard="true"
+        data-forecast-decision-layout="dashboard"
+      >
+        <div
+          className="grid min-w-0 max-w-full content-start gap-4"
+          data-general-result-main-column="true"
+        >
+          <WeatherEssentialsPanel result={result} />
+          {result.dailySummaries.length > 0 ? (
+            <ComprehensiveMultiDaySummary query={query} result={result} />
+          ) : null}
+          <OpportunityWindowSection query={query} result={result} />
+        </div>
+        <div
+          className="grid min-w-0 max-w-full content-start gap-4 min-[1200px]:sticky min-[1200px]:top-[88px]"
+          data-general-result-side-column="true"
+        >
+          <RiskDecisionSection result={result} mainRisk={mainRisk} />
+          <ActionableAdviceSection result={result} bestSubject={bestSubject} mainRisk={mainRisk} />
+        </div>
+      </div>
       {viewModel.professionalHourlyData ? (
         <GeneralHourlyWeatherSection data={viewModel.professionalHourlyData} />
       ) : null}
@@ -6883,13 +6902,13 @@ function GeneralRainHourlyRow({
       </ProfessionalHourlyCell>
       <ProfessionalHourlyCell
         cell="rain-amount"
-        className={hasRain ? "font-semibold text-accent" : undefined}
+        className={hasRain ? "font-semibold text-accent-strong" : undefined}
       >
         {formatProfessionalRainAmount(row)}
       </ProfessionalHourlyCell>
       <ProfessionalHourlyCell
         cell="rain-probability"
-        className={hasRain ? "font-semibold text-accent" : undefined}
+        className={hasRain ? "font-semibold text-accent-strong" : undefined}
       >
         {formatProfessionalRainProbability(row)}
       </ProfessionalHourlyCell>
@@ -7833,9 +7852,9 @@ function PrimaryResultCard({ card }: { readonly card: ForecastResultCard }) {
 function cardToneText(tone: ForecastResultCardTone): string {
   const toneClasses: Record<ForecastResultCardTone, string> = {
     primary: "text-primary",
-    accent: "text-accent",
+    accent: "text-accent-strong",
     danger: "text-danger",
-    info: "text-info",
+    info: "text-info-strong",
     muted: "text-card-foreground",
   };
 

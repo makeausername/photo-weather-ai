@@ -685,7 +685,7 @@ function stateClass(status: RowState["status"]): string {
   }
 
   if (status === "testing" || status === "saving") {
-    return "border-info bg-card text-info";
+    return "border-info bg-card text-info-strong";
   }
 
   return "border-border bg-card text-muted-foreground";

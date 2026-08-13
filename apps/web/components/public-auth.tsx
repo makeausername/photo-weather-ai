@@ -71,7 +71,7 @@ export function AuthStatusMessage({ message, tone = "info" }: AuthStatusMessageP
         "rounded-lg border px-3 py-2.5 text-sm font-medium leading-6 [overflow-wrap:anywhere]",
         tone === "success" && "border-success bg-card text-success",
         tone === "error" && "border-danger bg-card text-danger",
-        tone === "info" && "border-info bg-card text-info",
+        tone === "info" && "border-info bg-card text-info-strong",
       )}
     >
       {message}
