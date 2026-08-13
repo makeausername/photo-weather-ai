@@ -87,8 +87,9 @@ export type WeatherAlert = {
 export type AirQuality = {
   readonly provider: string;
   readonly observedAt: string;
+  readonly availability?: "available" | "partial" | "unavailable";
   readonly aqi?: number | null;
-  readonly category: "excellent" | "good" | "light" | "moderate" | "heavy" | "severe";
+  readonly category?: "excellent" | "good" | "light" | "moderate" | "heavy" | "severe" | null;
   readonly pm25?: number | null;
   readonly pm10?: number | null;
   readonly hourly?: readonly NormalizedAerosolReference[];
