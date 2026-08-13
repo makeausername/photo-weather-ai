@@ -6903,7 +6903,7 @@ export function GeneralHourlyWeatherSection({
 
       {expanded ? (
         <div
-          className="mx-auto mt-4 grid w-full min-w-0 max-w-5xl gap-3"
+          className="mt-4 grid w-full min-w-0 gap-3"
           data-general-hourly-body="true"
         >
           <dl className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-4">
@@ -7020,9 +7020,9 @@ export function GeneralRainHourlyTable({
 
   return (
     <section
-      className="mx-auto w-full max-w-5xl"
+      className="w-full"
       data-general-rain-table="true"
-      data-general-rain-content-width="centered"
+      data-general-rain-content-width="full"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div
