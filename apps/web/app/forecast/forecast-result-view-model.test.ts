@@ -16,6 +16,7 @@ import {
   ComprehensiveForecastView,
   AstroResultPage,
   CloudSeaProfessionalHourlyDataPanel,
+  GeneralHourlyWeatherSection,
   GeneralRainHourlyTable,
   CloudSeaResultPage,
   ForecastDecisionErrorState,
@@ -3188,12 +3189,53 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("逐小时降水");
     expect(html).toContain("展开小时降雨");
     expect(html).not.toContain('data-general-rain-row="');
-    expect(html).toContain('data-professional-hourly-target="general"');
+    expect(html).toContain('data-general-rain-preview="true"');
+    expect(html).not.toContain('data-professional-hourly-target="general"');
+    expect(html).not.toContain("云量口径");
+    expect(html).not.toContain("只看有风险时段");
 
     const actionPlanIndex = html.indexOf('data-testid="action-plan"');
     const hourlySectionIndex = html.indexOf('data-general-section="GeneralHourlyWeatherSection"');
     expect(actionPlanIndex).toBeGreaterThan(-1);
     expect(hourlySectionIndex).toBeGreaterThan(actionPlanIndex);
+  });
+
+  it("keeps the expanded general hourly rainfall panel free of cloud-sea diagnostics", () => {
+    const hourlyRange = resultWithGlowHourlyRange("24h", 24);
+    const result: ForecastCalculationResult = {
+      ...resultForTarget("general"),
+      horizon: "24h",
+      forecastEnd: hourlyRange.forecastEnd,
+      targetDates: hourlyRange.targetDates,
+      calendarBasis: hourlyRange.calendarBasis,
+      professionalHourlyData: hourlyRange.professionalHourlyData,
+      professionalHourlyDataTimeBasis: hourlyRange.professionalHourlyDataTimeBasis,
+    };
+    const hourlyData = buildForecastResultViewModel(result, "general").professionalHourlyData;
+
+    expect(hourlyData).toBeDefined();
+    const html = renderToStaticMarkup(
+      React.createElement(GeneralHourlyWeatherSection, {
+        data: hourlyData!,
+        initiallyExpanded: true,
+      }),
+    );
+
+    expect(html).toContain('data-general-hourly-body="true"');
+    expect(html).toContain('data-general-rain-table="true"');
+    expect(html).toContain("目标有效时间");
+    expect(html).toContain("覆盖小时");
+    expect(html).toContain("时间步长");
+    expect(html).toContain("时区");
+    expect(html).toContain("降水 mm");
+    expect(html).toContain("概率 %");
+    expect(html).toContain("min-w-[640px]");
+    expect(html).not.toContain("max-w-max");
+    expect(html).not.toContain("云量口径");
+    expect(html).not.toContain("分层覆盖");
+    expect(html).not.toContain("云海判断");
+    expect(html).not.toContain("只看有风险时段");
+    expect(html).not.toContain('data-professional-hourly-target="general"');
   });
 
   it("expands the general result hourly rainfall table with rain-only details", () => {

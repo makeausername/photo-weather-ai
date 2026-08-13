@@ -14,6 +14,7 @@ import {
   type CloudSeaAnalysisWindow,
   type CloudSeaWindowRiskContext,
   type CloudSeaWeatherVariableConsistencyContext,
+  type CloudLayerFieldCoverageSummary,
   type ForecastCalculationResult,
   type ForecastHorizon,
   type ForecastMultiSourceAgreementContext,
@@ -967,11 +968,45 @@ function buildDisplayProfessionalHourlyTimeBasis(
     professionalCoverageNoteZh:
       timeBasis.professionalCoverageNoteZh ?? shortCoverageNote ?? undefined,
     fieldCoverageSummary: timeBasis.fieldCoverageSummary
-      ? {
-          ...timeBasis.fieldCoverageSummary,
-          totalHours: rows.length,
-        }
+      ? buildDisplayFieldCoverageSummary(rows)
       : timeBasis.fieldCoverageSummary,
+  };
+}
+
+function buildDisplayFieldCoverageSummary(
+  rows: readonly ProfessionalHourlyDataPoint[],
+): CloudLayerFieldCoverageSummary {
+  const countNumbers = (select: (row: ProfessionalHourlyDataPoint) => number | null | undefined) =>
+    rows.filter((row) => isFiniteNumber(select(row))).length;
+  const countCloudLayer = (
+    select: (row: ProfessionalHourlyDataPoint) => number | null | undefined,
+  ) =>
+    rows.filter(
+      (row) =>
+        row.cloudLayerBasis !== "total_only" &&
+        row.cloudLayerBasis !== "unknown" &&
+        isFiniteNumber(select(row)),
+    ).length;
+
+  return {
+    totalHours: rows.length,
+    totalCloudCoverage: countNumbers((row) => row.cloudTotalPercent),
+    cloudLowCoverage: countCloudLayer((row) => row.cloudLowPercent),
+    cloudMidCoverage: countCloudLayer((row) => row.cloudMidPercent),
+    cloudHighCoverage: countCloudLayer((row) => row.cloudHighPercent),
+    temperatureCoverage: countNumbers((row) => row.displayedTemperatureC),
+    terrainAdjustedTemperatureCoverage: countNumbers((row) => row.terrainAdjustedTemperatureC),
+    dewPointCoverage: countNumbers((row) => row.dewPointC),
+    dewPointSpreadCoverage: countNumbers((row) => row.dewPointSpreadC),
+    humidityCoverage: countNumbers((row) => row.relativeHumidityPercent),
+    precipitationAmountCoverage: countNumbers((row) => row.precipitationAmountMm),
+    precipitationProbabilityCoverage: countNumbers((row) => row.precipitationProbabilityPercent),
+    visibilityCoverage: countNumbers((row) => row.visibilityMeters),
+    windSpeedCoverage: countNumbers((row) => row.windSpeedMs),
+    windDirectionCoverage: countNumbers((row) => row.windDirectionDeg),
+    weatherCodeCoverage: rows.filter(
+      (row) => typeof row.weatherCode === "string" && row.weatherCode.trim().length > 0,
+    ).length,
   };
 }
 

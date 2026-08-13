@@ -6787,12 +6787,7 @@ export function ComprehensiveForecastView({
         </div>
       </div>
       {viewModel.professionalHourlyData ? (
-        <CloudSeaProfessionalHourlyDataPanel
-          target="general"
-          data={viewModel.professionalHourlyData}
-          config={generalProfessionalHourlySectionConfig}
-          variant="card"
-        />
+        <GeneralHourlyWeatherSection data={viewModel.professionalHourlyData} />
       ) : null}
     </DecisionResultTemplate>
   );
@@ -6813,32 +6808,146 @@ const generalRainfallSectionCopy = {
   emptyMessage: "当前筛选下暂无降水小时，请切换筛选复核完整预报。",
 };
 
-const generalProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
-  sectionTitle: "未来小时降雨",
-  sectionBadge: "逐小时降水",
-  sectionDescription: "逐小时查看未来降雨量与降水概率，重点复核降水时段，辅助判断拍摄可行性。",
-  usageText: "逐小时查看降雨量与降水概率，重点复核降水时段，辅助判断拍摄可行性。",
-  expandButtonLabel: "展开小时降雨",
-  collapseButtonLabel: "收起小时降雨",
-  allFilterLabel: "全部小时",
-  rainFilterLabel: "只看降水时段",
-  previewTitle: "近期降雨时段预览",
-  defaultFilterMode: "all",
-  initiallyExpanded: false,
-  showFocusFilter: false,
-  showMorningFilter: false,
-  showRainFilter: true,
-  showSignalColumn: false,
-  showCloudColumns: false,
-  showTemperatureColumns: false,
-  showDewPointColumns: false,
-  showHumidityColumn: false,
-  showVisibilityColumn: false,
-  showWindColumns: false,
-  precipitationColumnLabel: "降水 mm / 概率 %",
-  compactTable: true,
-  cardClassName: "mx-auto w-full max-w-5xl",
-};
+export function GeneralHourlyWeatherSection({
+  data,
+  initiallyExpanded = false,
+}: {
+  readonly data: ProfessionalHourlyDisplayData;
+  readonly initiallyExpanded?: boolean;
+}) {
+  const rows = data.rows;
+  const basis = data.timeBasis;
+  const [expanded, setExpanded] = useState(initiallyExpanded);
+  const [filterMode, setFilterMode] = useState<"all" | "rain">("all");
+
+  if (!isValidProfessionalHourlyTimeBasis(basis) || rows.length === 0) {
+    return null;
+  }
+
+  const expectedRowCount = basis.expectedRowCount ?? basis.requestedHours ?? rows.length;
+  const rainRows = filterProfessionalHourlyRows(rows, data, "rain", 0);
+  const previewRows = (rainRows.length > 0 ? rainRows : rows).slice(0, 4);
+
+  return (
+    <Card
+      className="GeneralProfessionalHourlyData w-full min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm"
+      data-general-section="GeneralHourlyWeatherSection"
+      data-general-professional-hourly-expanded={expanded ? "true" : "false"}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-bold text-card-foreground">
+              {generalRainfallSectionCopy.sectionTitle}
+            </h2>
+            <Badge variant="accent">{generalRainfallSectionCopy.sectionBadge}</Badge>
+          </div>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+            {generalRainfallSectionCopy.sectionDescription}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          aria-expanded={expanded}
+          data-general-hourly-toggle="true"
+          onClick={() => {
+            setExpanded((current) => !current);
+          }}
+        >
+          {expanded
+            ? generalRainfallSectionCopy.collapseButtonLabel
+            : generalRainfallSectionCopy.expandButtonLabel}
+          <ExpandChevron expanded={expanded} />
+        </Button>
+      </div>
+
+      {expanded ? (
+        <div className="mt-4 grid min-w-0 max-w-full gap-3" data-general-hourly-body="true">
+          <dl className="grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-4">
+            <CompactDefinition
+              label="目标有效时间"
+              value={`${formatFullDateTimeForTimezone(
+                basis.anchorStartLocal ?? basis.startTime,
+                basis.timezone,
+              )} - ${formatFullDateTimeForTimezone(
+                basis.anchorEndLocal ?? basis.endTime,
+                basis.timezone,
+              )}`}
+            />
+            <CompactDefinition
+              label="覆盖小时"
+              value={`${rows.length} / ${expectedRowCount} 小时`}
+            />
+            <CompactDefinition
+              label="时间步长"
+              value={basis.stepMinutes === 60 ? "逐小时" : `${basis.stepMinutes} 分钟`}
+            />
+            <CompactDefinition label="时区" value={basis.timezone} />
+          </dl>
+          <GeneralRainHourlyTable
+            data={data}
+            filterMode={filterMode}
+            onFilterModeChange={setFilterMode}
+          />
+        </div>
+      ) : (
+        <GeneralRainHourlyPreview
+          rows={previewRows}
+          timezone={basis.timezone}
+          showingRainRows={rainRows.length > 0}
+        />
+      )}
+    </Card>
+  );
+}
+
+function GeneralRainHourlyPreview({
+  rows,
+  timezone,
+  showingRainRows,
+}: {
+  readonly rows: readonly ProfessionalHourlyRow[];
+  readonly timezone: string;
+  readonly showingRainRows: boolean;
+}) {
+  return (
+    <div className="mt-3 grid gap-2" data-general-rain-preview="true">
+      <p className="text-xs font-semibold text-muted-foreground">
+        {showingRainRows ? generalRainfallSectionCopy.previewTitle : "近期小时降雨概览"}
+      </p>
+      <div className="grid gap-2 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-4">
+        {rows.map((row) => {
+          const weatherText = providerNeutralProfessionalWeatherText(row.weatherText) ?? "—";
+          const weatherGlyph = weatherGlyphForProfessionalHour(row, weatherText);
+          return (
+            <div key={row.time} className="rounded-lg border border-border bg-muted px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-bold text-card-foreground">
+                  {row.dateLabel || formatProfessionalDate(row.time, timezone)} ·{" "}
+                  {row.timeLabel || formatProfessionalTime(row.time, timezone)}
+                </p>
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  {weatherGlyph ? (
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-border bg-card text-[11px] font-bold text-primary">
+                      {weatherGlyph}
+                    </span>
+                  ) : null}
+                  {weatherText}
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                降水 {formatProfessionalRainAmount(row)} · 概率{" "}
+                {formatProfessionalRainProbability(row)}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function GeneralRainHourlyTable({
   data,
@@ -6851,9 +6960,7 @@ export function GeneralRainHourlyTable({
 }) {
   const rows = useMemo(
     () =>
-      filterMode === "rain"
-        ? filterProfessionalHourlyRows(data.rows, data, "rain", 0)
-        : data.rows,
+      filterMode === "rain" ? filterProfessionalHourlyRows(data.rows, data, "rain", 0) : data.rows,
     [data, filterMode],
   );
 
@@ -6865,7 +6972,11 @@ export function GeneralRainHourlyTable({
   return (
     <section data-general-rain-table="true">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2" role="group" aria-label={generalRainfallSectionCopy.tableAriaLabel}>
+        <div
+          className="flex flex-wrap gap-2"
+          role="group"
+          aria-label={generalRainfallSectionCopy.tableAriaLabel}
+        >
           {(
             [
               { mode: "all", label: generalRainfallSectionCopy.allFilterLabel },
@@ -6896,7 +7007,7 @@ export function GeneralRainHourlyTable({
 
       <ResponsiveDataScroller bare data-general-rain-scroll="true">
         <table
-          className="mx-auto w-full max-w-max min-w-[560px] border-separate border-spacing-0 text-left text-[12px] leading-5"
+          className="w-full min-w-[640px] border-separate border-spacing-0 text-left text-[12px] leading-5"
           data-general-rain-table-layout="rain-focused"
         >
           <thead className="bg-muted text-xs text-muted-foreground">
