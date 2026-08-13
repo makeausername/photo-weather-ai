@@ -12,7 +12,8 @@ const defaultRetryCount = 2;
 const defaultRetryDelayMs = [600, 1200, 2400] as const;
 const defaultSuccessCacheTtlMs = 5 * 60 * 1000;
 const defaultStaleCacheTtlMs = 30 * 60 * 1000;
-const sessionCachePrefix = "photo_weather_forecast_calculation:v1:";
+const forecastCacheVersion = 2 as const;
+const sessionCachePrefix = `photo_weather_forecast_calculation:v${forecastCacheVersion}:`;
 const maxSessionCachePayloadChars = 450_000;
 
 export const forecastCalculationTransientFailureMessage =
@@ -24,7 +25,7 @@ const forecastCalculationValidationFailureMessage =
 const forecastCalculationGenericFailureMessage = "拍摄天气分析暂时不可用，请稍后重试。";
 
 type ForecastCacheRecord = {
-  readonly version: 1;
+  readonly version: typeof forecastCacheVersion;
   readonly queryKey: string;
   readonly createdAt: number;
   readonly expiresAt: number;
@@ -347,9 +348,13 @@ function writeCachedForecastResult(
   result: ForecastCalculationResult,
   options: RequestForecastCalculationOptions,
 ): void {
+  if (!isForecastResultCompatibleWithCurrentClient(result)) {
+    return;
+  }
+
   const now = Date.now();
   const record: ForecastCacheRecord = {
-    version: 1,
+    version: forecastCacheVersion,
     queryKey,
     createdAt: now,
     expiresAt: now + (options.successCacheTtlMs ?? defaultSuccessCacheTtlMs),
@@ -371,7 +376,12 @@ function isUsableCacheRecord(
   now: number,
   allowStale: boolean,
 ): boolean {
-  if (!record || record.version !== 1 || record.queryKey !== queryKey) {
+  if (
+    !record ||
+    record.version !== forecastCacheVersion ||
+    record.queryKey !== queryKey ||
+    !isForecastResultCompatibleWithCurrentClient(record.result)
+  ) {
     return false;
   }
   return allowStale ? record.staleExpiresAt > now : record.expiresAt > now;
@@ -405,11 +415,11 @@ function readSessionCacheRecord(queryKey: string): ForecastCacheRecord | null {
     }
     const parsed = JSON.parse(raw) as Partial<ForecastCacheRecord>;
     if (
-      parsed.version !== 1 ||
+      parsed.version !== forecastCacheVersion ||
       parsed.queryKey !== queryKey ||
       typeof parsed.expiresAt !== "number" ||
       typeof parsed.staleExpiresAt !== "number" ||
-      !isRecord(parsed.result)
+      !isForecastResultCompatibleWithCurrentClient(parsed.result)
     ) {
       storage.removeItem(storageKey);
       return null;
@@ -445,6 +455,34 @@ function browserSessionStorage(): Storage | null {
 
 function sessionCacheKey(queryKey: string): string {
   return `${sessionCachePrefix}${stableStringHash(queryKey)}`;
+}
+
+function isForecastResultCompatibleWithCurrentClient(
+  result: unknown,
+): result is ForecastCalculationResult {
+  if (!isRecord(result)) {
+    return false;
+  }
+
+  if (result.target !== "general") {
+    return true;
+  }
+
+  const rows = result.professionalHourlyData;
+  const basis = result.professionalHourlyDataTimeBasis;
+  if (!Array.isArray(rows) || rows.length === 0 || !isRecord(rows[0]) || !isRecord(basis)) {
+    return false;
+  }
+
+  return (
+    typeof rows[0].time === "string" &&
+    typeof basis.startTime === "string" &&
+    typeof basis.endTime === "string" &&
+    typeof basis.timezone === "string" &&
+    typeof basis.stepMinutes === "number" &&
+    Number.isFinite(basis.stepMinutes) &&
+    basis.stepMinutes > 0
+  );
 }
 
 function stableStringHash(value: string): string {
