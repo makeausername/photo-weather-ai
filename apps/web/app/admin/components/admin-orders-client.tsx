@@ -6,7 +6,6 @@ import {
   Badge,
   Button,
   Card,
-  ConfirmDialog,
   EmptyState,
   FormField,
   Input,
@@ -14,6 +13,7 @@ import {
   Table,
   cn,
 } from "../../../components/ui";
+import { ConfirmDialog } from "../../../components/confirm-dialog";
 import {
   paymentProviderDisplayName,
   productDisplayName,

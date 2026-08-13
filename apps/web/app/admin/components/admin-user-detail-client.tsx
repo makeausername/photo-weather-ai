@@ -6,12 +6,12 @@ import {
   Badge,
   Button,
   Card,
-  ConfirmDialog,
   EmptyState,
   FormField,
   Input,
   Table,
 } from "../../../components/ui";
+import { ConfirmDialog } from "../../../components/confirm-dialog";
 import {
   entitlementTypeDisplayName,
   ledgerReasonDisplayName,
