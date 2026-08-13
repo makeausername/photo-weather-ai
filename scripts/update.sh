@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE=".env.production"
 COMPOSE_FILE="docker-compose.prod.yml"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
+DEPLOY_REVISION="unknown"
 CADDY_TEMPLATE="${PROJECT_ROOT}/deploy/Caddyfile.template"
 CADDY_FILE="${PROJECT_ROOT}/deploy/Caddyfile"
 INSTALLER_INPUT_LIB="${SCRIPT_DIR}/lib/installer-input.sh"
@@ -96,6 +98,68 @@ build_production_images() {
       compose build "${service}"
     fi
   done
+}
+
+update_checkout() {
+  if [[ ! -d .git ]]; then
+    echo "Git metadata is unavailable; rebuilding the current checkout without pulling."
+    return
+  fi
+
+  if ! git check-ref-format --branch "${DEPLOY_BRANCH}" >/dev/null 2>&1; then
+    echo "Invalid DEPLOY_BRANCH: ${DEPLOY_BRANCH}"
+    exit 1
+  fi
+
+  if ! git remote get-url origin >/dev/null 2>&1; then
+    echo "Git remote 'origin' is missing; cannot update the production checkout."
+    exit 1
+  fi
+
+  if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+    echo "The production checkout has uncommitted files; refusing to switch branches or build mixed source."
+    echo "Review 'git status --short' and preserve or remove those files before retrying."
+    exit 1
+  fi
+
+  echo "Fetching production branch origin/${DEPLOY_BRANCH}..."
+  git fetch origin "${DEPLOY_BRANCH}"
+
+  if git show-ref --verify --quiet "refs/heads/${DEPLOY_BRANCH}"; then
+    git switch -- "${DEPLOY_BRANCH}"
+  elif git show-ref --verify --quiet "refs/remotes/origin/${DEPLOY_BRANCH}"; then
+    git switch --track -c "${DEPLOY_BRANCH}" "origin/${DEPLOY_BRANCH}"
+  else
+    echo "Remote deployment branch origin/${DEPLOY_BRANCH} was not found."
+    exit 1
+  fi
+
+  git pull --ff-only origin "${DEPLOY_BRANCH}"
+  DEPLOY_REVISION="$(git rev-parse HEAD)"
+  export APP_GIT_SHA="${DEPLOY_REVISION}"
+  echo "Production source revision: ${DEPLOY_REVISION} (${DEPLOY_BRANCH})"
+}
+
+verify_web_revision() {
+  if [[ "${DEPLOY_REVISION}" == "unknown" ]]; then
+    return
+  fi
+
+  local container_id
+  local running_revision
+  container_id="$(compose ps -q web 2>/dev/null || true)"
+  if [[ -z "${container_id}" ]]; then
+    echo "Web container is not running after the update."
+    exit 1
+  fi
+
+  running_revision="$(docker_cmd inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${container_id}" 2>/dev/null || true)"
+  if [[ "${running_revision}" != "${DEPLOY_REVISION}" ]]; then
+    echo "Web revision verification failed: expected ${DEPLOY_REVISION}, running ${running_revision:-unlabeled}."
+    exit 1
+  fi
+
+  echo "OK Web container revision verified: ${running_revision}"
 }
 
 wait_for_postgres() {
@@ -243,16 +307,7 @@ set +a
 ensure_light_pollution_directories
 compose config >/dev/null
 
-if [[ -d .git ]]; then
-  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-  upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
-  if [[ -n "${branch}" && -n "${upstream}" ]]; then
-    echo "Pulling latest code for ${branch}..."
-    git pull --ff-only
-  else
-    echo "Git upstream is not configured; skipping git pull."
-  fi
-fi
+update_checkout
 
 render_caddyfile
 
@@ -271,8 +326,8 @@ compose run --rm api corepack pnpm db:seed
 create_and_verify_admin
 
 echo "Restarting services..."
-compose up -d --remove-orphans
-compose restart api web worker caddy
+compose up -d --remove-orphans --force-recreate api web worker caddy
+verify_web_revision
 
 echo "Update complete."
 compose ps

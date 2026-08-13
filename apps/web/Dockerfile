@@ -20,6 +20,9 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
+ARG APP_GIT_SHA=unknown
+LABEL org.opencontainers.image.revision=${APP_GIT_SHA}
+
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
