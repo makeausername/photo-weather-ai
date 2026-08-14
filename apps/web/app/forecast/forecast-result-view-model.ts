@@ -2093,7 +2093,7 @@ function buildGlowOverallRecommendation(
     analysis.riskReasons,
     firstText(
       result.riskFlags.map((risk) => risk.description),
-      "主要风险较低，仍需临近复核。",
+      "当前天气数据未识别到主要风险，仍需临近复核。",
     ),
   );
 
@@ -7186,7 +7186,7 @@ function astroActionMainBlocker(analysis: AstroAnalysisResult): {
     };
   }
   return {
-    value: "暂无主要阻碍",
+    value: "当前天气数据未识别到主要阻碍，仍需临近复核",
     detail: "云量、月光和光污染暂未构成主阻碍，仍需临近复核天气和现场安全。",
     tone: "primary",
   };
@@ -11370,7 +11370,10 @@ function mapDailyAstro(
       semanticFields.recommendationBasis,
       "暂无明确推荐依据",
     ),
-    blockerReasonsLabel: joinAstroSemanticItems(semanticFields.blockerReasons, "暂无主要阻碍"),
+    blockerReasonsLabel: joinAstroSemanticItems(
+      semanticFields.blockerReasons,
+      "当前天气数据未识别到主要阻碍，仍需临近复核",
+    ),
     judgmentLabel: semanticFields.judgmentSummary.label,
     judgmentValue: semanticFields.judgmentSummary.value,
     judgmentTone: semanticFields.judgmentSummary.tone,

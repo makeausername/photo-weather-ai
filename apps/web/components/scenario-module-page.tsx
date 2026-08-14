@@ -1692,7 +1692,7 @@ function cloudSeaWhiteoutRiskBadge(score: number): string {
   if (score >= 45) {
     return "需复核";
   }
-  return "风险可控";
+  return "当前天气数据未识别到主要风险，仍需临近复核";
 }
 
 function firstCloudSeaPublicText(

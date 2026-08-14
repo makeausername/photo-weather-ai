@@ -28,6 +28,7 @@ import {
   buildPhotographyPrecipitationRisk,
   calculatePhotographyTransparencyScore,
   exposedRidgeWindRisk,
+  precipitationRiskLevel,
   transparencyGradeFromScore,
 } from "../index.js";
 
@@ -767,9 +768,11 @@ describe("forecast score calculators", () => {
       precipitationProbability: null,
     });
 
-    expect(clearScore).toBeGreaterThan(obstructedScore);
-    expect(transparencyGradeFromScore(clearScore)).toMatch(/excellent|good/);
-    expect(transparencyGradeFromScore(obstructedScore)).toMatch(/fair|poor/);
+    expect(clearScore).not.toBeNull();
+    expect(obstructedScore).not.toBeNull();
+    expect(clearScore!).toBeGreaterThan(obstructedScore!);
+    expect(transparencyGradeFromScore(clearScore!)).toMatch(/excellent|good/);
+    expect(transparencyGradeFromScore(obstructedScore!)).toMatch(/fair|poor/);
   });
 
   it("lowers photography transparency when aerosol, PM, and dust are suppressive", () => {
@@ -804,8 +807,16 @@ describe("forecast score calculators", () => {
       aerosolConfidence: "high",
     });
 
-    expect(hazyScore).toBeLessThan(cleanScore);
-    expect(transparencyGradeFromScore(hazyScore)).not.toBe("excellent");
+    expect(cleanScore).not.toBeNull();
+    expect(hazyScore).not.toBeNull();
+    expect(hazyScore!).toBeLessThan(cleanScore!);
+    expect(transparencyGradeFromScore(hazyScore!)).not.toBe("excellent");
+  });
+
+  it("returns evidence-insufficient states instead of inventing missing weather metrics", () => {
+    expect(calculatePhotographyTransparencyScore({})).toBeNull();
+    expect(precipitationRiskLevel({ probability: null, amountMm: null })).toBe("unknown");
+    expect(exposedRidgeWindRisk({})).toBe("unknown");
   });
 
   it("uses gust and mountain exposure as risk labels without changing sustained wind", () => {

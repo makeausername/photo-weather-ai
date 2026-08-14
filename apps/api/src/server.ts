@@ -9,7 +9,11 @@ import type {
   TerrainElevationService,
   TerrainProvider,
 } from "@photo-weather/terrain";
-import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
+import {
+  createWeatherProvider,
+  WeatherIntelligenceService,
+  type WeatherProvider,
+} from "@photo-weather/weather";
 import { registerAdminRoutes } from "./admin-routes.js";
 import { registerAdminOrderRoutes } from "./admin-orders-routes.js";
 import { registerAdminProductRoutes } from "./admin-products-routes.js";
@@ -439,11 +443,15 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   app.log.info(`Astro service timeout ms: ${astroServiceConfig.timeoutMs}`);
   app.log.info(`Environment loaded from .env.local: ${astroServiceConfig.envLocalLoaded}`);
 
-  const weatherProvider = options.weatherProvider ?? createWeatherProvider();
+  const weatherProvider =
+    options.weatherProvider ??
+    (env.NODE_ENV === "test" ? createWeatherProvider({ nodeEnv: "test" }) : undefined);
   const weatherDataService =
-    options.weatherProvider || !options.dbClient
+    weatherProvider
       ? undefined
-      : createRuntimeWeatherDataService({ dbClient: options.dbClient, env, logger: app.log });
+      : options.dbClient
+        ? createRuntimeWeatherDataService({ dbClient: options.dbClient, env, logger: app.log })
+        : new WeatherIntelligenceService({ providers: [] });
   const geoProvider = options.geoProvider ?? new MockGeoProvider();
   const authConfig = options.authConfig ?? loadAuthConfig();
   const resolveRuntimeGeoProvider = () =>

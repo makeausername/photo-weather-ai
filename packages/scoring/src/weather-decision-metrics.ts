@@ -97,6 +97,9 @@ export function precipitationRiskLevel(input: {
   readonly probability?: number | null;
   readonly amountMm?: number | null;
 }): PrecipitationRiskLevel {
+  if (!finiteNumber(input.amountMm) && !finiteNumber(input.probability)) {
+    return "unknown";
+  }
   const amount = input.amountMm ?? 0;
   const probability = input.probability;
 
@@ -183,7 +186,7 @@ export function precipitationTypeFromAmounts(input: {
 }
 
 function defaultAffectedWindows(level: PrecipitationRiskLevel): readonly string[] {
-  if (level === "none") {
+  if (level === "none" || level === "unknown") {
     return [];
   }
   if (level === "low") {
@@ -205,6 +208,8 @@ function rainRiskLabelZh(level: PrecipitationRiskLevel): string {
       return "中";
     case "low":
       return "低";
+    case "unknown":
+      return "证据不足";
     default:
       return "无明显";
   }
@@ -231,6 +236,8 @@ function precipitationRecommendationZh(input: {
       : "拍摄窗口受降水影响不明显。";
 
   switch (input.rainRiskLevel) {
+    case "unknown":
+      return "降水概率和预计降水量均缺失，证据不足，无法判断降水风险。";
     case "severe":
       return `${weatherText}降水干扰很强，${amountText}，不建议把该日作为主拍摄计划。${probabilityMissingText}`;
     case "high":
@@ -259,18 +266,29 @@ export function transparencyGradeFromScore(score: number): TransparencyGrade {
 
 export function calculatePhotographyTransparencyScore(
   weather: TransparencyWeatherInput | undefined,
-): number {
+): number | null {
   if (!weather) {
-    return 0;
+    return null;
   }
-  const visibility = weather.rawVisibilityKm ?? weather.visibility ?? 0;
-  const lowCloud = weather.cloudLow ?? 45;
-  const cloudTotal = weather.cloudTotal ?? lowCloud;
-  const humidity = weather.humidity ?? 75;
-  const dewPointSpread = weather.dewPointSpread ?? 6;
+  const visibility = weather.rawVisibilityKm ?? weather.visibility;
+  const lowCloud = weather.cloudLow;
+  const cloudTotal = weather.cloudTotal;
+  const humidity = weather.humidity;
+  const dewPointSpread = weather.dewPointSpread;
+  const precipitationAmount = precipitationAmountMm(weather);
+  if (
+    !finiteNumber(visibility) ||
+    !finiteNumber(lowCloud) ||
+    !finiteNumber(cloudTotal) ||
+    !finiteNumber(humidity) ||
+    !finiteNumber(dewPointSpread) ||
+    (!finiteNumber(weather.precipitationProbability) && !finiteNumber(precipitationAmount))
+  ) {
+    return null;
+  }
   const precipitationRisk = precipitationRiskScore({
     probability: weather.precipitationProbability,
-    amountMm: precipitationAmountMm(weather),
+    amountMm: precipitationAmount,
   });
   const visibilityScore =
     visibility >= 80
@@ -305,7 +323,10 @@ export function exposedRidgeWindRisk(input: {
   readonly terrainType?: TerrainType;
   readonly exposureType?: ExposureType;
 }): ExposedRidgeWindRisk {
-  const wind = input.windSpeed ?? 0;
+  if (!finiteNumber(input.windSpeed) && !finiteNumber(input.windGust)) {
+    return "unknown";
+  }
+  const wind = input.windSpeed ?? input.windGust ?? 0;
   const gust = input.windGust ?? wind;
   const isHighMountain =
     typeof input.elevationMeters === "number" &&
@@ -730,9 +751,17 @@ function annotateDecisionWeather(
       weatherTextZh: hour.weatherTextZh,
     }),
     rawVisibilityKm: hour.rawVisibilityKm ?? hour.visibility,
-    photographyTransparencyScore: transparencyScore,
-    transparencyGrade: transparencyGradeFromScore(transparencyScore),
-    cloudFogObstructionRisk: cloudFogRiskFromScore(transparencyScore, hour.cloudLow, hour.humidity),
+    ...(transparencyScore === null
+      ? {}
+      : {
+          photographyTransparencyScore: transparencyScore,
+          transparencyGrade: transparencyGradeFromScore(transparencyScore),
+          cloudFogObstructionRisk: cloudFogRiskFromScore(
+            transparencyScore,
+            hour.cloudLow,
+            hour.humidity,
+          ),
+        }),
     sourceNotes:
       aerosolTransparency.available && aerosolTransparency.scorePenalty > 0
         ? unique([...(hour.sourceNotes ?? []), ...aerosolTransparency.reasonsZh])
@@ -813,13 +842,17 @@ function annotateDecisionCurrent(
       weatherTextZh: weather.weatherTextZh,
     }),
     rawVisibilityKm: weather.rawVisibilityKm ?? weather.visibility ?? null,
-    photographyTransparencyScore: transparencyScore,
-    transparencyGrade: transparencyGradeFromScore(transparencyScore),
-    cloudFogObstructionRisk: cloudFogRiskFromScore(
-      transparencyScore,
-      weather.cloudLow,
-      weather.humidity,
-    ),
+    ...(transparencyScore === null
+      ? {}
+      : {
+          photographyTransparencyScore: transparencyScore,
+          transparencyGrade: transparencyGradeFromScore(transparencyScore),
+          cloudFogObstructionRisk: cloudFogRiskFromScore(
+            transparencyScore,
+            weather.cloudLow,
+            weather.humidity,
+          ),
+        }),
     exposedRidgeWindRisk: windRisk,
     mountainFeelsLikeC: comfort.mountainFeelsLikeC,
     tripodStabilityRisk: comfort.tripodStabilityRisk,
@@ -896,9 +929,17 @@ function annotateDecisionDaily(
       weatherTextZh: day.weatherSummary,
     }),
     rawVisibilityKm: day.rawVisibilityKm ?? day.visibility ?? null,
-    photographyTransparencyScore: transparencyScore,
-    transparencyGrade: transparencyGradeFromScore(transparencyScore),
-    cloudFogObstructionRisk: cloudFogRiskFromScore(transparencyScore, day.cloudLow, day.humidity),
+    ...(transparencyScore === null
+      ? {}
+      : {
+          photographyTransparencyScore: transparencyScore,
+          transparencyGrade: transparencyGradeFromScore(transparencyScore),
+          cloudFogObstructionRisk: cloudFogRiskFromScore(
+            transparencyScore,
+            day.cloudLow,
+            day.humidity,
+          ),
+        }),
     exposedRidgeWindRisk: windRisk,
     mountainFeelsLikeC: comfort.mountainFeelsLikeC,
     tripodStabilityRisk: comfort.tripodStabilityRisk,

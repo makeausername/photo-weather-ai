@@ -1045,6 +1045,32 @@ describe("forecast query validation route", () => {
     expect(body.photographyAdvice.length).toBeGreaterThan(0);
   });
 
+  it("returns evidence-insufficient instead of generating a forecast without real weather", async () => {
+    const provider = buildDedupeWeatherProvider({ current: 0 });
+    app = buildApiServer({
+      authConfig: forecastTestAuthConfig,
+      weatherProvider: {
+        ...provider,
+        async getHourlyForecast(): Promise<readonly NormalizedHourlyWeather[]> {
+          return [];
+        },
+      },
+      logger: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: validPayload,
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({
+      error: "weather_evidence_insufficient",
+      message: "真实天气数据证据不足，无法生成拍摄结论；请稍后重试。",
+    });
+  });
+
   it("dedupes identical concurrent forecast calculate requests", async () => {
     const providerCalls = { current: 0 };
     app = buildApiServer({
@@ -2708,6 +2734,10 @@ describe("forecast query validation route", () => {
     expect(staleResponse.json()).toMatchObject({
       target: "astro",
       generatedAt: firstResponse.json().generatedAt,
+      weatherDataFreshness: "stale",
+      weatherEvidenceStatus: "stale",
+      weatherEvidenceReasonZh:
+        "本次实时天气请求失败，当前仅有旧缓存；旧缓存不能作为当前出发或拍摄结论。",
     });
     expect(calculateMock).toHaveBeenCalledTimes(4);
   });

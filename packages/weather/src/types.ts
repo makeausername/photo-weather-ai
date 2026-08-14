@@ -14,7 +14,7 @@ import type {
   WeatherProviderTerrainMetadata,
 } from "@photo-weather/shared";
 
-export type WeatherProviderCode = "mock" | "qweather" | "open_meteo" | "meteoblue";
+export type WeatherProviderCode = "mock" | "qweather" | "open_meteo" | "meteoblue" | "unavailable";
 
 export type WeatherProviderMode = WeatherDataMode;
 
@@ -39,7 +39,7 @@ export type CurrentWeather = {
   readonly humidityPercent: number;
   readonly cloudCoverPercent: number;
   readonly windSpeedMetersPerSecond: number;
-  readonly visibilityKilometers: number;
+  readonly visibilityKilometers: number | null;
 };
 
 export type HourlyForecastPoint = {

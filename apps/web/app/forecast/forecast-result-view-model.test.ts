@@ -22,6 +22,7 @@ import {
   ForecastDecisionErrorState,
   ForecastDecisionLoadingState,
   ForecastResultClient,
+  ForecastResultView,
   GlowResultPage,
   SourceDiagnosticsPanel,
   professionalHourlySignalDisplayForTarget,
@@ -2917,6 +2918,31 @@ function decodedHrefs(html: string): readonly string[] {
 }
 
 describe("forecast result target-aware view model", () => {
+  it("blocks every target page when weather evidence is stale, insufficient, or non-real", () => {
+    for (const target of ["general", "cloud_sea", "glow", "astro"] as const) {
+      for (const evidence of [
+        { weatherDataMode: "real" as const, weatherEvidenceStatus: "stale" as const },
+        { weatherDataMode: "mock" as const, weatherEvidenceStatus: "insufficient" as const },
+      ]) {
+        const result = {
+          ...resultForTarget(target),
+          ...evidence,
+          recommendationLabel: "UNSAFE_DECISION_MARKER",
+          weatherEvidenceReasonZh: "EVIDENCE_BLOCK_MARKER",
+        };
+        const html = renderToStaticMarkup(
+          React.createElement(ForecastResultView, {
+            query: queryForTarget(target),
+            result,
+          }),
+        );
+
+        expect(html).toContain("EVIDENCE_BLOCK_MARKER");
+        expect(html).not.toContain("UNSAFE_DECISION_MARKER");
+      }
+    }
+  });
+
   it("uses Simplified Chinese target labels", () => {
     expect(forecastTargetLabels).toMatchObject({
       general: "综合判断",
@@ -3441,7 +3467,7 @@ describe("forecast result target-aware view model", () => {
     expect(dailySection).not.toContain("推荐专程前往");
     expect(dailySection).toContain("多云间晴");
     expect(dailySection).toContain("机位估算温度：10–18°C");
-    expect(dailySection).toContain("降水概率：18%｜风：3.4m/s｜通透：较好");
+    expect(dailySection).toContain("降水风险：低，概率 18%，预计 0.2mm｜风：3.4m/s｜通透：较好");
     expect(dailySection).toContain("优先关注：");
     expect(dailySection).toContain("清晨云海 05:00–07:00");
     expect(dailySection).toContain("备选观察：");
@@ -4052,7 +4078,7 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(dailySection).toContain("小雨转阴");
-    expect(dailySection).toContain("降雨概率：72%");
+    expect(dailySection).toContain("降水风险：高，概率 72%，预计 6.8mm");
     expect(dailySection).toContain("降水干扰明显，优先等待雨后短暂开口。");
     expect(dailySection).not.toContain("降水主要影响日出窗口，朝霞不确定性较高");
     expect(dailySection).not.toContain("雨后若短暂开口，可转拍云雾层次和远山");
@@ -4180,9 +4206,11 @@ describe("forecast result target-aware view model", () => {
       html.indexOf('data-testid="opportunity-windows"'),
     );
 
-    expect(dailySection).toContain("降雨概率：20%｜风：2.8m/s｜通透：一般");
-    expect(dailySection).toContain("降雪概率：35%｜风：3.1m/s｜通透：较差");
-    expect(dailySection).toContain("降水概率：20%｜风：2.4m/s｜通透：一般");
+    expect(dailySection).toContain("概率 20%");
+    expect(dailySection).toContain("风：2.8m/s｜通透：一般");
+    expect(dailySection).toContain("概率 35%");
+    expect(dailySection).toContain("风：3.1m/s｜通透：较差");
+    expect(dailySection).toContain("风：2.4m/s｜通透：一般");
     expect(dailySection).toContain("降水风险：低，预计 0.8mm｜风：2m/s｜通透：一般");
     expect(dailySection).toContain("降水不明显｜风：1.7m/s｜通透：一般");
     expect(dailySection).not.toContain("降水概率：0%");
@@ -4574,7 +4602,7 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain("降水风险");
-    expect(dailySection).toContain("降雨概率：78%");
+    expect(dailySection).toContain("降水风险：高，概率 78%，预计 18.8mm");
     expect(dailySection).toContain("日落后余晖");
     expect(dailySection).toContain("降水干扰明显，优先等待雨后短暂开口。");
     expect(html).not.toContain("降水风险：降水风险");
@@ -4831,7 +4859,7 @@ describe("forecast result target-aware view model", () => {
       "白墙风险",
     ]);
     expect(viewModel.actionPlan.map((item) => item.label)).toEqual([
-      "是否建议出发",
+      "是否建议先复核真实天气",
       "到达参考",
       "参考窗口",
       "备选方案",
@@ -4933,7 +4961,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.dailyTrend.map((item) => item.recommendedAction)).toContain("已在附近可观察");
 
     expect(html).toContain("低云/晨雾参考");
-    expect(html).toContain("地形参考：机位海拔约 142 米（低海拔）；高差缺测");
+    expect(html).toContain("地形数据不足：机位海拔约 142 米（低海拔）；高差缺测");
     expect(html).toContain("周边5公里高差统计暂未返回");
     expect(windowSection).toContain("低云观察与备选");
     expect(windowSection).toContain(
@@ -5003,7 +5031,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.hero.bestWindowLabel).toContain("备选观察窗口");
     expect(viewModel.hero.arrivalLabel).toBe("暂不安排行程");
     expect(viewModel.actionPlan.find((item) => item.key === "departure")).toMatchObject({
-      label: "是否建议出发",
+      label: "是否建议先复核真实天气",
       value: "不建议专程",
     });
     expect(viewModel.actionPlan.find((item) => item.key === "arrival")).toMatchObject({
@@ -5019,7 +5047,7 @@ describe("forecast result target-aware view model", () => {
     expect(
       viewModel.cloudSeaWindows.every((item) => item.recommendationLabel === "不建议专程"),
     ).toBe(true);
-    expect(actionPlan).toContain("是否建议出发");
+    expect(actionPlan).toContain("是否建议先复核真实天气");
     expect(actionPlan).toContain("不建议专程");
     expect(actionPlan).toContain("当前云海证据不足");
     expect(windowSection).toContain("不建议专程");
@@ -5906,7 +5934,9 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.ruleContext.weatherVariableConsistencyContext.precipitationSignalStatus).toBe(
       "probability_only",
     );
-    expect(viewModel.recommendationGuard.finalRecommendationLabel).toBe("强推荐专程");
+    expect(viewModel.recommendationGuard.finalRecommendationLabel).toBe(
+      "强建议先复核真实天气后再决定",
+    );
     expect(html).toContain("降水概率 78%");
     expect(html).toContain("预计雨量 0 mm");
     expect(html).toContain("更像局地短时扰动");
@@ -9006,6 +9036,7 @@ describe("forecast result target-aware view model", () => {
       "window",
       "direction",
       "avoid-direction",
+      "blocker",
       "note",
     ]);
     expect(viewModel.actionPlan.map((item) => item.value).join(" ")).not.toContain("暂无主要阻碍");

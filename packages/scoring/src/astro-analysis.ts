@@ -2599,7 +2599,7 @@ function dailyRiskNote(
   ) {
     return "地形遮挡";
   }
-  return "风险可控";
+  return "当前天气数据未识别到主要风险";
 }
 
 function riskTagsForWeather(

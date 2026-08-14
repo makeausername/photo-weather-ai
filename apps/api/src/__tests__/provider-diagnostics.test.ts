@@ -98,6 +98,7 @@ describe("provider diagnostics CLI helpers", () => {
     const fetcher = vi.fn(async () => {
       return new Response(
         JSON.stringify({
+          units: { windspeed: "m/s" },
           data_1h: {
             time: ["2026-05-20T00:00:00+08:00"],
             temperature: [12],

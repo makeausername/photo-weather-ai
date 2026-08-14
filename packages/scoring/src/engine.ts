@@ -273,6 +273,13 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     isMock: calculationInput.isMock,
     dataSourceLabel: calculationInput.dataSourceLabel,
     generatedAt: calculationInput.generatedAt,
+    weatherDataFreshness: "fresh",
+    weatherEvidenceStatus:
+      calculationInput.weatherDataMode === "real" ? "sufficient" : "insufficient",
+    weatherEvidenceReasonZh:
+      calculationInput.weatherDataMode === "real"
+        ? "真实天气数据已通过证据门控。"
+        : "没有足够的真实天气数据，不能生成可执行结论。",
     currentWeather: calculationInput.currentWeather,
     clothingGuide,
     weatherProviderCode: calculationInput.weatherProviderCode,
@@ -3472,7 +3479,12 @@ function buildGlowWindows(glowAnalysis: GlowAnalysisResult): readonly ForecastTi
     practicalScore: window.practicalScore,
     target: "glow",
     practicalKind: "shooting_window",
-    weatherBlockers: window.riskTags.filter((tag) => tag !== "风险可控" && tag !== "雨后短暂开口"),
+    weatherBlockers: window.riskTags.filter(
+      (tag) =>
+        tag !== "风险可控" &&
+        tag !== "当前天气数据未识别到主要风险" &&
+        tag !== "雨后短暂开口",
+    ),
     copyReasonZh: window.noteZh,
     practicalNoteZh: window.noteZh,
   }));
@@ -3813,6 +3825,14 @@ function buildDailySummaries(
   });
 }
 
+function transparencyGradeFromOptionalScore(
+  score: number | null | undefined,
+): ForecastDailyWeatherSummary["transparencyGrade"] {
+  return typeof score === "number" && Number.isFinite(score)
+    ? transparencyGradeFromScore(score)
+    : undefined;
+}
+
 function buildDailyWeatherSummary(
   input: ForecastCalculationInput,
   date: string,
@@ -3924,7 +3944,7 @@ function buildDailyWeatherSummary(
       averageOptional(dayHours.map((hour) => hour.photographyTransparencyScore)),
     transparencyGrade:
       dayWeather?.transparencyGrade ??
-      transparencyGradeFromScore(
+      transparencyGradeFromOptionalScore(
         averageOptional(dayHours.map((hour) => hour.photographyTransparencyScore)) ??
           calculatePhotographyTransparencyScore(dayHours[0]),
       ),
@@ -4804,7 +4824,7 @@ function dedicatedTripAdvice(
   weather: ForecastDailyWeatherSummary | undefined,
 ): string {
   if (label === "强推荐专程") {
-    return "主窗口清晰且风险可控，可围绕最佳窗口安排出发。";
+    return "主窗口较清晰，当前天气数据未识别到主要风险，仍需临近复核后安排出发。";
   }
   if (label === "推荐安排") {
     return "条件适合安排拍摄，但不是高确定性爆发窗口。";
@@ -5474,7 +5494,7 @@ function buildSummary(
     const subject = bestWindow?.subjectPriorityLabel ?? watchableWindow?.subjectPriorityLabel;
     const decisionText =
       recommendationLabel === "强推荐专程"
-        ? `${subject ?? "主拍窗口"}清晰，风险可控，可围绕窗口组织出发。`
+        ? `${subject ?? "主拍窗口"}较清晰，当前天气数据未识别到主要风险，仍需临近复核后组织出发。`
         : recommendationLabel === "推荐安排"
           ? `条件适合安排拍摄，但不是高确定性爆发窗口；优先关注${subject ?? "最佳可用窗口"}。`
           : recommendationLabel === "谨慎参考"

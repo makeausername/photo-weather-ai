@@ -414,8 +414,8 @@ function terrainNoteZh(input: {
 }): string {
   if (input.elevation === undefined) {
     return input.shouldDowngradeCloudSeaWording
-      ? "地形参考：机位海拔暂未返回；高差缺测，先按低云、晨雾和通透参考处理。"
-      : "地形参考：机位海拔暂未返回；高差缺测，云顶高度和周边高差需现场复核。";
+      ? "地形数据不足：机位海拔暂未返回；高差缺测，只能查看已有低云、晨雾和通透数据，不能形成地形结论。"
+      : "地形数据不足：机位海拔暂未返回；高差缺测，云顶高度和周边高差需现场复核。";
   }
 
   const elevationBand = cloudSeaElevationBandLabel(input.elevation);
@@ -435,7 +435,7 @@ function terrainNoteZh(input: {
       input.surroundingRelief,
     )} 米，${cloudSeaReliefSupportPhrase(input.surroundingRelief)}仍需现场复核云顶高度和白墙风险。`;
   }
-  return `地形参考：${elevationText}；高差缺测，周边5公里高差统计暂未返回，云海地形高差不能按已确认处理，需结合现场云雾高度复核。`;
+  return `地形数据不足：${elevationText}；高差缺测，周边5公里高差统计暂未返回，云海地形高差不能按已确认处理，需结合现场云雾高度复核。`;
 }
 
 function cloudSeaElevationBandLabel(elevation: number): string {

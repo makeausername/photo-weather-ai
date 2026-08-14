@@ -23,6 +23,21 @@ export type ClothingGuideInput = {
 
 export function buildClothingGuide(input: ClothingGuideInput): ClothingGuide {
   const reference = selectReferenceWeather(input);
+  if (
+    !reference ||
+    !Number.isFinite(reference.temperature) ||
+    !Number.isFinite(reference.windSpeed) ||
+    !Number.isFinite(reference.humidity)
+  ) {
+    return {
+      titleZh: "穿衣建议证据不足",
+      summaryZh: "温度、风速或湿度数据不足，无法生成基于天气的穿衣结论。",
+      layers: [],
+      accessories: [],
+      riskNotes: ["请在获得实时天气或临近预报后再判断穿衣与装备。"],
+      comfortLevel: "unknown",
+    };
+  }
   const referenceTime = hourlyReferenceTime(reference);
   const temperatureBasis = buildTerrainTemperatureBasisContext({
     rawGridTemperatureC: reference?.rawTemperature ?? reference?.temperature,
@@ -55,10 +70,20 @@ export function buildClothingGuide(input: ClothingGuideInput): ClothingGuide {
     selectedTemperature !== undefined &&
     referenceFeelsLike !== undefined
       ? Math.min(selectedTemperature, referenceFeelsLike)
-      : selectedTemperature ?? referenceFeelsLike ?? 18;
-  const windSpeed = reference?.windSpeed ?? 0;
+      : selectedTemperature ?? referenceFeelsLike;
+  if (temperature === null || temperature === undefined || !Number.isFinite(temperature)) {
+    return {
+      titleZh: "穿衣建议证据不足",
+      summaryZh: "温度数据不足，无法生成基于天气的穿衣结论。",
+      layers: [],
+      accessories: [],
+      riskNotes: ["请在获得实时温度或临近预报后再判断穿衣与装备。"],
+      comfortLevel: "unknown",
+    };
+  }
+  const windSpeed = reference.windSpeed;
   const windGust = reference?.windGust ?? windSpeed;
-  const humidity = reference?.humidity ?? 60;
+  const humidity = reference.humidity;
   const precipitationProbability = reference?.precipitationProbability ?? null;
   const precipitationAmount = precipitationAmountMm(reference);
   const precipitationRisk = precipitationRiskLevel({

@@ -269,7 +269,12 @@ describe("forecast request client", () => {
         staleCacheTtlMs: 60_000,
         useSessionStorage: false,
       }),
-    ).resolves.toEqual(recovered);
+    ).resolves.toMatchObject({
+      ...recovered,
+      weatherDataFreshness: "stale",
+      weatherEvidenceStatus: "stale",
+      weatherEvidenceReasonZh: expect.stringContaining("旧缓存"),
+    });
     expect(failingFetcher).toHaveBeenCalledTimes(3);
   });
 
