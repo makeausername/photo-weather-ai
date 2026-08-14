@@ -42,6 +42,36 @@ describe("WeatherIntelligenceService", () => {
     expect(warm.sourceSummaries?.[0]?.cacheHit).toBe(true);
   });
 
+  it("keeps real hourly evidence when the optional current observation fails", async () => {
+    const service = new WeatherIntelligenceService({
+      providers: [new CurrentObservationFailingProvider()],
+    });
+
+    const bundle = await service.getWeatherDataBundle(requestInput());
+
+    expect(bundle.dataMode).toBe("real");
+    expect(bundle.hourly).toHaveLength(1);
+    expect(bundle.current).toBeUndefined();
+    expect(bundle.currentWeather).toMatchObject({
+      providerCode: "qweather",
+      temperature: 15,
+      humidity: 82,
+      cloudTotal: 48,
+      windSpeed: 2.6,
+      missingFields: expect.arrayContaining(["currentObservation"]),
+    });
+    expect(bundle.sourceSummaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerCode: "qweather",
+          success: true,
+          partial: true,
+          missingFields: expect.arrayContaining(["currentObservation"]),
+        }),
+      ]),
+    );
+  });
+
   it("uses available real providers and records failed auxiliary providers safely", async () => {
     const service = new WeatherIntelligenceService({
       providers: [
@@ -174,7 +204,9 @@ describe("WeatherIntelligenceService", () => {
     });
 
     const second = await new WeatherIntelligenceService({
-      providers: [new StaticProvider("open_meteo", "Open-Meteo", "real", hour({ temperature: 18 }))],
+      providers: [
+        new StaticProvider("open_meteo", "Open-Meteo", "real", hour({ temperature: 18 })),
+      ],
       cache,
       cacheNamespace: "runtime-v1",
     }).getWeatherDataBundle({
@@ -499,6 +531,22 @@ class FailingProvider extends StaticProvider {
   override async getCurrentWeather(_input: WeatherRequestInput): Promise<CurrentWeather> {
     throw new Error("upstream secret failure");
   }
+
+  override async getHourlyForecast(
+    _input: WeatherRequestInput,
+  ): Promise<readonly NormalizedHourlyWeather[]> {
+    throw new Error("upstream secret failure");
+  }
+}
+
+class CurrentObservationFailingProvider extends StaticProvider {
+  constructor() {
+    super("qweather", "鍜岄澶╂皵", "real", hour());
+  }
+
+  override async getCurrentWeather(_input: WeatherRequestInput): Promise<CurrentWeather> {
+    throw new Error("current observation temporarily unavailable");
+  }
 }
 
 class MeteoblueParseFailingProvider extends StaticProvider {
@@ -506,7 +554,9 @@ class MeteoblueParseFailingProvider extends StaticProvider {
     super("meteoblue", "meteoblue", "real", hour());
   }
 
-  override async getCurrentWeather(_input: WeatherRequestInput): Promise<CurrentWeather> {
+  override async getHourlyForecast(
+    _input: WeatherRequestInput,
+  ): Promise<readonly NormalizedHourlyWeather[]> {
     throw new WeatherProviderError({
       providerCode: "meteoblue",
       providerLabelZh: "meteoblue",

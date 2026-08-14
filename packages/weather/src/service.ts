@@ -25,22 +25,43 @@ export class WeatherDataService {
   constructor(private readonly provider: WeatherProvider = createWeatherProvider()) {}
 
   async getWeatherDataBundle(input: WeatherRequestInput): Promise<WeatherDataBundle> {
-    const [current, hourly, daily, alerts, airQuality] = await Promise.all([
-      this.provider.getCurrentWeather(input),
-      this.provider.getHourlyForecast(input),
-      this.provider.getDailyForecast(input),
-      this.provider.getWeatherAlerts(input),
-      this.provider.getAirQuality(input),
-    ]);
+    const [currentResult, hourlyResult, dailyResult, alertsResult, airQualityResult] =
+      await Promise.allSettled([
+        this.provider.getCurrentWeather(input),
+        this.provider.getHourlyForecast(input),
+        this.provider.getDailyForecast(input),
+        this.provider.getWeatherAlerts(input),
+        this.provider.getAirQuality(input),
+      ]);
+    if (hourlyResult.status === "rejected") {
+      throw hourlyResult.reason;
+    }
+    const current = currentResult.status === "fulfilled" ? currentResult.value : undefined;
+    const hourly = hourlyResult.value;
+    const daily = dailyResult.status === "fulfilled" ? dailyResult.value : [];
+    const alerts = alertsResult.status === "fulfilled" ? alertsResult.value : [];
+    const airQuality = airQualityResult.status === "fulfilled" ? airQualityResult.value : undefined;
+    const supplementalMissingFields = [
+      currentResult.status === "rejected" ? "currentObservation" : undefined,
+      dailyResult.status === "rejected" ? "dailyForecast" : undefined,
+      alertsResult.status === "rejected" ? "weatherAlerts" : undefined,
+      airQualityResult.status === "rejected" ? "airQuality" : undefined,
+    ].filter((field): field is string => Boolean(field));
     const generated =
       input.forecastStart ??
-      current.observedAt ??
+      current?.observedAt ??
+      hourly[0]?.time ??
       formatZonedIso(
         getNowInTimezone(input.timezone ?? defaultTimezone),
         input.timezone ?? defaultTimezone,
       );
     const hourlyWithAirQuality = attachAirQualityToHourly(hourly, airQuality);
-    const missingFields = collectWeatherFields(hourlyWithAirQuality, daily, "missingFields");
+    const missingFields = [
+      ...new Set([
+        ...collectWeatherFields(hourlyWithAirQuality, daily, "missingFields"),
+        ...supplementalMissingFields,
+      ]),
+    ];
     const sourceSummaryMetadata = getProviderSourceSummaryMetadata(this.provider, input);
     const terrainMetadata = buildProviderTerrainMetadata({
       providerCode: this.provider.source.providerCode,
@@ -52,14 +73,17 @@ export class WeatherDataService {
 
     return {
       current,
-      currentWeather: normalizeCurrentWeather({
-        current,
-        firstHour: hourlyWithAirQuality[0],
-        providerCode: this.provider.source.providerCode,
-        providerLabelZh: this.provider.source.providerLabelZh,
-        dataMode: this.provider.source.mode,
-        airQuality,
-      }),
+      currentWeather:
+        current || hourlyWithAirQuality[0]
+          ? normalizeCurrentWeather({
+              current,
+              firstHour: hourlyWithAirQuality[0],
+              providerCode: this.provider.source.providerCode,
+              providerLabelZh: this.provider.source.providerLabelZh,
+              dataMode: this.provider.source.mode,
+              airQuality,
+            })
+          : undefined,
       hourly: hourlyWithAirQuality,
       daily,
       alerts,
@@ -246,10 +270,7 @@ export class WeatherIntelligenceService {
       missingFields: ["realWeather", "temperature", "humidity", "windSpeed", "cloudTotal"],
       estimatedFields: [],
       sourceSummaries: [...failedSourceSummaries, unavailableSummary],
-      missingDataNotes: [
-        ...warningNotes,
-        "没有可核验的真实天气数据，系统未使用演示数据生成结论。",
-      ],
+      missingDataNotes: [...warningNotes, "没有可核验的真实天气数据，系统未使用演示数据生成结论。"],
       fusionSummary: {
         primarySource: "无可用真实天气源",
         auxiliarySources: [],
@@ -550,25 +571,30 @@ function terrainSummaryFields(
 }
 
 function normalizeCurrentWeather(input: {
-  readonly current: CurrentWeather;
+  readonly current?: CurrentWeather;
   readonly firstHour?: NormalizedHourlyWeather;
   readonly providerCode: WeatherDataBundle["providerCode"];
   readonly providerLabelZh: string;
   readonly dataMode: WeatherDataBundle["dataMode"];
   readonly airQuality?: WeatherDataBundle["airQuality"];
 }): NormalizedCurrentWeather {
+  if (!input.current && !input.firstHour) {
+    throw new Error("Cannot normalize current weather without current or hourly evidence.");
+  }
   const missingFields = new Set(input.firstHour?.missingFields ?? []);
   const estimatedFields = new Set(input.firstHour?.estimatedFields ?? []);
+  if (!input.current) {
+    missingFields.add("currentObservation");
+  }
   const dewPoint = input.firstHour?.dewPoint ?? null;
   const airQuality = normalizeCurrentAirQuality(input.airQuality, input.firstHour);
+  const temperature = input.current?.temperatureCelsius ?? input.firstHour!.temperature;
   const dewPointSpread =
     input.firstHour?.dewPointSpread ??
-    (dewPoint === null
-      ? null
-        : Math.round((input.current.temperatureCelsius - dewPoint) * 10) / 10);
+    (dewPoint === null ? null : Math.round((temperature - dewPoint) * 10) / 10);
   const visibility = missingFields.has("visibility")
     ? null
-    : (input.firstHour?.visibility ?? input.current.visibilityKilometers);
+    : input.firstHour?.visibility ?? input.current?.visibilityKilometers ?? null;
 
   if (input.firstHour?.pressure === null || input.firstHour?.pressure === undefined) {
     missingFields.add("pressure");
@@ -581,21 +607,21 @@ function normalizeCurrentWeather(input: {
     providerCode: input.providerCode,
     providerLabelZh: input.providerLabelZh,
     dataMode: input.dataMode,
-    observedAt: input.current.observedAt,
-    temperature: input.current.temperatureCelsius,
+    observedAt: input.current?.observedAt ?? input.firstHour!.time,
+    temperature,
     rawTemperature: input.firstHour?.rawTemperature,
     elevationAdjustedTemperature: input.firstHour?.elevationAdjustedTemperature,
     temperatureAdjustment: input.firstHour?.temperatureAdjustment,
-    feelsLike: input.current.feelsLikeCelsius,
-    humidity: input.current.humidityPercent,
+    feelsLike: input.current?.feelsLikeCelsius ?? input.firstHour?.feelsLike ?? null,
+    humidity: input.current?.humidityPercent ?? input.firstHour!.humidity,
     dewPoint,
     dewPointSpread,
-    windSpeed: input.current.windSpeedMetersPerSecond,
+    windSpeed: input.current?.windSpeedMetersPerSecond ?? input.firstHour!.windSpeed,
     windDirection: input.firstHour?.windDirection ?? null,
     windGust: input.firstHour?.windGust ?? null,
     pressure: input.firstHour?.pressure ?? null,
     visibility,
-    cloudTotal: input.current.cloudCoverPercent,
+    cloudTotal: input.current?.cloudCoverPercent ?? input.firstHour?.cloudTotal ?? null,
     cloudLow: input.firstHour?.cloudLow ?? null,
     cloudMid: input.firstHour?.cloudMid ?? null,
     cloudHigh: input.firstHour?.cloudHigh ?? null,
@@ -632,7 +658,7 @@ function normalizeCurrentWeather(input: {
     elevationDifferenceMeters: input.firstHour?.elevationDifferenceMeters,
     terrainAdjustmentApplied: input.firstHour?.terrainAdjustmentApplied,
     terrainAdjustmentReason: input.firstHour?.terrainAdjustmentReason,
-    weatherTextZh: input.current.summary,
+    weatherTextZh: input.current?.summary ?? input.firstHour?.weatherTextZh ?? null,
     weatherCode: input.firstHour?.weatherCode ?? null,
     airQuality,
     missingFields: [...missingFields],
@@ -825,7 +851,12 @@ function annotateProviderBundle(
   latencyMs: number,
   cacheHit: boolean,
 ): WeatherDataBundle {
-  const missingFields = collectWeatherFields(bundle.hourly, bundle.daily, "missingFields");
+  const missingFields = [
+    ...new Set([
+      ...(bundle.missingFields ?? []),
+      ...collectWeatherFields(bundle.hourly, bundle.daily, "missingFields"),
+    ]),
+  ];
   return {
     ...bundle,
     sourceSummaries: [
@@ -834,7 +865,7 @@ function annotateProviderBundle(
         latencyMs,
         cacheHit,
         missingFields,
-        partial: bundle.providerCode === "meteoblue" && missingFields.length > 0,
+        partial: missingFields.length > 0,
         messageZh: successfulSourceMessageZh(
           bundle.providerCode,
           bundle.providerLabelZh,
@@ -885,7 +916,7 @@ function successfulSourceSummary(input: {
     availableFields: input.availableFields,
     extractedFields: input.availableFields,
     missingFields: input.missingFields,
-    partial: input.providerCode === "meteoblue" && input.missingFields.length > 0,
+    partial: input.missingFields.length > 0,
     latencyMs: input.latencyMs,
     returnedHours: input.returnedHours,
     cacheHit: false,
@@ -926,9 +957,7 @@ function sourceSummaryFromBundle(bundle: WeatherDataBundle): WeatherSourceSummar
     attempted: existing?.attempted ?? true,
     enabled: existing?.enabled ?? true,
     realCallEnabled: existing?.realCallEnabled ?? bundle.dataMode === "real",
-    partial:
-      existing?.partial ??
-      (bundle.providerCode === "meteoblue" && (bundle.missingFields?.length ?? 0) > 0),
+    partial: existing?.partial ?? (bundle.missingFields?.length ?? 0) > 0,
     messageZh:
       existing?.messageZh ??
       successfulSourceMessageZh(
