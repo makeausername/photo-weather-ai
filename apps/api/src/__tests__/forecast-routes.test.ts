@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
-import type { NormalizedDailyWeather, NormalizedHourlyWeather } from "@photo-weather/shared";
+import type {
+  ForecastCalculationResult,
+  NormalizedDailyWeather,
+  NormalizedHourlyWeather,
+} from "@photo-weather/shared";
 import type {
   AirQuality,
   CurrentWeather,
@@ -1068,6 +1072,93 @@ describe("forecast query validation route", () => {
     expect(response.json()).toEqual({
       error: "weather_evidence_insufficient",
       message: "真实天气数据证据不足，无法生成拍摄结论；请稍后重试。",
+    });
+  });
+
+  it("keeps all forecast targets usable when optional real-weather fields are missing", async () => {
+    const provider = buildDedupeWeatherProvider({ current: 0 });
+    app = buildApiServer({
+      authConfig: forecastTestAuthConfig,
+      weatherProvider: {
+        ...provider,
+        async getHourlyForecast(
+          input: WeatherRequestInput,
+        ): Promise<readonly NormalizedHourlyWeather[]> {
+          const hourly = await provider.getHourlyForecast(input);
+          return hourly.map((hour) => ({
+            ...hour,
+            pressure: null,
+            windDirection: null,
+            precipitationProbability: null,
+            precipitation: null,
+            visibility: null,
+            dewPoint: null,
+            dewPointSpread: null,
+            cloudLow: null,
+            cloudMid: null,
+            cloudHigh: null,
+            missingFields: [
+              "pressure",
+              "windDirection",
+              "precipitationProbability",
+              "precipitation",
+              "visibility",
+              "dewPoint",
+              "dewPointSpread",
+              "cloudLow",
+              "cloudMid",
+              "cloudHigh",
+            ],
+          }));
+        },
+      },
+      logger: false,
+    });
+
+    const bodies = new Map<string, ForecastCalculationResult>();
+    for (const target of ["general", "cloud_sea", "glow", "astro"] as const) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/forecast/calculate",
+        payload: {
+          ...validPayload,
+          target,
+          timezone: "Asia/Shanghai",
+          startDateTime: "2026-05-20T00:00:00+08:00",
+        },
+      });
+      const responseBody = response.json<ForecastCalculationResult>();
+      expect(response.statusCode, `${target}: ${JSON.stringify(responseBody)}`).toBe(200);
+      expect(responseBody).toMatchObject({
+        target,
+        weatherDataMode: "real",
+        weatherEvidenceStatus: "sufficient",
+      });
+      bodies.set(target, responseBody);
+    }
+
+    const body = bodies.get("cloud_sea")!;
+    expect(body.professionalHourlyData?.[0]).toMatchObject({
+      cloudTotalPercent: expect.any(Number),
+      displayedTemperatureC: expect.any(Number),
+      relativeHumidityPercent: expect.any(Number),
+      windSpeedMs: expect.any(Number),
+      cloudLowPercent: null,
+      cloudMidPercent: null,
+      cloudHighPercent: null,
+      precipitationAmountMm: null,
+      precipitationProbabilityPercent: null,
+      visibilityMeters: null,
+      windDirectionDeg: null,
+      missingFields: expect.arrayContaining([
+        "cloudLow",
+        "cloudMid",
+        "cloudHigh",
+        "precipitation",
+        "precipitationProbability",
+        "visibility",
+        "windDirection",
+      ]),
     });
   });
 

@@ -983,37 +983,33 @@ async function calculateForecastResultWithCalibration(
     astroServiceConfig,
     logger,
   );
-  assertForecastResultHasCompleteWeatherEvidence(result);
+  assertForecastResultHasRealWeatherEvidence(result);
   logWeatherRuntimeFusionDiagnostics(logger, result);
   logCloudSeaCoverageDiagnostics(logger, result);
   logGlowScoringDiagnostics(logger, result);
   return attachCalibrationHint(result, query, dbClient);
 }
 
-function assertForecastResultHasCompleteWeatherEvidence(result: ForecastCalculationResult): void {
-  if (process.env.NODE_ENV === "test" && ["mock", "fixture", "demo"].includes(result.weatherDataMode)) {
+function assertForecastResultHasRealWeatherEvidence(result: ForecastCalculationResult): void {
+  if (
+    process.env.NODE_ENV === "test" &&
+    ["mock", "fixture", "demo"].includes(result.weatherDataMode)
+  ) {
     return;
   }
   const rows = result.professionalHourlyData ?? [];
-  const incomplete =
-    rows.length === 0 ||
-    rows.some(
-      (row) =>
-        !Number.isFinite(row.cloudTotalPercent) ||
-        !Number.isFinite(row.cloudHighPercent) ||
-        !Number.isFinite(row.cloudMidPercent) ||
-        !Number.isFinite(row.cloudLowPercent) ||
-        !Number.isFinite(row.displayedTemperatureC) ||
-        !Number.isFinite(row.dewPointC) ||
-        !Number.isFinite(row.dewPointSpreadC) ||
-        !Number.isFinite(row.relativeHumidityPercent) ||
-        !Number.isFinite(row.precipitationAmountMm) ||
-        !Number.isFinite(row.precipitationProbabilityPercent) ||
-        !Number.isFinite(row.visibilityMeters) ||
-        !Number.isFinite(row.windSpeedMs) ||
-        !Number.isFinite(row.windDirectionDeg),
-    );
-  if (result.weatherDataMode !== "real" || incomplete) {
+  const hasSuccessfulRealSource = (result.weatherSourceSummaries ?? []).some(
+    (summary) =>
+      summary.dataMode === "real" && summary.success === true && summary.status === "available",
+  );
+  const hasCoreWeatherRow = rows.some(
+    (row) =>
+      Number.isFinite(row.displayedTemperatureC) &&
+      Number.isFinite(row.relativeHumidityPercent) &&
+      Number.isFinite(row.cloudTotalPercent) &&
+      Number.isFinite(row.windSpeedMs),
+  );
+  if (result.weatherDataMode !== "real" || !hasSuccessfulRealSource || !hasCoreWeatherRow) {
     throw new Error(weatherEvidenceUnavailableMessage);
   }
 }
@@ -1277,33 +1273,19 @@ function hasSufficientRealWeatherEvidence(bundle: WeatherDataBundle): boolean {
   }
   const hasSuccessfulRealSource = (bundle.sourceSummaries ?? []).some(
     (summary) =>
-      summary.dataMode === "real" &&
-      summary.success === true &&
-      summary.status === "available",
+      summary.dataMode === "real" && summary.success === true && summary.status === "available",
   );
   if (!hasSuccessfulRealSource) {
     return false;
   }
-  const requiredFields = [
-    "temperature",
-    "humidity",
-    "pressure",
-    "windSpeed",
-    "windDirection",
-    "precipitationProbability",
-    "precipitation",
-    "visibility",
-    "cloudTotal",
-    "cloudLow",
-    "cloudMid",
-    "cloudHigh",
-  ] as const;
-  return bundle.hourly.every((hour) => {
-    const hasDewPointEvidence =
-      Number.isFinite(hour.dewPoint) || Number.isFinite(hour.dewPointSpread);
-    const completeRequiredFields = requiredFields.every((field) => Number.isFinite(hour[field]));
-    return completeRequiredFields && hasDewPointEvidence;
-  });
+  return bundle.hourly.some(
+    (hour) =>
+      hour.dataMode === "real" &&
+      Number.isFinite(hour.temperature) &&
+      Number.isFinite(hour.humidity) &&
+      Number.isFinite(hour.cloudTotal) &&
+      Number.isFinite(hour.windSpeed),
+  );
 }
 
 function markForecastResultStale(result: ForecastCalculationResult): ForecastCalculationResult {
