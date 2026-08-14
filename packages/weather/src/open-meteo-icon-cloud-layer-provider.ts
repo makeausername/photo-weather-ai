@@ -299,7 +299,7 @@ export class OpenMeteoIconCloudLayerProvider implements WeatherProvider {
       humidityPercent: firstHour.humidity,
       cloudCoverPercent: firstHour.cloudTotal,
       windSpeedMetersPerSecond: firstHour.windSpeed,
-      visibilityKilometers: firstHour.visibility ?? 0,
+      visibilityKilometers: firstHour.visibility,
     };
   }
 
@@ -355,21 +355,7 @@ export class OpenMeteoIconCloudLayerProvider implements WeatherProvider {
     const daily = normalizeOpenMeteoIconDailyWeather(input);
 
     return {
-      current: hourly[0]
-        ? {
-            provider: source.providerCode,
-            observedAt: hourly[0].time,
-            coordinates: { latitude: 0, longitude: 0, system: "wgs84" },
-            condition: weatherConditionFromCode(hourly[0].weatherCode),
-            summary: hourly[0].weatherTextZh ?? "云层分层数据",
-            temperatureCelsius: hourly[0].temperature,
-            feelsLikeCelsius: hourly[0].feelsLike ?? hourly[0].temperature,
-            humidityPercent: hourly[0].humidity,
-            cloudCoverPercent: hourly[0].cloudTotal,
-            windSpeedMetersPerSecond: hourly[0].windSpeed,
-            visibilityKilometers: hourly[0].visibility ?? 0,
-          }
-        : undefined,
+      current: undefined,
       hourly,
       daily,
       alerts: [],
@@ -526,6 +512,9 @@ export function normalizeOpenMeteoIconCloudLayers(
       const rainAmount = nullableRounded(at(hourly, "rain", index));
       const snowAmount = nullableRounded(at(hourly, "snowfall", index));
       const windSpeed = nullableRounded(at(hourly, "wind_speed_10m", index));
+      if (windSpeed === null) {
+        throw new Error("Open-Meteo ICON hourly weather missing required field: wind_speed_10m");
+      }
       const visibility = metersToKilometers(at(hourly, "visibility", index));
       const pressureMsl = nullableRounded(at(hourly, "pressure_msl", index));
       const pressureFallback = nullableRounded(at(hourly, "surface_pressure", index));
@@ -550,7 +539,7 @@ export function normalizeOpenMeteoIconCloudLayers(
         humidity: percent(at(hourly, "relative_humidity_2m", index), "hourly.relative_humidity_2m"),
         dewPointSpread: dewPoint === null ? null : roundTo(temperature - dewPoint),
         pressure: pressureMsl ?? pressureFallback,
-        windSpeed: windSpeed ?? 0,
+        windSpeed,
         windGust: nullableRounded(at(hourly, "wind_gusts_10m", index)),
         windDirection: nullableRounded(at(hourly, "wind_direction_10m", index), 0),
         precipitationProbability,

@@ -322,7 +322,12 @@ export function sanitizeForecastPublicCopyTree<T>(
 }
 
 export function hasRealWeatherData(result: ForecastCalculationResult): boolean {
-  if (result.weatherDataMode !== "real") {
+  if (
+    result.weatherDataMode !== "real" ||
+    result.weatherDataFreshness === "stale" ||
+    result.weatherEvidenceStatus === "stale" ||
+    result.weatherEvidenceStatus === "insufficient"
+  ) {
     return false;
   }
   return result.weatherSourceSummaries.some(
@@ -338,6 +343,9 @@ export function hasWeatherFieldSupport(
   result: ForecastCalculationResult,
   field?: string,
 ): boolean {
+  if (!hasRealWeatherData(result)) {
+    return false;
+  }
   if (field && result.weatherMissingFields.includes(field)) {
     return false;
   }

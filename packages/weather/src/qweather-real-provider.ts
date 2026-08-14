@@ -51,6 +51,17 @@ export class QWeatherRealProvider implements WeatherProvider {
     const windSpeedKmh = Number(now.windSpeed);
     const visibility = Number(now.vis);
 
+    for (const [field, value] of [
+      ["temp", temperature],
+      ["humidity", humidity],
+      ["cloud", cloudTotal],
+      ["windSpeed", windSpeedKmh],
+    ] as const) {
+      if (!Number.isFinite(value)) {
+        throw new Error(`QWeather current weather missing required field: ${field}`);
+      }
+    }
+
     return {
       provider: source.providerCode,
       observedAt:
@@ -58,18 +69,14 @@ export class QWeatherRealProvider implements WeatherProvider {
       coordinates: input.coordinates,
       condition: weatherConditionFromCode(weatherCode),
       summary: typeof now.text === "string" ? now.text : "和风天气实时天气",
-      temperatureCelsius: Number.isFinite(temperature) ? temperature : 0,
+      temperatureCelsius: temperature,
       feelsLikeCelsius: Number.isFinite(Number(now.feelsLike))
         ? Number(now.feelsLike)
-        : Number.isFinite(temperature)
-          ? temperature
-          : 0,
-      humidityPercent: Number.isFinite(humidity) ? humidity : 0,
-      cloudCoverPercent: Number.isFinite(cloudTotal) ? cloudTotal : 0,
-      windSpeedMetersPerSecond: Number.isFinite(windSpeedKmh)
-        ? Math.round((windSpeedKmh / 3.6) * 10) / 10
-        : 0,
-      visibilityKilometers: Number.isFinite(visibility) ? visibility : 0,
+          : temperature,
+      humidityPercent: humidity,
+      cloudCoverPercent: cloudTotal,
+      windSpeedMetersPerSecond: Math.round((windSpeedKmh / 3.6) * 10) / 10,
+      visibilityKilometers: Number.isFinite(visibility) ? visibility : null,
     };
   }
 

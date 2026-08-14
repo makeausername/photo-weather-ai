@@ -212,7 +212,7 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
     });
   });
 
-  it("falls back safely when the ICON cloud-layer request fails", async () => {
+  it("returns unavailable evidence when the ICON cloud-layer request fails", async () => {
     const fetcher = vi.fn(async () => new Response("{}", { status: 503 }));
     const provider = new OpenMeteoIconCloudLayerProvider({
       client: new OpenMeteoIconCloudLayerClient({
@@ -228,8 +228,8 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
 
     const bundle = await service.getWeatherDataBundle(requestInput());
 
-    expect(bundle.dataMode).toBe("fallback");
-    expect(bundle.hourly.length).toBeGreaterThan(0);
+    expect(bundle.dataMode).toBe("unavailable");
+    expect(bundle.hourly).toEqual([]);
     expect(bundle.sourceSummaries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -244,7 +244,11 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
             "cloudHigh",
           ]),
         }),
-        expect.objectContaining({ providerCode: "mock", status: "fallback" }),
+        expect.objectContaining({
+          providerCode: "unavailable",
+          dataMode: "unavailable",
+          success: false,
+        }),
       ]),
     );
   });

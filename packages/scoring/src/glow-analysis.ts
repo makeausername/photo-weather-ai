@@ -2882,7 +2882,7 @@ function buildGlowWindowRiskTags(
   if (hasCloudLayerGaps(window)) {
     tags.push("分层数据不足");
   }
-  return tags.length > 0 ? tags : ["风险可控"];
+  return tags.length > 0 ? tags : ["当前天气数据未识别到主要风险"];
 }
 
 function buildGlowWindowNote(

@@ -428,7 +428,7 @@ function buildCloudSeaMorphology(input: {
   const demBoundary = input.demStatus.availableForDirectionalHorizon
     ? "方向地形遮挡数据已可用；周边高差统计仍未返回。"
     : "周边高差统计仍未返回。";
-  const detail = `地形参考：${elevationText}；高差缺测，周边5公里高差统计暂未返回。${elevationHandling}，但云海地形高差不能按已确认处理，需结合现场云雾高度复核。${demBoundary}`;
+  const detail = `地形数据不足：${elevationText}；高差缺测，周边5公里高差统计暂未返回。${elevationHandling}，但云海地形高差不能按已确认处理，需结合现场云雾高度复核。${demBoundary}`;
 
   return {
     confidenceLabelZh: "低置信（高差缺测）",
@@ -496,17 +496,17 @@ function selectTerrainHorizonAssessment(
   result: ForecastCalculationResult,
 ): TerrainHorizonAssessment | undefined {
   const candidates: TerrainHorizonAssessment[] = [];
-  addCandidate(candidates, result.terrainAnalysis.horizonProfile.milkyWayAssessment);
-  addCandidate(candidates, result.terrainSummary.milkyWayAssessment);
-  addCandidate(candidates, result.astroAnalysis.terrainHorizonAssessment);
-  for (const day of result.astroAnalysis.dailyAstro) {
+  addCandidate(candidates, result.terrainAnalysis?.horizonProfile?.milkyWayAssessment);
+  addCandidate(candidates, result.terrainSummary?.milkyWayAssessment);
+  addCandidate(candidates, result.astroAnalysis?.terrainHorizonAssessment);
+  for (const day of result.astroAnalysis?.dailyAstro ?? []) {
     addCandidate(candidates, day.terrainHorizonAssessment);
     addCandidate(candidates, day.recommendedMilkyWayWindow?.terrainHorizonAssessment);
   }
   for (const window of [
-    result.astroAnalysis.recommendedMilkyWayWindow,
-    ...result.astroAnalysis.recommendedMilkyWayWindows,
-    ...result.astroAnalysis.milkyWayCandidateWindows,
+    result.astroAnalysis?.recommendedMilkyWayWindow,
+    ...(result.astroAnalysis?.recommendedMilkyWayWindows ?? []),
+    ...(result.astroAnalysis?.milkyWayCandidateWindows ?? []),
   ]) {
     addCandidate(candidates, window?.terrainHorizonAssessment);
   }

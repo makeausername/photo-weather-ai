@@ -363,7 +363,7 @@ describe("MeteoblueClient", () => {
     expect(hour?.missingFields).toEqual(expect.arrayContaining(["precipitationProbability"]));
   });
 
-  it("extracts partial meteoblue fields from nested package payloads and records missing fields", () => {
+  it("rejects nested package payloads missing core humidity evidence", () => {
     const provider = new MeteoblueRealProvider({
       client: new MeteoblueClient({
         apiKey: "meteoblue-secret",
@@ -375,7 +375,7 @@ describe("MeteoblueClient", () => {
       }),
     });
 
-    const hourly = provider.normalizeHourlyWeather({
+    expect(() => provider.normalizeHourlyWeather({
       "basic-1h": {
         data_1h: {
           time: ["2026-05-20T00:00:00+08:00"],
@@ -390,17 +390,10 @@ describe("MeteoblueClient", () => {
           lowclouds: [18],
         },
       },
-    });
-
-    expect(hourly[0]).toMatchObject({
-      temperature: 11,
-      cloudTotal: 66,
-      cloudLow: 18,
-      missingFields: expect.arrayContaining(["humidity", "cloudMid", "cloudHigh", "dewPoint"]),
-    });
+    })).toThrow("meteoblue 小时预报缺少必需字段 humidity");
   });
 
-  it("succeeds for partial top-level data_1h fields without fake parse success", () => {
+  it("rejects top-level data_1h fields without core temperature evidence", () => {
     const provider = new MeteoblueRealProvider({
       client: new MeteoblueClient({
         apiKey: "meteoblue-secret",
@@ -412,19 +405,13 @@ describe("MeteoblueClient", () => {
       }),
     });
 
-    const hourly = provider.normalizeHourlyWeather({
+    expect(() => provider.normalizeHourlyWeather({
       metadata: { latitude: 30.1328 },
       data_1h: {
         time: ["2026-05-25T08:00+08:00"],
         cloudcover: [88],
       },
-    });
-
-    expect(hourly[0]).toMatchObject({
-      providerCode: "meteoblue",
-      cloudTotal: 88,
-      missingFields: expect.arrayContaining(["temperature", "humidity", "windSpeed"]),
-    });
+    })).toThrow("meteoblue 小时预报缺少必需字段 temperature");
   });
 
   it("returns a safe parse error for unexpected valid JSON without leaking API keys", () => {

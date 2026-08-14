@@ -16,7 +16,6 @@ import type {
 } from "./types.js";
 import { createWeatherProvider, type WeatherProviderFactoryOptions } from "./factory.js";
 import { fuseWeatherSources } from "./fusion.js";
-import { MockWeatherProvider } from "./mock-provider.js";
 import { buildWeatherCacheKey, InMemoryWeatherCache, weatherCacheTtlMs } from "./weather-cache.js";
 import { InMemoryWeatherProviderUsageLogger, type WeatherProviderUsageLogger } from "./usage.js";
 import { isWeatherProviderError } from "./provider-error.js";
@@ -137,7 +136,7 @@ export class WeatherIntelligenceService {
     );
 
     if (usableBundles.length === 0) {
-      return this.buildFallbackBundle(input, failedSourceSummaries);
+      return this.buildUnavailableBundle(input, failedSourceSummaries);
     }
 
     const fusion = fuseWeatherSources({
@@ -206,84 +205,53 @@ export class WeatherIntelligenceService {
     };
   }
 
-  private async buildFallbackBundle(
+  private buildUnavailableBundle(
     input: WeatherRequestInput,
     failedSourceSummaries: readonly WeatherSourceSummary[],
-  ): Promise<WeatherDataBundle> {
-    const fallbackProvider = new MockWeatherProvider();
-    const fallback = await new WeatherDataService(fallbackProvider).getWeatherDataBundle(input);
-    const fallbackMode = failedSourceSummaries.length > 0 ? "fallback" : "demo";
-    const dataStatusZh =
-      failedSourceSummaries.length > 0
-        ? "天气数据：真实数据暂不可用，已回退到演示数据"
-        : "天气数据：演示数据";
-    const generated = generatedAt(input, fallback.generatedAt);
-    const fallbackSummary: WeatherSourceSummary = {
-      providerCode: "mock",
-      providerLabelZh: "演示数据",
-      dataMode: fallbackMode,
-      enabled: true,
+  ): WeatherDataBundle {
+    const generated = generatedAt(input);
+    const unavailableSummary: WeatherSourceSummary = {
+      providerCode: "unavailable",
+      providerLabelZh: "真实天气数据不足",
+      dataMode: "unavailable",
+      enabled: false,
       realCallEnabled: false,
-      attempted: true,
-      success: true,
-      status: "fallback",
-      availableFields: ["temperature", "humidity", "wind", "cloudTotal"],
-      missingFields: ["realWeather"],
+      attempted: failedSourceSummaries.length > 0,
+      success: false,
+      status: failedSourceSummaries.length > 0 ? "failed" : "skipped",
+      availableFields: [],
+      missingFields: ["realWeather", "temperature", "humidity", "windSpeed", "cloudTotal"],
       generatedAt: generated,
       cacheHit: false,
-      messageZh:
-        failedSourceSummaries.length > 0
-          ? "真实天气暂不可用，当前显示演示图层。"
-          : "演示天气数据可用。",
-      warningZh:
-        failedSourceSummaries.length > 0
-          ? "真实天气源暂时不可用，当前结果已回退到演示数据。"
-          : undefined,
+      messageZh: "真实天气数据不足，未生成天气结论。",
+      warningZh: "没有可核验的真实天气数据，系统不会使用演示数据代替。",
     };
     const warningNotes = failedSourceSummaries.flatMap((summary) =>
       summary.warningZh ? [summary.warningZh] : [],
     );
 
     return {
-      ...fallback,
-      currentWeather: fallback.currentWeather
-        ? {
-            ...fallback.currentWeather,
-            providerCode: "mock",
-            providerLabelZh: "演示数据",
-            dataMode: fallbackMode,
-          }
-        : undefined,
-      hourly: fallback.hourly.map((hour) => ({
-        ...hour,
-        providerCode: "mock",
-        providerLabelZh: "演示数据",
-        dataMode: fallbackMode,
-      })),
-      daily: fallback.daily.map((day) => ({
-        ...day,
-        providerCode: "mock",
-        providerLabelZh: "演示数据",
-        dataMode: fallbackMode,
-      })),
-      providerCode: "mock",
-      providerLabelZh: "演示数据",
-      dataMode: fallbackMode,
+      current: undefined,
+      currentWeather: undefined,
+      hourly: [],
+      daily: [],
+      alerts: [],
+      providerCode: "unavailable",
+      providerLabelZh: "真实天气数据不足",
+      dataMode: "unavailable",
       generatedAt: generated,
       forecastStart: input.forecastStart,
       forecastEnd: input.forecastEnd,
-      noticeZh: dataStatusZh,
-      missingFields: [...new Set([...(fallback.missingFields ?? []), "realWeather"])],
-      estimatedFields: fallback.estimatedFields ?? [],
-      sourceSummaries: [...failedSourceSummaries, fallbackSummary],
+      noticeZh: "天气数据：证据不足，未生成天气结论",
+      missingFields: ["realWeather", "temperature", "humidity", "windSpeed", "cloudTotal"],
+      estimatedFields: [],
+      sourceSummaries: [...failedSourceSummaries, unavailableSummary],
       missingDataNotes: [
         ...warningNotes,
-        failedSourceSummaries.length > 0
-          ? "真实天气源暂时不可用，当前结果已回退到演示数据。"
-          : "当前未启用真实天气源，结果使用演示数据。",
+        "没有可核验的真实天气数据，系统未使用演示数据生成结论。",
       ],
       fusionSummary: {
-        primarySource: "演示数据",
+        primarySource: "无可用真实天气源",
         auxiliarySources: [],
         professionalSourceStatus: "专业增强：meteoblue 未启用",
         confidenceLevel: "low",
@@ -293,10 +261,10 @@ export class WeatherIntelligenceService {
           astro: 0,
           general: 0,
         },
-        conflictStatusZh: "无明显冲突",
-        dataStatusZh,
-        sourceSummaries: [...failedSourceSummaries, fallbackSummary],
-        missingDataNotes: warningNotes,
+        conflictStatusZh: "证据不足，无法判断数据源一致性",
+        dataStatusZh: "真实天气数据不足",
+        sourceSummaries: [...failedSourceSummaries, unavailableSummary],
+        missingDataNotes: [...warningNotes, "没有可核验的真实天气数据。"],
       },
       rollingProviderCoverage: buildRollingProviderCoverageDiagnostics(input),
     };

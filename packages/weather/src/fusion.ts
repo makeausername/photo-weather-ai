@@ -208,7 +208,10 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
   const recommendedPrimarySource = primaryBundle.providerCode;
   const confidenceLevel = confidenceLevelFromScore(confidenceByTarget[input.target]);
   const dataStatusZh = buildDataStatus(providerFamilyBundles, confidenceLevel);
-  const conflictStatusZh = conflictFlags.length === 0 ? "无明显冲突" : "存在差异，请谨慎参考";
+  const conflictStatusZh =
+    conflictFlags.length === 0
+      ? "当前参与融合的数据源未识别到明显冲突"
+      : "存在差异，请谨慎参考";
   const meteoblueBundle = usableBundles.find(
     (bundle) => bundle.providerCode === "meteoblue" && bundle.dataMode === "real",
   );
@@ -348,13 +351,13 @@ function emptyFusionResult(): WeatherFusionResult {
       astro: 0,
       general: 0,
     },
-    recommendedPrimarySource: "mock",
-    dataStatusZh: "天气数据：演示数据",
+    recommendedPrimarySource: "unavailable",
+    dataStatusZh: "天气数据：证据不足",
     missingDataNotes: ["没有可用于融合的天气源。"],
-    fusionNotesZh: ["未找到可用天气源，当前只能使用演示数据。"],
-    generatedAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
+    fusionNotesZh: ["未找到可用真实天气源，未生成天气结论。"],
+    generatedAt: new Date().toISOString(),
     summary: {
-      primarySource: "演示数据",
+      primarySource: "无可用真实天气源",
       auxiliarySources: [],
       professionalSourceStatus: "专业增强：meteoblue 未启用",
       confidenceLevel: "low",
@@ -370,10 +373,10 @@ function emptyFusionResult(): WeatherFusionResult {
         astro: 0,
         general: 0,
       },
-      conflictStatusZh: "无明显冲突",
+      conflictStatusZh: "仅有单一可用数据源，无法验证多源一致性",
       conflictFlagsCount: 0,
       aerosolConflictFlagsCount: 0,
-      dataStatusZh: "天气数据：演示数据",
+      dataStatusZh: "天气数据：证据不足",
       sourceSummaries: [],
       multiSourceAgreementContext: buildMultiSourceAgreementContext({
         providerBundles: [],
@@ -473,18 +476,25 @@ function fuseCurrent(
 
   const primary = primaryBundle.currentWeather;
   const hour = firstFusedHour;
+  const requireCurrentNumber = (field: string, ...candidates: unknown[]): number => {
+    const value = candidates.find(hasUsableNumber);
+    if (typeof value !== "number") {
+      throw new Error(`融合后的当前天气缺少必需字段 ${field}。`);
+    }
+    return value;
+  };
 
   return {
     providerCode: primaryBundle.providerCode,
     providerLabelZh: primaryBundle.providerLabelZh,
     dataMode: primaryBundle.dataMode,
     observedAt: primary?.observedAt ?? hour?.time ?? primaryBundle.generatedAt,
-    temperature: primary?.temperature ?? hour?.temperature ?? 0,
+    temperature: requireCurrentNumber("temperature", primary?.temperature, hour?.temperature),
     feelsLike: primary?.feelsLike ?? hour?.feelsLike ?? null,
-    humidity: primary?.humidity ?? hour?.humidity ?? 0,
+    humidity: requireCurrentNumber("humidity", primary?.humidity, hour?.humidity),
     dewPoint: primary?.dewPoint ?? hour?.dewPoint ?? null,
     dewPointSpread: primary?.dewPointSpread ?? hour?.dewPointSpread ?? null,
-    windSpeed: primary?.windSpeed ?? hour?.windSpeed ?? 0,
+    windSpeed: requireCurrentNumber("windSpeed", primary?.windSpeed, hour?.windSpeed),
     windDirection: primary?.windDirection ?? hour?.windDirection ?? null,
     windGust: primary?.windGust ?? hour?.windGust ?? null,
     pressure: primary?.pressure ?? hour?.pressure ?? null,
@@ -2346,6 +2356,9 @@ function buildDataStatus(
   bundles: readonly WeatherDataBundle[],
   confidenceLevel: WeatherConfidenceLevel,
 ): string {
+  if (bundles.length === 0 || bundles.every((bundle) => bundle.dataMode === "unavailable")) {
+    return "天气数据：证据不足";
+  }
   if (bundles.every((bundle) => bundle.dataMode !== "real")) {
     return "天气数据：演示数据";
   }

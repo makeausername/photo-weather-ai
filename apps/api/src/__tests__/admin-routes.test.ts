@@ -1702,6 +1702,7 @@ describe("admin config routes", () => {
       return new Response(
         JSON.stringify({
           metadata: { name: "basic-1h" },
+          units: { windspeed: "m/s" },
           data_1h: {
             time: ["2026-05-20T00:00:00+08:00"],
             temperature: [12],

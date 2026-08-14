@@ -29,11 +29,19 @@ export function createWeatherProvider(
   const provider = options.provider ?? readProviderCode(process.env.WEATHER_PROVIDER);
   const mode = options.mode ?? readProviderMode(process.env.WEATHER_PROVIDER_MODE);
 
-  if (nodeEnv === "test" && options.provider === undefined && options.mode === undefined) {
-    return new MockWeatherProvider();
+  if (!provider || !mode) {
+    if (nodeEnv === "test" && options.provider === undefined && options.mode === undefined) {
+      return new MockWeatherProvider();
+    }
+    throw new Error(
+      "Weather provider configuration is missing; forecast generation must report insufficient evidence.",
+    );
   }
 
-  if (!provider || provider === "mock" || !mode || mode === "mock") {
+  if (provider === "mock" || mode === "mock") {
+    if (nodeEnv === "production") {
+      throw new Error("Mock weather providers are forbidden in production.");
+    }
     return new MockWeatherProvider();
   }
 
@@ -74,6 +82,8 @@ export function createWeatherProvider(
       return new OpenMeteoProvider();
     case "meteoblue":
       return new MeteoblueProvider();
+    case "unavailable":
+      throw new Error("Unavailable weather is a data state, not a provider implementation.");
   }
 }
 

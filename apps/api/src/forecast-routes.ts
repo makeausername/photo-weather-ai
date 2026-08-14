@@ -46,6 +46,8 @@ import {
   createWeatherProvider,
   isWeatherProviderError,
   WeatherDataService,
+  WeatherIntelligenceService,
+  type WeatherDataBundle,
   type WeatherProvider,
 } from "@photo-weather/weather";
 import { z, type ZodError } from "zod";
@@ -89,6 +91,8 @@ const defaultForecastCalculateRetryDelayMs = 600;
 const forecastTransientHttpStatuses = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 
 const missingWgs84CoordinateErrorMessage = "当前地点缺少有效 WGS84 坐标，无法计算星空银河窗口。";
+export const weatherEvidenceUnavailableMessage =
+  "真实天气数据证据不足，无法生成拍摄结论；请稍后重试。";
 
 const forecastCalculateRequestSchema = forecastQueryInputSchema.extend({
   elevationMeters: z.number().finite().nullable().optional(),
@@ -459,10 +463,15 @@ export function registerForecastRoutes(
   app: FastifyInstance,
   options: ForecastRoutesOptions = {},
 ): void {
-  const weatherProvider = options.weatherProvider ?? createWeatherProvider();
-  const weatherDataService = options.weatherDataService ?? new WeatherDataService(weatherProvider);
-  const terrainProvider = options.terrainProvider ?? new MockTerrainProvider();
   const env = options.env ?? process.env;
+  const weatherDataService =
+    options.weatherDataService ??
+    (options.weatherProvider
+      ? new WeatherDataService(options.weatherProvider)
+      : env.NODE_ENV === "test"
+        ? new WeatherDataService(createWeatherProvider({ nodeEnv: "test" }))
+        : new WeatherIntelligenceService({ providers: [] }));
+  const terrainProvider = options.terrainProvider ?? new MockTerrainProvider();
   const elevationService =
     options.elevationService ??
     createRuntimeElevationService({
@@ -759,7 +768,7 @@ async function calculateForecastWithRouteResilience(options: {
           queryLike: query,
           category: classification.category,
         });
-        return { result: stale, servedStale: true };
+        return { result: markForecastResultStale(stale), servedStale: true };
       }
     }
     throw error;
@@ -903,6 +912,9 @@ function classifyForecastCalculationError(error: unknown): ForecastTransientClas
   }
 
   const normalized = normalizeError(error);
+  if (normalized.message === weatherEvidenceUnavailableMessage) {
+    return { transient: true, category: "weather_evidence_unavailable" };
+  }
   if (
     /timeout|timed out|fetch failed|network|ECONNRESET|ECONNREFUSED|EAI_AGAIN/i.test(
       normalized.message,
@@ -971,10 +983,39 @@ async function calculateForecastResultWithCalibration(
     astroServiceConfig,
     logger,
   );
+  assertForecastResultHasCompleteWeatherEvidence(result);
   logWeatherRuntimeFusionDiagnostics(logger, result);
   logCloudSeaCoverageDiagnostics(logger, result);
   logGlowScoringDiagnostics(logger, result);
   return attachCalibrationHint(result, query, dbClient);
+}
+
+function assertForecastResultHasCompleteWeatherEvidence(result: ForecastCalculationResult): void {
+  if (process.env.NODE_ENV === "test" && ["mock", "fixture", "demo"].includes(result.weatherDataMode)) {
+    return;
+  }
+  const rows = result.professionalHourlyData ?? [];
+  const incomplete =
+    rows.length === 0 ||
+    rows.some(
+      (row) =>
+        !Number.isFinite(row.cloudTotalPercent) ||
+        !Number.isFinite(row.cloudHighPercent) ||
+        !Number.isFinite(row.cloudMidPercent) ||
+        !Number.isFinite(row.cloudLowPercent) ||
+        !Number.isFinite(row.displayedTemperatureC) ||
+        !Number.isFinite(row.dewPointC) ||
+        !Number.isFinite(row.dewPointSpreadC) ||
+        !Number.isFinite(row.relativeHumidityPercent) ||
+        !Number.isFinite(row.precipitationAmountMm) ||
+        !Number.isFinite(row.precipitationProbabilityPercent) ||
+        !Number.isFinite(row.visibilityMeters) ||
+        !Number.isFinite(row.windSpeedMs) ||
+        !Number.isFinite(row.windDirectionDeg),
+    );
+  if (result.weatherDataMode !== "real" || incomplete) {
+    throw new Error(weatherEvidenceUnavailableMessage);
+  }
 }
 
 function sendForecastCalculationError(options: {
@@ -1036,6 +1077,13 @@ function sendForecastCalculationError(options: {
     reply.status(400).send({
       error: "invalid_wgs84_coordinates",
       message: missingWgs84CoordinateErrorMessage,
+    });
+    return null;
+  }
+  if (message === weatherEvidenceUnavailableMessage) {
+    reply.status(503).send({
+      error: "weather_evidence_insufficient",
+      message: weatherEvidenceUnavailableMessage,
     });
     return null;
   }
@@ -1168,6 +1216,9 @@ async function calculateForecastResult(
     terrainProvider.buildTerrainProfile(enrichedTerrainInput),
     terrainProvider.buildHorizonProfile(enrichedTerrainInput),
   ]);
+  if (!hasSufficientRealWeatherEvidence(weatherDataBundle)) {
+    throw new Error(weatherEvidenceUnavailableMessage);
+  }
   const terrainAnalysis = {
     terrainProfile,
     horizonProfile,
@@ -1211,6 +1262,58 @@ async function calculateForecastResult(
     astroDataSourceLabelZh: astroServiceData.astroDataSourceLabelZh,
     lightPollution: astroServiceData.lightPollution,
   });
+}
+
+function hasSufficientRealWeatherEvidence(bundle: WeatherDataBundle): boolean {
+  if (
+    process.env.NODE_ENV === "test" &&
+    ["mock", "fixture", "demo"].includes(bundle.dataMode) &&
+    bundle.hourly.length > 0
+  ) {
+    return true;
+  }
+  if (bundle.dataMode !== "real" || bundle.hourly.length === 0) {
+    return false;
+  }
+  const hasSuccessfulRealSource = (bundle.sourceSummaries ?? []).some(
+    (summary) =>
+      summary.dataMode === "real" &&
+      summary.success === true &&
+      summary.status === "available",
+  );
+  if (!hasSuccessfulRealSource) {
+    return false;
+  }
+  const requiredFields = [
+    "temperature",
+    "humidity",
+    "pressure",
+    "windSpeed",
+    "windDirection",
+    "precipitationProbability",
+    "precipitation",
+    "visibility",
+    "cloudTotal",
+    "cloudLow",
+    "cloudMid",
+    "cloudHigh",
+  ] as const;
+  return bundle.hourly.every((hour) => {
+    const hasDewPointEvidence =
+      Number.isFinite(hour.dewPoint) || Number.isFinite(hour.dewPointSpread);
+    const completeRequiredFields = requiredFields.every((field) => Number.isFinite(hour[field]));
+    return completeRequiredFields && hasDewPointEvidence;
+  });
+}
+
+function markForecastResultStale(result: ForecastCalculationResult): ForecastCalculationResult {
+  return {
+    ...result,
+    weatherDataFreshness: "stale",
+    weatherEvidenceStatus: "stale",
+    weatherEvidenceReasonZh:
+      "本次实时天气请求失败，当前仅有旧缓存；旧缓存不能作为当前出发或拍摄结论。",
+  };
 }
 
 type DirectionalTerrainDemTarget = Extract<

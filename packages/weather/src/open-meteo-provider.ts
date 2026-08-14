@@ -64,7 +64,7 @@ export class OpenMeteoProvider implements WeatherProvider {
       humidityPercent: firstHour.humidity,
       cloudCoverPercent: firstHour.cloudTotal,
       windSpeedMetersPerSecond: firstHour.windSpeed,
-      visibilityKilometers: firstHour.visibility ?? 0,
+      visibilityKilometers: firstHour.visibility,
     };
   }
 
@@ -115,6 +115,10 @@ export class OpenMeteoProvider implements WeatherProvider {
           at(hourly, "precipitation_probability", index),
         );
         const precipitation = nullableRounded(at(hourly, "precipitation", index));
+        const windSpeed = kmhToMetersPerSecond(at(hourly, "wind_speed_10m", index));
+        if (windSpeed === null) {
+          throw new Error("Open-Meteo hourly weather missing required field: wind_speed_10m");
+        }
         const rainAmount = nullableRounded(at(hourly, "rain", index));
         const snowAmount = nullableRounded(at(hourly, "snowfall", index));
         if (precipitationProbability === null) {
@@ -144,7 +148,7 @@ export class OpenMeteoProvider implements WeatherProvider {
                     nullableRounded(at(hourly, "dew_point_2m", index))!,
                 ),
           pressure: pressureMsl ?? pressureFallback,
-          windSpeed: kmhToMetersPerSecond(at(hourly, "wind_speed_10m", index)) ?? 0,
+          windSpeed,
           windGust: kmhToMetersPerSecond(at(hourly, "wind_gusts_10m", index)),
           windDirection: nullableRounded(at(hourly, "wind_direction_10m", index), 0),
           precipitationProbability,
@@ -319,7 +323,7 @@ export class OpenMeteoRealProvider implements WeatherProvider {
       humidityPercent: humidity,
       cloudCoverPercent: firstHour.cloudTotal,
       windSpeedMetersPerSecond: windSpeed,
-      visibilityKilometers: firstHour.visibility ?? 0,
+      visibilityKilometers: firstHour.visibility,
     };
   }
 
@@ -351,10 +355,11 @@ export class OpenMeteoRealProvider implements WeatherProvider {
     return {
       provider: realSource.providerCode,
       observedAt: new Date().toISOString(),
-      aqi: 0,
-      category: "good",
-      pm25: 0,
-      pm10: 0,
+      availability: "unavailable",
+      aqi: null,
+      category: null,
+      pm25: null,
+      pm10: null,
     };
   }
 

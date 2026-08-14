@@ -217,9 +217,17 @@ describe("fixture weather provider normalization", () => {
 });
 
 describe("WeatherProviderFactory", () => {
-  it("defaults to mock in local and test environments", () => {
-    expect(createWeatherProvider({ nodeEnv: "development" }).source.providerCode).toBe("mock");
+  it("defaults to mock only in tests and fails closed without local configuration", () => {
+    expect(() => createWeatherProvider({ nodeEnv: "development" })).toThrow(
+      "Weather provider configuration is missing",
+    );
     expect(createWeatherProvider({ nodeEnv: "test" }).source.providerCode).toBe("mock");
+  });
+
+  it("forbids an explicit mock provider in production", () => {
+    expect(() =>
+      createWeatherProvider({ provider: "mock", mode: "mock", nodeEnv: "production" }),
+    ).toThrow("Mock weather providers are forbidden in production.");
   });
 
   it("selects fixture adapters only when explicitly requested", () => {

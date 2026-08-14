@@ -1048,6 +1048,7 @@ function comfortLevelLabel(
   level: ForecastCalculationResult["clothingGuide"]["comfortLevel"],
 ): string {
   const labels: Record<ForecastCalculationResult["clothingGuide"]["comfortLevel"], string> = {
+    unknown: "证据不足",
     comfortable: "舒适",
     cool: "偏凉",
     cold: "寒冷",
@@ -1061,6 +1062,9 @@ function comfortLevelLabel(
 }
 
 function weatherReadinessLabel(result: ForecastCalculationResult): string {
+  if (result.weatherDataFreshness === "stale" || result.weatherEvidenceStatus === "stale") {
+    return "旧缓存，仅供核对";
+  }
   if (result.weatherDataMode === "real") {
     return "实况与预报已更新";
   }
@@ -1884,7 +1888,7 @@ function InvalidQueryCard({ message }: { readonly message?: string }) {
   );
 }
 
-function ForecastResultView({
+export function ForecastResultView({
   query,
   result,
 }: {
@@ -1895,6 +1899,33 @@ function ForecastResultView({
     () => buildForecastResultViewModel(result, query.target),
     [query.target, result],
   );
+
+  if (
+    result.weatherDataMode !== "real" ||
+    result.weatherEvidenceStatus === "insufficient" ||
+    result.weatherEvidenceStatus === "stale" ||
+    result.weatherDataFreshness === "stale"
+  ) {
+    return (
+      <DashboardFrame query={query}>
+        <main className="grid gap-4">
+          <Card className="border-warning p-5 shadow-sm">
+            <Badge variant="warning">天气证据不足</Badge>
+            <h2 className="mt-3 text-xl font-bold text-card-foreground">
+              当前没有足够的新鲜天气数据
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {result.weatherEvidenceReasonZh ??
+                "实时天气请求失败，旧缓存不能作为当前出发或拍摄结论。"}
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              缓存生成时间：{formatDateTime(result.generatedAt)}。请稍后重试，或以权威临近预报和现场观测为准。
+            </p>
+          </Card>
+        </main>
+      </DashboardFrame>
+    );
+  }
 
   if (viewModel.target === "general") {
     return (
@@ -2155,15 +2186,13 @@ function CloudSeaProfessionalDataSection({
 }: {
   readonly viewModel: CloudSeaForecastViewModel;
 }) {
-  const [expanded, setExpanded] = useState(false);
-
   return (
     <Card
       className={cloudSeaPanelClassName(
         "CloudSeaProfessionalData cloud-sea-professional-data p-4",
       )}
       data-cloud-sea-section="CloudSeaProfessionalData"
-      data-cloud-sea-professional-data-expanded={expanded ? "true" : "false"}
+      data-cloud-sea-professional-data-expanded="true"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
@@ -2173,22 +2202,11 @@ function CloudSeaProfessionalDataSection({
               "查看逐小时云层、湿度、露点、降水、能见度和风的专业小时表。"}
           </p>
         </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          aria-expanded={expanded}
-          onClick={() => {
-            setExpanded((current) => !current);
-          }}
-          data-cloud-sea-professional-data-toggle="true"
-        >
-          {expanded ? "收起专业数据" : "展开专业数据"}
-          <ExpandChevron expanded={expanded} />
-        </Button>
       </div>
 
-      {expanded ? (
+      {isValidProfessionalHourlyTimeBasis(
+        viewModel.displayData.professionalHourlyData.timeBasis,
+      ) ? (
         <div
           className="mt-3 grid gap-3"
           data-cloud-sea-professional-data-body="true"
@@ -2201,20 +2219,6 @@ function CloudSeaProfessionalDataSection({
             config={cloudSeaEmbeddedProfessionalHourlyConfig}
           />
         </div>
-      ) : viewModel.displayData.professionalHourlyData.rows.length > 0 ? (
-        <CloudSeaHourlyFocusPreview
-          target="cloud_sea"
-          rows={viewModel.displayData.professionalHourlyData.rows.slice(0, 4)}
-          timezone={
-            viewModel.displayData.professionalHourlyData.timeBasis?.timezone ?? "Asia/Shanghai"
-          }
-          rowAnnotations={new Map(
-            (viewModel.displayData.professionalHourlyData.rowAnnotations ?? []).map((item) => [
-              item.rowTime,
-              item,
-            ]),
-          )}
-        />
       ) : null}
     </Card>
   );
@@ -4591,14 +4595,22 @@ export function CloudSeaProfessionalHourlyDataPanel({
   readonly config?: ProfessionalHourlySectionConfig;
   readonly variant?: ProfessionalHourlySectionVariant;
 }) {
+  if (!isValidProfessionalHourlyTimeBasis(data.timeBasis)) {
+    return null;
+  }
   return (
-    <ProfessionalHourlyCloudSection
-      target={target}
-      data={data}
-      terrainContext={terrainContext}
-      config={config}
-      variant={variant}
-    />
+    <div
+      className="CloudSeaProfessionalHourlyDataPanel min-w-0 max-w-full"
+      data-professional-hourly-table-layout="mobile-scroll-safe"
+    >
+      <ProfessionalHourlyCloudSection
+        target={target}
+        data={data}
+        terrainContext={terrainContext}
+        config={config}
+        variant={variant}
+      />
+    </div>
   );
 }
 
@@ -7975,7 +7987,11 @@ function dailyMainRiskText(
     return "通透一般";
   }
 
-  return summary.riskFlags[0]?.label ?? result.riskFlags[0]?.label ?? "风险可控";
+  return (
+    summary.riskFlags[0]?.label ??
+    result.riskFlags[0]?.label ??
+    "当前天气数据未识别到主要风险，仍需临近复核"
+  );
 }
 
 function dailyCompactActionSuggestion(
@@ -8077,7 +8093,11 @@ function RiskDecisionSection({
       <SectionHeading
         title="风险提醒"
         description="只保留会影响出发、机位等待和器材保护的风险。"
-        badge={riskItems.length > 0 ? `${riskItems.length} 项需关注` : "风险可控"}
+        badge={
+          riskItems.length > 0
+            ? `${riskItems.length} 项需关注`
+            : "当前数据未识别到主要风险"
+        }
       />
       <JudgmentBasisGrid
         target="general"
@@ -8505,7 +8525,8 @@ function MockWarningCard({
 function DataStatusPanel({ result }: { readonly result: ForecastCalculationResult }) {
   const nonReal = result.weatherDataMode !== "real" || result.terrainAnalysis.isMock;
   const confidence = sourceConfidenceLabel(result);
-  const conflictStatus = result.weatherFusionSummary?.conflictStatusZh ?? "无明显冲突";
+  const conflictStatus =
+    result.weatherFusionSummary?.conflictStatusZh ?? "缺少多源一致性证据";
 
   return (
     <Card className="p-5 shadow-sm">
@@ -8906,7 +8927,10 @@ function buildAstroSubjectBreakdownCard(
       },
       {
         label: "主要阻碍",
-        value: blockers.length > 0 ? blockerText : "暂无主要阻碍",
+        value:
+          blockers.length > 0
+            ? blockerText
+            : "当前天气数据未识别到主要阻碍，仍需临近复核",
       },
       {
         label: "云量阻挡",
@@ -9359,7 +9383,7 @@ function windowRiskTag(result: ForecastCalculationResult, window: ForecastResult
     return "谨慎窗口";
   }
 
-  return result.riskFlags[0]?.label ?? "风险可控";
+  return result.riskFlags[0]?.label ?? "当前天气数据未识别到主要风险，仍需临近复核";
 }
 
 function windowDisplayCategory(

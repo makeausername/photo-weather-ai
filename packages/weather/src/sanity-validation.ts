@@ -128,7 +128,10 @@ function rejectField(
   rule: FieldRule,
   missingFields: Set<string>,
 ): void {
-  target[field] = rule.required ? 0 : null;
+  if (rule.required) {
+    throw new Error(`Weather provider returned invalid required field: ${field}`);
+  }
+  target[field] = null;
   missingFields.add(field);
   missingFields.add(`invalid:${field}`);
 }

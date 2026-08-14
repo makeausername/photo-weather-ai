@@ -170,7 +170,7 @@ export async function requestForecastCalculation(
         useSessionStorage: options.useSessionStorage ?? true,
       });
       if (stale) {
-        return stale;
+        return markForecastResultStale(stale);
       }
     }
     throw normalizeForecastClientError(error);
@@ -186,6 +186,16 @@ export async function requestForecastCalculation(
   requestPromise.then(cleanup, cleanup);
 
   return rejectWhenAborted(requestPromise, options.signal);
+}
+
+function markForecastResultStale(result: ForecastCalculationResult): ForecastCalculationResult {
+  return {
+    ...result,
+    weatherDataFreshness: "stale",
+    weatherEvidenceStatus: "stale",
+    weatherEvidenceReasonZh:
+      "实时天气请求失败，当前仅有旧缓存；旧缓存不能作为当前出发或拍摄结论。",
+  };
 }
 
 export async function retryWithBackoff<TValue>(

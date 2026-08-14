@@ -503,7 +503,7 @@ export class MeteoblueProvider implements WeatherProvider {
       providerCode: source.providerCode,
       providerLabelZh: source.providerLabelZh,
       dataMode: source.mode,
-      generatedAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
+      generatedAt: new Date().toISOString(),
       noticeZh: "专业增强：meteoblue 未启用",
       missingFields: [],
       estimatedFields: [],
@@ -560,7 +560,7 @@ export class MeteoblueRealProvider implements WeatherProvider {
       humidityPercent: firstHour.humidity,
       cloudCoverPercent: firstHour.cloudTotal,
       windSpeedMetersPerSecond: firstHour.windSpeed,
-      visibilityKilometers: firstHour.visibility ?? 0,
+      visibilityKilometers: firstHour.visibility,
     };
   }
 
@@ -636,9 +636,9 @@ export class MeteoblueRealProvider implements WeatherProvider {
             temperatureSourceUnit,
           );
           if (temperatureValue === null) {
-            missingFields.add("temperature");
+            throw meteoblueParseError("meteoblue 小时预报缺少必需字段 temperature");
           }
-          const temperature = temperatureValue ?? 0;
+          const temperature = temperatureValue;
           const dewPoint = normalizeMeteoblueTemperatureC(
             pickAt(data1h, index, fieldAliases("dewPoint")),
             temperatureSourceUnit,
@@ -646,12 +646,25 @@ export class MeteoblueRealProvider implements WeatherProvider {
           const cloudLow = nullablePercent(pickAt(data1h, index, fieldAliases("cloudLow")));
           const cloudMid = nullablePercent(pickAt(data1h, index, fieldAliases("cloudMid")));
           const cloudHigh = nullablePercent(pickAt(data1h, index, fieldAliases("cloudHigh")));
-          const cloudTotal = nullablePercent(pickAt(data1h, index, fieldAliases("cloudTotal")));
+          const explicitCloudTotal = nullablePercent(
+            pickAt(data1h, index, fieldAliases("cloudTotal")),
+          );
+          const derivedCloudTotal = [cloudLow, cloudMid, cloudHigh]
+            .filter((value): value is number => value !== null)
+            .reduce<number | null>((maximum, value) =>
+              maximum === null ? value : Math.max(maximum, value), null);
+          const cloudTotal = explicitCloudTotal ?? derivedCloudTotal;
+          if (cloudTotal === null) {
+            throw meteoblueParseError("meteoblue 小时预报缺少必需字段 cloudTotal");
+          }
+          if (explicitCloudTotal === null) {
+            missingFields.add("cloudTotal");
+          }
           const humidityValue = nullablePercent(pickAt(data1h, index, fieldAliases("humidity")));
           if (humidityValue === null) {
-            missingFields.add("humidity");
+            throw meteoblueParseError("meteoblue 小时预报缺少必需字段 humidity");
           }
-          const humidity = humidityValue ?? 0;
+          const humidity = humidityValue;
           const pressure = normalizeMeteobluePressureHpa(
             pickAt(data1h, index, fieldAliases("pressure")),
             pressureSourceUnit,
@@ -661,9 +674,9 @@ export class MeteoblueRealProvider implements WeatherProvider {
             windSpeedSourceUnit,
           );
           if (windSpeedValue === null) {
-            missingFields.add("windSpeed");
+            throw meteoblueParseError("meteoblue 小时预报缺少必需字段 windSpeed");
           }
-          const windSpeed = windSpeedValue ?? 0;
+          const windSpeed = windSpeedValue;
           const windGust = normalizeNullableWindSpeed(
             pickAt(data1h, index, fieldAliases("windGust")),
             windGustSourceUnit,
@@ -740,7 +753,7 @@ export class MeteoblueRealProvider implements WeatherProvider {
             ),
             visibility,
             dewPoint,
-            cloudTotal: cloudTotal ?? 0,
+            cloudTotal,
             cloudLow,
             cloudMid,
             cloudHigh,
@@ -752,6 +765,7 @@ export class MeteoblueRealProvider implements WeatherProvider {
             dataMode: realSource.mode,
             sourceConfidence: missingFields.size > 0 ? 0.78 : 0.9,
             missingFields: missingFields.size > 0 ? [...missingFields] : undefined,
+            estimatedFields: explicitCloudTotal === null ? ["cloudTotal"] : undefined,
             fieldMetadata: {
               visibility: {
                 value: visibility,
@@ -810,10 +824,18 @@ export class MeteoblueRealProvider implements WeatherProvider {
               tempMax === null ? "tempMax" : null,
             ].filter((field): field is string => field !== null);
 
+            if (missingFields.length > 0) {
+              throw meteoblueParseError(
+                `meteoblue 日预报缺少必需字段 ${missingFields.join(", ")}`,
+              );
+            }
+            const requiredTempMin = tempMin as number;
+            const requiredTempMax = tempMax as number;
+
             return {
               date: normalizeDate(String(dateValue).slice(0, 10)),
-              tempMin: tempMin ?? 0,
-              tempMax: tempMax ?? tempMin ?? 0,
+              tempMin: requiredTempMin,
+              tempMax: requiredTempMax,
               precipitationProbability: nullablePercent(
                 pickAt(
                   dataDay,

@@ -74,7 +74,7 @@ describe("WeatherIntelligenceService", () => {
     expect(JSON.stringify(bundle)).not.toContain("secret");
   });
 
-  it("falls back explicitly when all real providers fail", async () => {
+  it("returns evidence-insufficient data when all real providers fail", async () => {
     const service = new WeatherIntelligenceService({
       providers: [
         new FailingProvider("qweather", "和风天气", "real"),
@@ -84,12 +84,12 @@ describe("WeatherIntelligenceService", () => {
 
     const bundle = await service.getWeatherDataBundle(requestInput());
 
-    expect(bundle.dataMode).toBe("fallback");
-    expect(bundle.noticeZh).toBe("天气数据：真实数据暂不可用，已回退到演示数据");
-    expect(bundle.hourly.length).toBeGreaterThan(0);
+    expect(bundle.dataMode).toBe("unavailable");
+    expect(bundle.noticeZh).toBe("天气数据：证据不足，未生成天气结论");
+    expect(bundle.hourly).toEqual([]);
     expect(bundle.sourceSummaries).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ providerCode: "mock", status: "fallback" }),
+        expect.objectContaining({ providerCode: "unavailable", success: false }),
         expect.objectContaining({
           providerCode: "qweather",
           status: "failed",
@@ -98,7 +98,7 @@ describe("WeatherIntelligenceService", () => {
         }),
       ]),
     );
-    expect(bundle.fusionSummary?.dataStatusZh).toBe("天气数据：真实数据暂不可用，已回退到演示数据");
+    expect(bundle.fusionSummary?.dataStatusZh).toBe("真实天气数据不足");
   });
 
   it("separates cached provider bundles by runtime namespace", async () => {
@@ -390,7 +390,7 @@ function meteoblueData1hPayload() {
       longitude: 118.1718,
       height: 1860,
     },
-    units: {},
+    units: { windspeed: "m/s" },
     data_1h: {
       time: ["2026-05-25T08:00+08:00"],
       temperature: [23],

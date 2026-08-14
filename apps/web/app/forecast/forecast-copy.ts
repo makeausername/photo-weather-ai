@@ -204,7 +204,11 @@ export function compactPrecipitationDisplayText(weather: RainRiskWeather | undef
     return `${precipitationProbabilityLabel(weather, amount)}：暂无`;
   }
 
-  return "降水不明显";
+  if (amount === 0 || probability === 0) {
+    return "降水不明显";
+  }
+
+  return "降水证据不足";
 }
 
 export function rainTimingText(weather: RainRiskWeather | undefined): string {
@@ -212,6 +216,13 @@ export function rainTimingText(weather: RainRiskWeather | undefined): string {
   const natural = naturalRainPeriod(raw);
   const amount = precipitationAmount(weather);
   const probability = displayedPrecipitationProbability(weather, amount);
+  if (
+    !hasExplicitPrecipitationWeatherSignal(weather) &&
+    !hasMeaningfulPrecipitationAmount(amount) &&
+    (typeof probability !== "number" || !Number.isFinite(probability))
+  ) {
+    return "降水概率和预计雨量均缺失，证据不足，无法判断降水时段。";
+  }
   if (hasMissingAmountPrecipitationSignal(weather, amount)) {
     return `${precipitationSignalWord(
       weather,

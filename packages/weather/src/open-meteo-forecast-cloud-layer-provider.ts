@@ -288,7 +288,7 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
       humidityPercent: firstHour.humidity,
       cloudCoverPercent: firstHour.cloudTotal,
       windSpeedMetersPerSecond: firstHour.windSpeed,
-      visibilityKilometers: firstHour.visibility ?? 0,
+      visibilityKilometers: firstHour.visibility,
     };
   }
 

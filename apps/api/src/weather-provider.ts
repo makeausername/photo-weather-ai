@@ -18,9 +18,7 @@ import {
   OpenMeteoForecastCloudLayerProvider,
   openMeteoForecastCloudLayerParserVersion,
   OpenMeteoAirQualityClient,
-  OpenMeteoProvider,
   QWeatherClient,
-  QWeatherProvider,
   QWeatherRealProvider,
   WeatherIntelligenceService,
   type WeatherRequestInput,
@@ -824,16 +822,16 @@ export async function resolveRuntimeWeatherProviders(
           unit: "metric",
         }),
       );
-    } else if (!qweather.realCallEnabled) {
-      providers.push(new QWeatherProvider());
     } else {
       sourceSummaries.push(
         skippedSourceSummary({
           providerCode: "qweather",
           providerLabelZh: "和风天气",
           realCallEnabled: qweather.realCallEnabled,
-          messageZh: "和风天气缺少 API Key 或 API Host，未发起真实请求。",
-          errorCategory: "missing_config",
+          messageZh: qweather.realCallEnabled
+            ? "和风天气缺少 API Key 或 API Host，未发起真实请求。"
+            : "和风天气真实调用未启用，未使用样例数据代替。",
+          errorCategory: qweather.realCallEnabled ? "missing_config" : "skipped",
         }),
       );
     }
@@ -879,16 +877,16 @@ export async function resolveRuntimeWeatherProviders(
           }),
         );
       }
-    } else if (!openMeteo.realCallEnabled) {
-      providers.push(new OpenMeteoProvider());
     } else {
       sourceSummaries.push(
         skippedSourceSummary({
           providerCode: "open_meteo",
           providerLabelZh: "Open-Meteo",
           realCallEnabled: openMeteo.realCallEnabled,
-          messageZh: "Open-Meteo 客户模式缺少 API Key，未发起真实请求。",
-          errorCategory: "missing_config",
+          messageZh: openMeteo.realCallEnabled
+            ? "Open-Meteo 客户模式缺少 API Key，未发起真实请求。"
+            : "Open-Meteo 真实调用未启用，未使用样例数据代替。",
+          errorCategory: openMeteo.realCallEnabled ? "missing_config" : "skipped",
         }),
       );
     }
@@ -913,8 +911,12 @@ export async function resolveRuntimeWeatherProviders(
   }
 
   const runtimeSnapshot = buildRuntimeSnapshot(qweather, openMeteo, meteoblue);
+  const testOnlyProviders =
+    providers.length === 0 && (options.env?.NODE_ENV ?? process.env.NODE_ENV) === "test"
+      ? [new MockWeatherProvider()]
+      : providers;
   return {
-    providers: providers.length > 0 ? providers : [new MockWeatherProvider()],
+    providers: testOnlyProviders,
     sourceSummaries,
     runtimeSnapshot,
     cacheNamespace: buildRuntimeCacheNamespace(runtimeSnapshot),

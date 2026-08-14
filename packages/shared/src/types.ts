@@ -44,7 +44,7 @@ export type ForecastHorizon = "24h" | "48h" | "72h" | "7d";
 
 export type ForecastTarget = "general" | "cloud_sea" | "glow" | "astro";
 
-export type WeatherDataMode = "mock" | "demo" | "fixture" | "fallback" | "real";
+export type WeatherDataMode = "mock" | "demo" | "fixture" | "fallback" | "unavailable" | "real";
 
 export type PrecipitationType = "rain" | "snow" | "mixed" | "none" | "unknown";
 
@@ -58,9 +58,9 @@ export type RollingProviderCoverageDiagnostics = {
   readonly coverageRule: string;
 };
 
-export type ExposedRidgeWindRisk = "low" | "medium" | "high";
+export type ExposedRidgeWindRisk = "unknown" | "low" | "medium" | "high";
 
-export type TripodStabilityRisk = "low" | "medium" | "high";
+export type TripodStabilityRisk = "unknown" | "low" | "medium" | "high";
 
 export type ElevationSource =
   | "manual"
@@ -201,7 +201,7 @@ export type ElevationTemperatureAdjustment = {
   readonly maxCoolingCelsius?: number;
 };
 
-export type PhotographyRainRiskLevel = "none" | "low" | "medium" | "high" | "severe";
+export type PhotographyRainRiskLevel = "unknown" | "none" | "low" | "medium" | "high" | "severe";
 
 export type PhotographyPrecipitationRisk = {
   readonly precipitationProbabilityPercent: number | null;
@@ -533,6 +533,7 @@ export type NormalizedDailyWeather = {
 };
 
 export type ClothingComfortLevel =
+  | "unknown"
   | "comfortable"
   | "cool"
   | "cold"
@@ -2253,6 +2254,9 @@ export type ForecastCalculationResult = {
   readonly isMock: boolean;
   readonly dataSourceLabel: string;
   readonly generatedAt: string;
+  readonly weatherDataFreshness?: "fresh" | "stale";
+  readonly weatherEvidenceStatus?: "sufficient" | "insufficient" | "stale";
+  readonly weatherEvidenceReasonZh?: string;
   readonly currentWeather?: NormalizedCurrentWeather;
   readonly clothingGuide: ClothingGuide;
   readonly weatherProviderCode: string;

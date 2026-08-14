@@ -142,7 +142,7 @@ describe("forecast precipitation copy", () => {
 
     expect(copy.level).toBe("待复核");
     expect(copy.detail).toContain("降水概率暂缺");
-    expect(compactPrecipitationDisplayText(weather)).toBe("降水不明显");
+    expect(compactPrecipitationDisplayText(weather)).toBe("降水证据不足");
     expect(isProbabilityOnlyPrecipitationSignal(weather)).toBe(false);
   });
 });

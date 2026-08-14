@@ -517,7 +517,7 @@ describe("Cloud Sea result page final regression QA", () => {
       value: expect.stringContaining("如仍前往，建议到达"),
       detail: expect.stringContaining("出发前必须复核"),
     });
-    expect(viewModel.displayData.riskReview).toBe(viewModel.riskSummary);
+    expect(viewModel.displayData.riskReview).toStrictEqual(viewModel.riskSummary);
     expect(viewModel.recommendationExplanation.whyNotStrongerZh).toContain("评分较高");
     expect(viewModel.recommendationExplanation.whyNotStrongerZh).toContain("云量口径");
     expect(html).toContain(viewModel.recommendationExplanation.oneLineConclusionZh);
@@ -563,6 +563,7 @@ describe("Cloud Sea result page final regression QA", () => {
       "已在附近可观察",
       "仅作备选",
       "不建议专程",
+      "强建议先复核真实天气后再决定",
     ]);
 
     for (const fixture of allCloudSeaRegressionFixtures) {

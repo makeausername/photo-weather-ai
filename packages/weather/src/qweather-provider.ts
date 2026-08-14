@@ -68,7 +68,7 @@ export class QWeatherProvider implements WeatherProvider {
       humidityPercent: firstHour.humidity,
       cloudCoverPercent: firstHour.cloudTotal,
       windSpeedMetersPerSecond: firstHour.windSpeed,
-      visibilityKilometers: firstHour.visibility ?? 0,
+      visibilityKilometers: firstHour.visibility,
     };
   }
 
@@ -116,15 +116,13 @@ export class QWeatherProvider implements WeatherProvider {
         const estimatedFields: string[] = [];
 
         if (windSpeed === null) {
-          missingFields.push("windSpeed");
-          estimatedFields.push("windSpeed");
+          throw new Error("QWeather hourly weather missing required field: windSpeed");
         }
         if (precipitationProbability === null) {
           missingFields.push("precipitationProbability");
         }
         if (cloudTotal === null) {
-          missingFields.push("cloudTotal");
-          estimatedFields.push("cloudTotal");
+          throw new Error("QWeather hourly weather missing required field: cloudTotal");
         }
 
         return {
@@ -137,7 +135,7 @@ export class QWeatherProvider implements WeatherProvider {
               ? null
               : roundTo(requiredRounded(record.temp, "hourly.temp") - nullableRounded(record.dew)!),
           pressure: nullableRounded(record.pressure),
-          windSpeed: windSpeed ?? 0,
+          windSpeed,
           windGust: kmhToMetersPerSecond(record.windGust),
           windDirection: nullableRounded(record.wind360, 0),
           precipitationProbability,
@@ -159,7 +157,7 @@ export class QWeatherProvider implements WeatherProvider {
           ),
           visibility: nullableRounded(record.vis),
           dewPoint: nullableRounded(record.dew),
-          cloudTotal: cloudTotal ?? 0,
+          cloudTotal,
           cloudLow: null,
           cloudMid: null,
           cloudHigh: null,
