@@ -3152,7 +3152,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-result-action-plan-grid="true"');
     expect(html).toContain("出行判断");
     expect(html).toContain("综合出片指数");
-    expect(html.match(/综合出片指数/g)?.length).toBe(1);
+    expect(html.match(/>综合出片指数</g)?.length).toBe(1);
     expect(html).toContain("当前与近时段天气");
     expect(html).toContain("逐日拍摄判断");
     expect(html).not.toContain("题材拆解");
@@ -3301,7 +3301,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("5月20日 · 周三");
     expect(html).toContain('data-general-rain-table-layout="grouped-days"');
     expect(html).toContain('data-general-rain-mobile-row="2026-05-20T05:00:00+08:00"');
-    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('role="meter"');
+    expect(html).not.toContain('role="progressbar"');
     expect(html).not.toContain("朝霞最佳");
     expect(html).not.toContain("星空窗口");
     expect(html).not.toContain("银河推荐");
@@ -3434,7 +3435,9 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-testid="near-term-weather"');
     expect(html).not.toContain('data-testid="subject-breakdown"');
     expect(html).toContain('data-testid="action-plan"');
-    expect(html).toContain("xl:grid-cols-7");
+    expect(html).toContain("repeat(auto-fit,minmax(min(100%,220px),1fr))");
+    expect(html).toContain('data-result-meter="true"');
+    expect(html).not.toContain("xl:grid-cols-7");
     expect(html).toContain("repeat(auto-fit,minmax(220px,1fr))");
     expect(html).toContain("repeat(auto-fit,minmax(250px,1fr))");
     expect(html).toContain("repeat(auto-fit,minmax(300px,1fr))");
@@ -3829,7 +3832,7 @@ describe("forecast result target-aware view model", () => {
     expect(summarySection).toContain(">晚霞<");
     expect(summarySection).toContain(">星空<");
     expect(summarySection).toContain(">银河<");
-    expect(countOccurrences(summarySection, "机会指数")).toBe(5);
+    expect(countOccurrences(summarySection, ">机会指数<")).toBe(5);
     expect(summarySection).toContain("72%");
     expect(summarySection).toContain("70%");
     expect(summarySection).toContain("74%");
@@ -5419,7 +5422,8 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("主要风险");
       expect(countOccurrences(html, 'data-cloud-sea-metric-card="true"')).toBe(6);
       expect(html).not.toContain("min-[900px]:grid-cols-[clamp(260px,22vw,320px)_minmax(0,1fr)]");
-      expect(html).toContain("min-[880px]:grid-cols-[minmax(0,1.45fr)_minmax(260px,320px)]");
+      expect(html).toContain("min-[920px]:grid-cols-[minmax(0,1.55fr)_minmax(280px,340px)]");
+      expect(html).toContain("min-[920px]:items-stretch");
       expect(html).toContain('data-forecast-decision-layout="stacked"');
       expect(html).not.toContain("CloudSeaStackedLayout");
       expect(html).not.toContain(
@@ -5455,9 +5459,10 @@ describe("forecast result target-aware view model", () => {
       const professionalDataSection = sectionAfter(html, "CloudSeaProfessionalData");
       expect(dailyCardSection).toContain('data-testid="cloud-sea-daily-card-grid"');
       expect(dailyCardSection).toContain('data-cloud-sea-daily-card-grid="true"');
-      expect(dailyCardSection).toContain("grid-cols-4");
-      expect(dailyCardSection).toContain("min-[720px]:grid-cols-4");
-      expect(dailyCardSection).toContain("min-[1180px]:grid-cols-6");
+      expect(dailyCardSection).toContain("grid-cols-1");
+      expect(dailyCardSection).toContain("min-[560px]:grid-cols-2");
+      expect(dailyCardSection).toContain("min-[980px]:grid-cols-3");
+      expect(dailyCardSection).toContain("min-[1280px]:grid-cols-4");
       expect(dailyCardSection).not.toContain("min-[720px]:grid-cols-2");
       expect(dailyCardSection).not.toContain("min-[1180px]:grid-cols-3");
       expect(dailyCardSection).not.toMatch(/min-\[900px\]:grid-cols-\[minmax\(150px,0\.8fr\)/);
@@ -5585,9 +5590,10 @@ describe("forecast result target-aware view model", () => {
 
     expect(dailyTrendSource).toContain('data-cloud-sea-daily-card-grid="true"');
     expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-card-grid"');
-    expect(dailyTrendSource).toContain("grid-cols-4");
-    expect(dailyTrendSource).toContain("min-[720px]:grid-cols-4");
-    expect(dailyTrendSource).toContain("min-[1180px]:grid-cols-6");
+    expect(dailyTrendSource).toContain("grid-cols-1");
+    expect(dailyTrendSource).toContain("min-[560px]:grid-cols-2");
+    expect(dailyTrendSource).toContain("min-[980px]:grid-cols-3");
+    expect(dailyTrendSource).toContain("min-[1280px]:grid-cols-4");
     expect(dailyTrendSource).toContain("cloudSeaDailyCardSpanClassName(index, items.length)");
     expect(dailyTrendSource).toContain("min-[720px]:col-span-2");
     expect(dailyTrendSource).toContain("min-[720px]:col-span-4");

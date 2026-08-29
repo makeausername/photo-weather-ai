@@ -48,7 +48,10 @@ export function ResultDashboardShell({
 }: ResultDashboardShellProps) {
   return (
     <section
-      className={cn(className, "mx-auto grid w-full max-w-[1560px] min-w-0 gap-5")}
+      className={cn(
+        className,
+        "mx-auto grid w-full max-w-[1480px] min-w-0 gap-5 lg:gap-6",
+      )}
       data-forecast-decision-page-shell="true"
       data-result-dashboard-shell="true"
       data-result-target={target}
@@ -93,7 +96,7 @@ export function DecisionContextCard({
 }: DecisionContextCardProps) {
   return (
     <Card
-      className={cn(className, "grid min-w-0 max-w-full gap-4 p-4 shadow-sm")}
+      className={cn(className, "grid min-w-0 max-w-full gap-4 p-5")}
       data-decision-context-card="true"
       data-result-target={target}
       data-testid={dataTestId}
@@ -144,7 +147,7 @@ export function DecisionLoadingCard({
 }: DecisionLoadingCardProps) {
   return (
     <Card
-      className={cn(className, "min-w-0 max-w-full p-5 shadow-sm")}
+      className={cn(className, "min-w-0 max-w-full p-5 sm:p-6")}
       data-decision-loading-card="true"
       data-forecast-loading-card="true"
       data-result-page-state-card="loading"
@@ -182,7 +185,7 @@ export function DecisionLoadingCard({
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
       ) : null}
       {details && details.length > 0 ? (
-        <dl className="mt-4 grid min-w-0 gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
+        <dl className="mt-4 grid min-w-0 gap-3 rounded-xl border border-border bg-muted/70 p-4 text-sm min-[720px]:grid-cols-2">
           {details.map((detail) => (
             <DecisionCompactDefinition
               key={detail.label}
@@ -201,9 +204,9 @@ export function DecisionLoadingCard({
         <div className="h-3 w-1/2 animate-pulse rounded-full bg-muted" />
         <div className="h-3 w-5/6 animate-pulse rounded-full bg-muted" />
         <div className="mt-1 grid min-w-0 gap-2 sm:grid-cols-3">
-          <div className="h-24 animate-pulse rounded-lg bg-muted" />
-          <div className="h-24 animate-pulse rounded-lg bg-muted" />
-          <div className="h-24 animate-pulse rounded-lg bg-muted" />
+          <div className="h-24 animate-pulse rounded-xl bg-muted" />
+          <div className="h-24 animate-pulse rounded-xl bg-muted" />
+          <div className="h-24 animate-pulse rounded-xl bg-muted" />
         </div>
       </div>
       {action ? <div className="mt-4">{action}</div> : null}
@@ -232,7 +235,7 @@ export function DecisionInfoCard({
 }: DecisionInfoCardProps) {
   return (
     <Card
-      className={cn(className, "min-w-0 max-w-full p-5 shadow-sm")}
+      className={cn(className, "min-w-0 max-w-full p-5 sm:p-6")}
       data-decision-info-card="true"
       data-result-target={target}
       data-testid={dataTestId}
@@ -280,7 +283,7 @@ export function DecisionErrorCard({
 }: DecisionErrorCardProps) {
   return (
     <Card
-      className={cn(className, "min-w-0 max-w-full border-danger p-5 shadow-sm")}
+      className={cn(className, "min-w-0 max-w-full border-danger p-5 sm:p-6")}
       data-decision-error-card="true"
       data-forecast-error-card="true"
       data-result-page-state-card="error"
@@ -312,7 +315,7 @@ export function DecisionErrorCard({
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
       ) : null}
       {details && details.length > 0 ? (
-        <dl className="mt-4 grid min-w-0 gap-2 rounded-lg border border-border bg-muted p-3 text-sm min-[720px]:grid-cols-2">
+        <dl className="mt-4 grid min-w-0 gap-3 rounded-xl border border-border bg-muted/70 p-4 text-sm min-[720px]:grid-cols-2">
           {details.map((detail) => (
             <DecisionCompactDefinition
               key={detail.label}
@@ -358,7 +361,7 @@ export function DecisionLoadingTemplate({
       dataCloudSeaPageMode={dataCloudSeaPageMode}
     >
       <section
-        className="grid min-w-0 gap-5 min-[900px]:grid-cols-[clamp(300px,32vw,360px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(320px,23vw,380px)] min-[1200px]:items-start"
+        className="grid min-w-0 gap-5 min-[980px]:grid-cols-[minmax(260px,320px)_minmax(0,1fr)] min-[980px]:items-start"
         data-decision-loading-template="true"
         data-forecast-loading-state="true"
         data-result-page-state="loading"
@@ -370,12 +373,12 @@ export function DecisionLoadingTemplate({
         })}
       >
         <div
-          className="grid min-w-0 content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]"
+          className="grid min-w-0 content-start gap-4 min-[980px]:sticky min-[980px]:top-[88px]"
           data-decision-context-region="true"
         >
           <DecisionContextCard {...context} target={target} />
         </div>
-        <div className="grid min-w-0 gap-5 min-[1200px]:contents">
+        <div className="grid min-w-0 gap-5">
           <DecisionLoadingCard
             {...loading}
             target={target}
@@ -415,7 +418,7 @@ export function DecisionErrorTemplate({
       dataCloudSeaPageMode={dataCloudSeaPageMode}
     >
       <section
-        className="grid min-w-0 gap-5 min-[900px]:grid-cols-[clamp(300px,32vw,360px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(320px,23vw,380px)] min-[1200px]:items-start"
+        className="grid min-w-0 gap-5 min-[980px]:grid-cols-[minmax(260px,320px)_minmax(0,1fr)] min-[980px]:items-start"
         data-decision-error-template="true"
         data-forecast-error-state="true"
         data-result-page-state="error"
@@ -427,12 +430,12 @@ export function DecisionErrorTemplate({
         })}
       >
         <div
-          className="grid min-w-0 content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]"
+          className="grid min-w-0 content-start gap-4 min-[980px]:sticky min-[980px]:top-[88px]"
           data-decision-context-region="true"
         >
           <DecisionContextCard {...context} target={target} />
         </div>
-        <div className="grid min-w-0 gap-5 min-[1200px]:contents">
+        <div className="grid min-w-0 gap-5">
           <DecisionErrorCard
             {...error}
             target={target}
@@ -468,7 +471,7 @@ export function DecisionResultTemplate({
 
 function DecisionDefinitionItem({ label, value }: DecisionDetail) {
   return (
-    <div className="rounded-lg border border-border bg-muted p-3">
+    <div className="rounded-xl border border-border bg-muted/70 p-3">
       <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
       <dd className="mt-1 break-words font-bold text-card-foreground">{value}</dd>
     </div>
@@ -501,7 +504,7 @@ export function ResultHeaderRow({
     <header
       className={cn(
         className,
-        "grid min-w-0 max-w-full gap-4 min-[880px]:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] min-[880px]:items-stretch",
+        "grid min-w-0 max-w-full gap-4 min-[920px]:grid-cols-[minmax(0,1.55fr)_minmax(280px,360px)] min-[920px]:items-stretch",
       )}
       data-forecast-result-header="true"
       data-result-header-row="true"
@@ -532,7 +535,7 @@ export function ResultHeaderSummaryCard({
 }: ResultHeaderSummaryCardProps) {
   return (
     <Card
-      className={cn(className, "h-full min-w-0 max-w-full p-5 shadow-sm")}
+      className={cn(className, "h-full min-w-0 max-w-full p-5 sm:p-6")}
       data-forecast-result-summary-card="true"
       data-result-header-summary-card="true"
       data-result-target={target}
@@ -574,7 +577,10 @@ export function ResultScoreCard({
 
   return (
     <Card
-      className={cn(className, "grid h-full min-w-0 max-w-full content-between gap-4 p-5 shadow-sm")}
+      className={cn(
+        className,
+        "grid h-full min-w-0 max-w-full content-between gap-4 p-5 sm:p-6",
+      )}
       data-forecast-score-card="true"
       data-result-score-card="true"
       data-result-target={target}
@@ -586,21 +592,20 @@ export function ResultScoreCard({
           <span className="text-5xl font-bold leading-none text-primary">{safeScore}</span>
           <span className="pb-1 text-sm font-semibold text-muted-foreground">/ 100</span>
         </div>
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
-          <div
-            className={cn(
-              "h-full rounded-full transition-all",
-              safeScore >= 80
-                ? "bg-primary"
-                : safeScore >= 60
-                  ? "bg-accent-strong"
-                  : safeScore >= 40
-                    ? "bg-muted-foreground"
-                    : "bg-danger",
-            )}
-            style={{ width: `${safeScore}%` }}
-          />
-        </div>
+        <ResultMeter
+          className="mt-4"
+          value={safeScore}
+          label={`${label} ${safeScore} / 100`}
+          tone={
+            safeScore >= 80
+              ? "primary"
+              : safeScore >= 60
+                ? "accent"
+                : safeScore >= 40
+                  ? "muted"
+                  : "danger"
+          }
+        />
       </div>
       <div className="grid gap-2">
         <Badge variant={badgeVariant}>{badgeLabel}</Badge>
@@ -612,6 +617,68 @@ export function ResultScoreCard({
 
 export function ForecastScoreCard(props: ResultScoreCardProps) {
   return <ResultScoreCard {...props} />;
+}
+
+export type ResultMeterTone =
+  | "primary"
+  | "accent"
+  | "danger"
+  | "info"
+  | "muted"
+  | "warning";
+
+type ResultMeterProps = {
+  readonly value: number;
+  readonly label: string;
+  readonly tone?: ResultMeterTone;
+  readonly className?: string;
+  readonly size?: "sm" | "md";
+  readonly dataTestId?: string;
+};
+
+const resultMeterToneClasses: Record<ResultMeterTone, string> = {
+  primary: "bg-primary",
+  accent: "bg-accent-strong",
+  danger: "bg-danger",
+  info: "bg-info-strong",
+  muted: "bg-muted-foreground",
+  warning: "bg-warning",
+};
+
+export function ResultMeter({
+  value,
+  label,
+  tone = "primary",
+  className,
+  size = "md",
+  dataTestId,
+}: ResultMeterProps) {
+  const safeValue = Number.isFinite(value) ? Math.min(100, Math.max(0, Math.round(value))) : 0;
+
+  return (
+    <div
+      className={cn(
+        "min-w-0 overflow-hidden rounded-full bg-muted",
+        size === "sm" ? "h-1.5" : "h-2",
+        className,
+      )}
+      role="meter"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={safeValue}
+      data-result-meter="true"
+      data-testid={dataTestId}
+    >
+      <span
+        className={cn(
+          "block h-full rounded-full transition-[width] duration-500 ease-out",
+          resultMeterToneClasses[tone],
+        )}
+        style={{ width: `${safeValue}%` }}
+      />
+    </div>
+  );
 }
 
 type ResultMetricGridProps = {

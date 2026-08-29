@@ -98,6 +98,8 @@ import {
   ForecastResultSummaryCard,
   ForecastScoreCard,
   JudgmentBasisGrid,
+  ResultMeter,
+  type ResultMeterTone,
 } from "./result-dashboard-components";
 import {
   isForecastRequestAbortError,
@@ -374,11 +376,11 @@ function DashboardFrame({
   readonly children: ReactNode;
 }) {
   return (
-    <section className="grid min-w-0 max-w-full gap-5 min-[900px]:grid-cols-[clamp(300px,32vw,360px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(320px,23vw,380px)] min-[1200px]:items-start">
-      <aside className="grid min-w-0 content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]">
+    <section className="grid min-w-0 max-w-full gap-5 min-[980px]:grid-cols-[minmax(260px,320px)_minmax(0,1fr)] min-[980px]:items-start">
+      <aside className="grid min-w-0 content-start gap-4 min-[980px]:sticky min-[980px]:top-[88px]">
         <QuerySummaryPanel query={query} />
       </aside>
-      <div className="grid min-w-0 gap-5 min-[1200px]:contents">{children}</div>
+      <div className="grid min-w-0 gap-5">{children}</div>
     </section>
   );
 }
@@ -630,7 +632,7 @@ function cloudSeaDecisionInfoCard() {
 
 function QuerySummaryPanel({ query }: { readonly query: ForecastQueryInput }) {
   return (
-    <Card className="grid gap-4 p-4 shadow-sm">
+    <Card className="grid gap-4 p-5">
       <div>
         <p className="text-xs font-bold text-primary">地点 / 查询</p>
         <h2 className="mt-2 break-words text-2xl font-bold leading-tight text-card-foreground">
@@ -812,7 +814,7 @@ export function SourceDiagnosticsPanel({ result }: { readonly result: ForecastCa
   const meteobluePartial = sourceSucceeded(meteoblue) && meteoblue?.partial === true;
 
   return (
-    <Card className="p-4 shadow-sm min-[900px]:col-span-2 min-[1280px]:col-span-5">
+    <Card className="p-5 min-[900px]:col-span-2 min-[1280px]:col-span-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-bold text-card-foreground">数据来源</h2>
         <Badge variant={dataReadinessBadgeVariant(result)}>
@@ -860,7 +862,7 @@ function CompactInfoCard({
   readonly tone?: "default" | "success" | "warning";
 }) {
   return (
-    <Card className="p-4 shadow-sm">
+    <Card className="p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-bold text-card-foreground">{title}</p>
         {badge ? (
@@ -1879,7 +1881,7 @@ function formatAstroWindowForUi(window: AstroWindowLike, timezone = "Asia/Shangh
 
 function InvalidQueryCard({ message }: { readonly message?: string }) {
   return (
-    <Card className="border-warning p-5 shadow-sm">
+    <Card className="border-warning p-5">
       <h2 className="text-lg font-bold text-warning-strong">查询参数不完整</h2>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
         {message ?? "请从首页选择地点和预报范围，或从专题页进入对应题材分析。"}
@@ -1909,7 +1911,7 @@ export function ForecastResultView({
     return (
       <DashboardFrame query={query}>
         <main className="grid gap-4">
-          <Card className="border-warning p-5 shadow-sm">
+          <Card className="border-warning p-5">
             <Badge variant="warning">天气证据不足</Badge>
             <h2 className="mt-3 text-xl font-bold text-card-foreground">
               当前没有足够的新鲜天气数据
@@ -1952,7 +1954,7 @@ export function ForecastResultView({
   return (
     <DashboardFrame query={query}>
       <main className="grid gap-4">
-        <Card className="grid gap-4 p-5 shadow-sm">
+        <Card className="grid gap-4 p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-xs font-bold text-primary">{viewModel.targetLabel}</p>
@@ -2119,18 +2121,6 @@ function cloudSeaToneClassName(tone: ForecastResultCardTone): string {
     danger: "text-danger",
     info: "text-primary",
     muted: "text-card-foreground",
-  };
-
-  return toneClasses[tone];
-}
-
-function cloudSeaToneBarClassName(tone: ForecastResultCardTone): string {
-  const toneClasses: Record<ForecastResultCardTone, string> = {
-    primary: "bg-primary",
-    accent: "bg-warning",
-    danger: "bg-danger",
-    info: "bg-primary",
-    muted: "bg-muted-foreground",
   };
 
   return toneClasses[tone];
@@ -2316,7 +2306,7 @@ function AstroTopContext({
       data-astro-decision-first="true"
     >
       <Card
-        className="AstroDecisionHero grid w-full min-w-0 gap-4 p-5 shadow-sm min-[900px]:p-6"
+        className="AstroDecisionHero grid w-full min-w-0 gap-5 p-5 min-[900px]:p-6"
         data-astro-decision-hero="true"
         data-astro-decision-layout="single-main"
       >
@@ -2405,7 +2395,7 @@ function AstroActionPlanGrid({ items }: { readonly items: AstroForecastViewModel
 
   return (
     <section
-      className="rounded-lg border border-border bg-secondary/70 p-3"
+      className="rounded-xl border border-border bg-secondary/70 p-4"
       data-astro-action-plan="true"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2416,7 +2406,7 @@ function AstroActionPlanGrid({ items }: { readonly items: AstroForecastViewModel
         {items.map((item) => (
           <div
             key={item.key}
-            className="min-w-0 rounded-md border border-border bg-card px-3 py-2"
+            className="min-w-0 rounded-xl border border-border bg-card px-3 py-3"
             data-astro-action-plan-item={item.key}
           >
             <dt className="text-[11px] font-semibold leading-4 text-muted-foreground">
@@ -2447,7 +2437,7 @@ function AstroDecisionFact({
 }) {
   return (
     <div
-      className="min-w-0 rounded-lg border border-border bg-muted px-3 py-3"
+      className="min-w-0 rounded-xl border border-border bg-muted/70 px-3 py-3"
       data-astro-decision-fact={item.key}
       data-astro-semantic-key={item.semanticKey}
     >
@@ -2532,7 +2522,7 @@ function AstroNightCard({
   return (
     <article
       className={cn(
-        "AstroNightCard grid gap-3 rounded-lg border bg-card p-4 shadow-sm",
+        "AstroNightCard grid gap-4 rounded-2xl border bg-card p-4 shadow-panel",
         night.recommendationLevel === "recommended" && "border-primary/50 bg-secondary/30",
         night.recommendationLevel === "watch" && "border-info/40",
         night.recommendationLevel === "backup" && "border-accent/40",
@@ -2562,7 +2552,7 @@ function AstroNightCard({
         </div>
       </div>
 
-      <div className="grid gap-2 rounded-lg border border-border bg-secondary px-3 py-3 min-[640px]:grid-cols-[minmax(0,1fr)_auto] min-[640px]:items-center">
+      <div className="grid gap-2 rounded-xl border border-border bg-secondary px-3 py-3 min-[640px]:grid-cols-[minmax(0,1fr)_auto] min-[640px]:items-center">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold leading-4 text-muted-foreground">最佳窗口</p>
           <p className="mt-1 break-words text-sm font-bold leading-5 text-card-foreground">
@@ -2711,7 +2701,7 @@ function AstroProfessionalDataSection({
 
   return (
     <Card
-      className="AstroProfessionalData rounded-lg border border-border bg-card p-4 shadow-sm"
+      className="AstroProfessionalData rounded-2xl border border-border bg-card p-5 shadow-panel"
       data-astro-section="AstroProfessionalData"
       data-astro-professional-data-expanded={expanded ? "true" : "false"}
     >
@@ -2920,7 +2910,7 @@ function GlowTopResultHeader({
 }) {
   return (
     <header
-      className="GlowTopResultHeader grid gap-3 min-[880px]:grid-cols-[minmax(0,1.45fr)_minmax(260px,320px)] min-[880px]:items-start min-[1280px]:grid-cols-[minmax(0,1.55fr)_minmax(280px,340px)]"
+      className="GlowTopResultHeader grid gap-4 min-[920px]:grid-cols-[minmax(0,1.55fr)_minmax(280px,340px)] min-[920px]:items-stretch"
       data-forecast-result-header="true"
       data-result-header-row="true"
       data-result-target="glow"
@@ -3075,7 +3065,7 @@ function GlowPrimaryMetricCard({ card }: { readonly card: ForecastResultCard }) 
   return (
     <div
       className={cn(
-        "grid h-full content-start gap-2 rounded-lg border bg-card p-3 shadow-sm",
+        "grid h-full content-start gap-2 rounded-xl border bg-card p-4",
         glowToneBorderClassName(card.tone),
       )}
       data-glow-metric-card={card.key}
@@ -3093,12 +3083,13 @@ function GlowPrimaryMetricCard({ card }: { readonly card: ForecastResultCard }) 
         {userFacingResultText(card.detail)}
       </p>
       {typeof card.score === "number" ? (
-        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
-          <div
-            className={cn("h-full rounded-full", glowToneBarClassName(card.tone))}
-            style={{ width: `${card.score}%` }}
-          />
-        </div>
+        <ResultMeter
+          className="mt-1"
+          size="sm"
+          value={card.score}
+          label={`${card.label} ${Math.round(card.score)} / 100`}
+          tone={resultMeterToneForCard(card.tone)}
+        />
       ) : null}
     </div>
   );
@@ -3198,7 +3189,7 @@ function GlowCompactInfoCard({ card }: { readonly card: GlowNearTermWeatherCard 
   return (
     <Card
       className={cn(
-        "grid h-full content-start gap-2 p-3 shadow-sm",
+        "grid h-full content-start gap-2 p-4",
         glowToneBorderClassName(card.tone),
       )}
     >
@@ -3231,7 +3222,7 @@ function GlowDailyCardsSection({
   return (
     <DailyDecisionList target="glow" dataTestId="glow-daily-opportunities">
       <Card
-        className="GlowDailyOpportunities p-4 shadow-sm"
+        className="GlowDailyOpportunities p-5"
         data-glow-section="GlowDailyOpportunities"
       >
         <GlowSectionHeading
@@ -3272,7 +3263,7 @@ function GlowDailyCard({
   return (
     <article
       className={cn(
-        "grid content-start gap-3 rounded-lg border border-border bg-card p-3 shadow-sm sm:col-span-1 min-[1180px]:col-span-2",
+        "grid content-start gap-3 rounded-xl border border-border bg-card p-4 sm:col-span-1 min-[1180px]:col-span-2",
         glowDailyCardSpanClassName(index, count),
       )}
       data-glow-daily-opportunity-date={item.date}
@@ -3507,18 +3498,6 @@ function glowToneClassName(tone: ForecastResultCardTone): string {
   return toneClasses[tone];
 }
 
-function glowToneBarClassName(tone: ForecastResultCardTone): string {
-  const toneClasses: Record<ForecastResultCardTone, string> = {
-    primary: "bg-primary",
-    accent: "bg-primary",
-    danger: "bg-danger",
-    info: "bg-primary",
-    muted: "bg-muted-foreground",
-  };
-
-  return toneClasses[tone];
-}
-
 function glowToneBorderClassName(tone: ForecastResultCardTone): string {
   const toneClasses: Record<ForecastResultCardTone, string> = {
     primary: "border-primary/40",
@@ -3691,7 +3670,7 @@ function CloudSeaTopResultHeader({
 }) {
   return (
     <header
-      className="CloudSeaTopResultHeader grid gap-3 min-[880px]:grid-cols-[minmax(0,1.45fr)_minmax(260px,320px)] min-[880px]:items-start min-[1280px]:grid-cols-[minmax(0,1.55fr)_minmax(280px,340px)]"
+      className="CloudSeaTopResultHeader grid gap-4 min-[920px]:grid-cols-[minmax(0,1.55fr)_minmax(280px,340px)] min-[920px]:items-stretch"
       data-forecast-result-header="true"
       data-result-header-row="true"
       data-result-target="cloud_sea"
@@ -3834,9 +3813,11 @@ function CloudSeaScoreCard({
         </div>
         <Badge variant={scoreCard.badgeVariant}>{scoreCard.badgeLabel}</Badge>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full bg-primary" style={{ width: `${safeScore}%` }} />
-      </div>
+      <ResultMeter
+        value={safeScore}
+        label={`${scoreCard.label} ${safeScore} / 100`}
+        tone="primary"
+      />
       <p className="text-sm font-semibold leading-6 text-card-foreground [overflow-wrap:anywhere]">
         {scoreCard.summary}
       </p>
@@ -3864,7 +3845,7 @@ function CloudSeaPrimaryResultCard({ card }: { readonly card: ForecastResultCard
   return (
     <div
       className={cn(
-        "grid h-full content-start gap-2 rounded-lg border bg-card p-3 shadow-sm",
+        "grid h-full content-start gap-2 rounded-xl border bg-card p-4",
         cloudSeaToneBorderClassName(card.tone),
       )}
     >
@@ -3881,12 +3862,13 @@ function CloudSeaPrimaryResultCard({ card }: { readonly card: ForecastResultCard
         {userFacingResultText(card.detail)}
       </p>
       {typeof card.score === "number" ? (
-        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
-          <div
-            className={cn("h-full rounded-full", cloudSeaToneBarClassName(card.tone))}
-            style={{ width: `${card.score}%` }}
-          />
-        </div>
+        <ResultMeter
+          className="mt-1"
+          size="sm"
+          value={card.score}
+          label={`${card.label} ${Math.round(card.score)} / 100`}
+          tone={resultMeterToneForCard(card.tone)}
+        />
       ) : null}
     </div>
   );
@@ -3973,7 +3955,7 @@ function CloudSeaCompactInfoCard({
   return (
     <Card
       className={cn(
-        "grid h-full content-start gap-2 p-3 shadow-sm",
+        "grid h-full content-start gap-2 p-4",
         tone === "success" && "border-primary/40",
         tone === "warning" && "border-warning/35",
       )}
@@ -4072,7 +4054,7 @@ function CloudSeaWindowCardsSection({
           <article
             key={card.key}
             className={cn(
-              "grid h-full content-start gap-2 rounded-lg border bg-card p-3 shadow-sm",
+              "grid h-full content-start gap-2 rounded-xl border bg-card p-4",
               cloudSeaToneBorderClassName(card.scoreTone),
             )}
             data-testid="cloud-sea-window-category-card"
@@ -4982,7 +4964,7 @@ function ProfessionalHourlyCloudSection({
   return (
     <Card
       className={cn(
-        "ProfessionalHourlyCloudSection min-w-0 max-w-full p-4 shadow-sm",
+        "ProfessionalHourlyCloudSection min-w-0 max-w-full p-5",
         config?.cardClassName,
         target === "cloud_sea" &&
           "CloudSeaProfessionalHourlyData cloud-sea-professional-hourly-data",
@@ -5987,7 +5969,7 @@ function CloudSeaDailyTrend({
       dataCloudSeaSection="CloudSeaDailyTrend"
       dataTestId="cloud-sea-daily-decision"
     >
-      <Card className="CloudSeaDailyTrend cloud-sea-daily-trend p-3 shadow-sm sm:p-4">
+      <Card className="CloudSeaDailyTrend cloud-sea-daily-trend p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-bold text-card-foreground">{title}</h2>
@@ -5998,7 +5980,7 @@ function CloudSeaDailyTrend({
           <Badge variant="muted">{forecastHorizonLabels[result.horizon]}</Badge>
         </div>
         <div
-          className="mt-3 grid grid-cols-4 gap-2 min-[720px]:grid-cols-4 min-[1180px]:grid-cols-6"
+          className="mt-4 grid grid-cols-1 gap-3 min-[560px]:grid-cols-2 min-[980px]:grid-cols-3 min-[1280px]:grid-cols-4"
           data-cloud-sea-daily-card-grid="true"
           data-testid="cloud-sea-daily-card-grid"
         >
@@ -6006,7 +5988,7 @@ function CloudSeaDailyTrend({
             <article
               key={item.key}
               className={cn(
-                "CloudSeaDailyCard cloud-sea-daily-card grid h-full min-w-0 content-start gap-2 rounded-lg border bg-card p-3 shadow-sm",
+                "CloudSeaDailyCard cloud-sea-daily-card grid h-full min-w-0 content-start gap-3 rounded-xl border bg-card p-4",
                 cloudSeaDailyCardSpanClassName(index, items.length),
                 cloudSeaDailyCardToneClassName(item.recommendedAction),
               )}
@@ -6151,7 +6133,7 @@ function CloudSeaReasoningSection({
     <Container
       className={cn(
         "CloudSeaReasoning cloud-sea-reasoning p-3 sm:p-4",
-        variant === "card" ? "shadow-sm" : "rounded-lg border border-border bg-card",
+        variant === "card" ? "" : "rounded-xl border border-border bg-card",
       )}
       data-cloud-sea-section="CloudSeaReasoning"
     >
@@ -6167,7 +6149,7 @@ function CloudSeaReasoningSection({
           <article
             key={item.key}
             className={cn(
-              "grid content-start gap-2 rounded-lg border bg-card p-3",
+              "grid content-start gap-2 rounded-xl border bg-card p-3",
               cloudSeaToneBorderClassName(item.tone),
             )}
           >
@@ -6191,7 +6173,7 @@ function CloudSeaReasoningSection({
 
 function CloudSeaInlineCaution({ text }: { readonly text: string }) {
   return (
-    <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
+    <p className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
       {text}
     </p>
   );
@@ -6211,7 +6193,7 @@ function CloudSeaActionPlanSection({
     <Container
       className={cn(
         "CloudSeaActionPlan cloud-sea-action-plan p-3 sm:p-4",
-        variant === "card" ? "shadow-sm" : "rounded-lg border border-border bg-card",
+        variant === "card" ? "" : "rounded-xl border border-border bg-card",
       )}
       data-cloud-sea-section="CloudSeaActionPlan"
     >
@@ -6229,7 +6211,7 @@ function CloudSeaActionPlanSection({
           <article
             key={item.key}
             className={cn(
-              "grid content-start gap-2 rounded-lg border bg-card p-3",
+              "grid content-start gap-2 rounded-xl border bg-card p-3",
               cloudSeaToneBorderClassName(item.tone),
             )}
           >
@@ -6270,7 +6252,7 @@ function CloudSeaRiskSummarySection({
     <Container
       className={cn(
         "CloudSeaRiskSummary cloud-sea-risk-summary p-3 sm:p-4",
-        variant === "card" ? "shadow-sm" : "rounded-lg border border-border bg-card",
+        variant === "card" ? "" : "rounded-xl border border-border bg-card",
       )}
       data-cloud-sea-section="CloudSeaRiskSummary"
     >
@@ -6284,7 +6266,7 @@ function CloudSeaRiskSummarySection({
         {focusedRiskSummary.slice(0, 8).map((item, index) => (
           <article
             key={`${item.label}-${index}`}
-            className="grid content-start gap-2 rounded-lg border border-border bg-card p-3"
+            className="grid content-start gap-2 rounded-xl border border-border bg-card p-3"
           >
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-bold text-card-foreground [overflow-wrap:anywhere]">
@@ -6384,6 +6366,7 @@ type GeneralSubjectKey = Exclude<SubjectScoreKey, "transparency">;
 type GeneralSubjectSummary = {
   readonly key: GeneralSubjectKey;
   readonly name: string;
+  readonly score?: number;
   readonly chanceText: string;
   readonly recommendationLabel: GeneralSubjectRecommendationLabel;
   readonly badgeVariant: BadgeVariant;
@@ -6474,6 +6457,7 @@ function buildGeneralSubjectSummaries(
     return {
       key,
       name: subjectDisplayLabel(result, key),
+      score,
       chanceText: formatGeneralChanceText(score),
       recommendationLabel,
       badgeVariant: generalSubjectBadgeVariant(recommendationLabel),
@@ -6814,7 +6798,7 @@ export function ComprehensiveForecastView({
         mainRisk={mainRisk}
       />
       <div
-        className="grid min-w-0 max-w-full gap-4 min-[1200px]:grid-cols-[minmax(0,1fr)_clamp(300px,26vw,380px)] min-[1200px]:items-start"
+        className="grid min-w-0 max-w-full gap-5 min-[1280px]:grid-cols-[minmax(0,1fr)_minmax(320px,360px)] min-[1280px]:items-start"
         data-general-result-dashboard="true"
         data-forecast-decision-layout="dashboard"
       >
@@ -6829,7 +6813,7 @@ export function ComprehensiveForecastView({
           <OpportunityWindowSection query={query} result={result} />
         </div>
         <div
-          className="grid min-w-0 max-w-full content-start gap-4 min-[1200px]:sticky min-[1200px]:top-[88px]"
+          className="grid min-w-0 max-w-full content-start gap-5 min-[1280px]:sticky min-[1280px]:top-[88px]"
           data-general-result-side-column="true"
         >
           <RiskDecisionSection result={result} mainRisk={mainRisk} />
@@ -6880,7 +6864,7 @@ export function GeneralHourlyWeatherSection({
 
   return (
     <Card
-      className="GeneralProfessionalHourlyData w-full min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm"
+      className="GeneralProfessionalHourlyData w-full min-w-0 rounded-2xl border border-border bg-card p-5 shadow-panel"
       data-general-section="GeneralHourlyWeatherSection"
       data-general-professional-hourly-expanded={expanded ? "true" : "false"}
     >
@@ -7295,7 +7279,7 @@ function GeneralRainProbabilityDisplay({
           "h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted",
           compact ? "max-w-24" : "max-w-44",
         )}
-        role="progressbar"
+        role="meter"
         aria-label={`降水概率 ${probability}%`}
         aria-valuemin={0}
         aria-valuemax={100}
@@ -7474,7 +7458,7 @@ function ComprehensiveCoreDecisionCards({
   return (
     <ForecastMetricGrid
       target="general"
-      className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7"
+      className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))]"
       dataTestId="top-decision-cards"
     >
       {cards.map((card) => (
@@ -7531,7 +7515,7 @@ function OpportunityWindowSection({
         {summaries.map((summary) => (
           <article
             key={summary.key}
-            className="grid min-h-[260px] content-start gap-3 rounded-lg border border-border bg-card p-4 shadow-sm"
+            className="grid min-h-[250px] content-start gap-3 rounded-2xl border border-border bg-card p-4 shadow-panel"
             data-testid="general-subject-summary-card"
             data-subject={summary.key}
           >
@@ -7552,6 +7536,21 @@ function OpportunityWindowSection({
             <div>
               <p className="text-xs font-semibold text-muted-foreground">机会指数</p>
               <p className="mt-1 text-2xl font-bold leading-8 text-primary">{summary.chanceText}</p>
+              {typeof summary.score === "number" ? (
+                <ResultMeter
+                  className="mt-2"
+                  size="sm"
+                  value={summary.score}
+                  label={`${summary.name}机会指数 ${Math.round(summary.score)} / 100`}
+                  tone={
+                    summary.score >= 70
+                      ? "primary"
+                      : summary.score >= 45
+                        ? "accent"
+                        : "muted"
+                  }
+                />
+              ) : null}
             </div>
 
             <div className="grid gap-1.5 text-xs leading-5 text-muted-foreground">
@@ -7635,7 +7634,7 @@ function ComprehensiveMultiDaySummary({
 
           return (
             <article key={summary.date} data-testid="daily-card">
-              <Card className="grid h-full content-start gap-3 p-4 shadow-sm">
+              <Card className="grid h-full content-start gap-3 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="font-bold text-card-foreground">
@@ -8104,7 +8103,7 @@ function RiskDecisionSection({
         className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]"
       >
         {riskItems.map((item) => (
-          <Card key={item.label} className="p-4 shadow-sm">
+          <Card key={item.label} className="p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-bold text-card-foreground">{item.label}</h3>
               <Badge variant={item.levelLabel.includes("高") ? "danger" : "warning"}>
@@ -8230,7 +8229,7 @@ function AdviceBlock({
   readonly items: readonly string[];
 }) {
   return (
-    <Card className="p-4 shadow-sm">
+    <Card className="p-4">
       <h3 className="text-sm font-bold text-card-foreground">{title}</h3>
       <ul className="mt-2 grid gap-2">
         {(items.length > 0
@@ -8257,7 +8256,7 @@ function CompactDefinition({ label, value }: { readonly label: string; readonly 
 
 function PrimaryResultCard({ card }: { readonly card: ForecastResultCard }) {
   return (
-    <div className="grid h-full content-start rounded-lg border border-border bg-muted p-4">
+    <div className="grid h-full content-start rounded-xl border border-border bg-muted/70 p-4">
       <p className="text-xs font-semibold text-muted-foreground">{card.label}</p>
       <p className={cn("mt-2 break-words text-2xl font-bold leading-8", cardToneText(card.tone))}>
         {card.value}
@@ -8266,12 +8265,12 @@ function PrimaryResultCard({ card }: { readonly card: ForecastResultCard }) {
         {userFacingResultText(card.detail)}
       </p>
       {typeof card.score === "number" ? (
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-card">
-          <div
-            className={cn("h-full rounded-full", cardToneBar(card.tone))}
-            style={{ width: `${card.score}%` }}
-          />
-        </div>
+        <ResultMeter
+          className="mt-3 bg-card"
+          value={card.score}
+          label={`${card.label} ${Math.round(card.score)} / 100`}
+          tone={resultMeterToneForCard(card.tone)}
+        />
       ) : null}
     </div>
   );
@@ -8289,16 +8288,8 @@ function cardToneText(tone: ForecastResultCardTone): string {
   return toneClasses[tone];
 }
 
-function cardToneBar(tone: ForecastResultCardTone): string {
-  const toneClasses: Record<ForecastResultCardTone, string> = {
-    primary: "bg-primary",
-    accent: "bg-accent",
-    danger: "bg-danger",
-    info: "bg-info",
-    muted: "bg-muted-foreground",
-  };
-
-  return toneClasses[tone];
+function resultMeterToneForCard(tone: ForecastResultCardTone): ResultMeterTone {
+  return tone;
 }
 
 type BadgeVariant = NonNullable<Parameters<typeof Badge>[0]["variant"]>;
@@ -8365,7 +8356,7 @@ function SectionPanel({
   readonly compact?: boolean;
 }) {
   return (
-    <Card className={cn("p-5 shadow-sm", compact && "p-4")}>
+    <Card className={cn("p-5", compact && "p-4")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">{section.title}</h2>
         {section.badgeLabel ? <Badge variant="muted">{section.badgeLabel}</Badge> : null}
@@ -8401,7 +8392,7 @@ function DailyOverviewPanel({
   readonly items: readonly ForecastResultDailyItem[];
 }) {
   return (
-    <Card className="p-5 shadow-sm">
+    <Card className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
         <Badge variant="muted">逐日判断</Badge>
@@ -8409,7 +8400,7 @@ function DailyOverviewPanel({
       <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
       <ul className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
         {items.map((item) => (
-          <li key={item.key} className="rounded-lg border border-border bg-muted p-4">
+          <li key={item.key} className="rounded-xl border border-border bg-muted/70 p-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p className="text-sm font-bold text-card-foreground">{item.dateLabel}</p>
@@ -8450,7 +8441,7 @@ function WindowPanel({
   readonly groups: readonly ForecastResultWindowGroup[];
 }) {
   return (
-    <Card className="p-5 shadow-sm">
+    <Card className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
         <Badge variant="muted">目标优先</Badge>
@@ -8459,7 +8450,7 @@ function WindowPanel({
       {groups.length > 0 ? (
         <div className="mt-4 grid gap-4">
           {groups.map((group) => (
-            <section key={group.key} className="rounded-lg border border-border bg-muted p-3">
+            <section key={group.key} className="rounded-xl border border-border bg-muted/70 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-bold text-card-foreground">{group.dateLabel}</h3>
                 <Badge variant="muted">每日窗口</Badge>
@@ -8483,7 +8474,7 @@ function WindowList({ windows }: { readonly windows: readonly ForecastResultWind
       {windows.map((window) => (
         <li
           key={`${window.target}-${window.startTime}`}
-          className="grid gap-2 rounded-lg border border-border bg-card px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+          className="grid gap-2 rounded-xl border border-border bg-card px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
         >
           <div>
             <p className="font-semibold text-card-foreground">{window.label}</p>
@@ -8512,7 +8503,7 @@ function MockWarningCard({
   const nonReal = result.weatherDataMode !== "real" || result.terrainAnalysis.isMock;
 
   return (
-    <Card className={cn("p-4 shadow-sm", nonReal ? "border-warning" : "")}>
+    <Card className={cn("p-4", nonReal ? "border-warning" : "")}>
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={nonReal ? "warning" : "success"}>{weatherModeBadge(result)}</Badge>
         <p className="text-sm font-semibold text-card-foreground">数据提醒</p>
@@ -8529,7 +8520,7 @@ function DataStatusPanel({ result }: { readonly result: ForecastCalculationResul
     result.weatherFusionSummary?.conflictStatusZh ?? "缺少多源一致性证据";
 
   return (
-    <Card className="p-5 shadow-sm">
+    <Card className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">数据状态</h2>
         <Badge variant={nonReal ? "warning" : "success"}>{weatherModeBadge(result)}</Badge>
@@ -8575,7 +8566,7 @@ function CalculationBasisPanel({ result }: { readonly result: ForecastCalculatio
   const basis = result.calendarBasis;
 
   return (
-    <Card className="p-5 shadow-sm">
+    <Card className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-card-foreground">计算依据</h2>
         <Badge variant="muted">日历核心</Badge>
@@ -8637,10 +8628,9 @@ function CalculationBasisPanel({ result }: { readonly result: ForecastCalculatio
 
 function ScoreCard({ score }: { readonly score: ForecastScore }) {
   const isRisk = score.key === "whiteoutRisk";
-  const barTone = isRisk ? "bg-warning" : "bg-primary";
 
   return (
-    <Card className="p-4 shadow-sm">
+    <Card className="p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-card-foreground">{score.label}</p>
@@ -8651,9 +8641,12 @@ function ScoreCard({ score }: { readonly score: ForecastScore }) {
         </Badge>
       </div>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">{score.reasons[0]}</p>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
-        <div className={cn("h-full rounded-full", barTone)} style={{ width: `${score.score}%` }} />
-      </div>
+      <ResultMeter
+        className="mt-3"
+        value={score.score}
+        label={`${score.label} ${Math.round(score.score)} / 100`}
+        tone={isRisk ? "warning" : "primary"}
+      />
     </Card>
   );
 }
