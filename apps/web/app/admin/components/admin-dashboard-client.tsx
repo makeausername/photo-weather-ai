@@ -183,7 +183,7 @@ export function AdminDashboardClient() {
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-lg font-bold">最近操作</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            展示近期后台操作，系统会保留必要的安全记录。
+            查看近期后台操作与必要的安全记录。
           </p>
         </div>
         {state.auditLogs.length > 0 ? (

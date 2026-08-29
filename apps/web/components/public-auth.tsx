@@ -14,7 +14,7 @@ export function PublicAuthLayout({ children, className, size = "default" }: Publ
     <section
       data-auth-layout="centered-public-auth"
       className={cn(
-        "mx-auto grid w-full min-w-0 justify-items-center gap-5 py-4 sm:py-6 lg:py-8",
+        "mx-auto grid w-full min-w-0 justify-items-center gap-6 py-5 sm:py-8 lg:py-10",
         maxWidthClassName,
         className,
       )}
@@ -35,11 +35,11 @@ export function AuthCard({ eyebrow, title, description, children }: AuthCardProp
   return (
     <Card
       data-auth-card="centered-form-card"
-      className="w-full max-w-full min-w-0 p-5 shadow-sm sm:p-6"
+      className="w-full max-w-full min-w-0 p-6 sm:p-8"
     >
       <div className="mb-5 min-w-0 border-b border-border pb-4">
-        <p className="text-xs font-bold text-primary">{eyebrow}</p>
-        <h1 className="mt-1.5 text-xl font-bold leading-tight text-card-foreground sm:text-2xl">
+        <p className="text-xs font-bold tracking-[0.1em] text-primary">{eyebrow}</p>
+        <h1 className="mt-2 text-2xl font-bold leading-tight tracking-[-0.02em] text-card-foreground sm:text-[28px]">
           {title}
         </h1>
         {description ? (
@@ -68,7 +68,7 @@ export function AuthStatusMessage({ message, tone = "info" }: AuthStatusMessageP
       role={tone === "error" ? "alert" : "status"}
       aria-live={tone === "error" ? "assertive" : "polite"}
       className={cn(
-        "rounded-lg border px-3 py-2.5 text-sm font-medium leading-6 [overflow-wrap:anywhere]",
+        "rounded-xl border px-4 py-3 text-sm font-medium leading-6 [overflow-wrap:anywhere]",
         tone === "success" && "border-success bg-card text-success",
         tone === "error" && "border-danger bg-card text-danger",
         tone === "info" && "border-info bg-card text-info-strong",

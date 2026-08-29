@@ -39,27 +39,27 @@ type HomepageInsightCard = {
 const homepageGuidanceCards = [
   {
     title: "地点与窗口",
-    description: "把城市、景区或地点坐标与所选预报范围绑定，先确定要评估的时间段。",
+    description: "确定拍摄地点和预报范围，先锁定需要评估的日期与时段。",
   },
   {
     title: "云层与光线",
-    description: "同时看总云量、低中高云和日出日落窗口，判断是否有可执行的光线条件。",
+    description: "对照总云量、分层云量和日出日落时间，确认光线条件。",
   },
   {
     title: "风与湿度",
-    description: "关注山顶风、体感和湿度变化，避免把不可执行的天气误判成好窗口。",
+    description: "核对风速、体感和湿度变化，评估现场拍摄的可行性。",
   },
   {
     title: "能见度与通透",
-    description: "结合能见度和空气通透度，判断远山、城市天际线和层次是否清晰。",
+    description: "结合能见度与空气通透度，判断远山和城市天际线的清晰度。",
   },
   {
     title: "月相与夜景",
-    description: "把月相、月出月落和天文黑夜放进综合判断，避免夜景计划只看天气。",
+    description: "查看月相、月出月落和天文黑夜，为夜景拍摄安排时间。",
   },
   {
     title: "降水与风险",
-    description: "识别降水、道路湿滑、强风等风险，再决定出发、等待或改题材。",
+    description: "提前识别降水、道路湿滑和强风等风险，准备备选方案。",
   },
 ] as const;
 
@@ -125,7 +125,7 @@ export function HomepageWorkbench() {
       id="analysis"
       ref={workspaceRef}
       tabIndex={-1}
-      className="grid scroll-mt-24 gap-5 outline-none min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[900px]:items-stretch min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)]"
+      className="grid scroll-mt-24 gap-6 outline-none min-[960px]:grid-cols-[clamp(340px,31vw,420px)_minmax(0,1fr)] min-[960px]:items-stretch xl:gap-8"
       data-homepage-workbench-layout="scenario-two-column"
     >
       <HomepageSearchPanel
@@ -181,11 +181,11 @@ export function HomepageGuidancePanel({
     <section
       className={cn(
         "grid min-w-0 gap-4",
-        hasResult && "min-[900px]:h-full min-[900px]:grid-rows-[auto_minmax(0,1fr)]",
+        hasResult && "min-[960px]:h-full min-[960px]:grid-rows-[auto_minmax(0,1fr)]",
       )}
       data-homepage-guidance-panel="true"
     >
-      <Card className="p-5" data-homepage-guidance-intro="true">
+      <Card className="p-5 sm:p-6" data-homepage-guidance-intro="true">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="accent">综合判断</Badge>
           <Badge variant="muted">{forecastHorizonLabels[horizon]}</Badge>
@@ -193,7 +193,7 @@ export function HomepageGuidancePanel({
           {result && state.status === "partial" ? <Badge variant="warning">部分可用</Badge> : null}
         </div>
         <h2 className="mt-3 text-xl font-bold leading-tight text-card-foreground">
-          {result && location ? `${location.displayName} 综合出行判断` : "综合出行判断会看什么"}
+          {result && location ? `${location.displayName} 拍摄条件` : "拍摄前先看这六项"}
         </h2>
         <p className="mt-3 max-w-4xl text-sm leading-6 text-muted-foreground sm:text-[15px] sm:leading-7">
           {homepagePanelDescription(location, state, Boolean(result))}
@@ -204,7 +204,7 @@ export function HomepageGuidancePanel({
         <div
           className={cn(
             "grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3",
-            hasResult && "min-[900px]:h-full min-[900px]:auto-rows-fr",
+            hasResult && "min-[960px]:h-full min-[960px]:auto-rows-fr",
           )}
           data-homepage-card-grid="true"
         >
@@ -237,8 +237,8 @@ function HomepageInsightCardView({
   return (
     <article
       className={cn(
-        "grid min-w-0 content-start gap-3 overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm transition",
-        fillHeight && "min-[900px]:h-full",
+        "grid min-w-0 content-start gap-4 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition",
+        fillHeight && "min-[960px]:h-full",
         loading && "animate-pulse",
       )}
       data-homepage-guidance-card={card.title}
@@ -380,29 +380,29 @@ function homepagePanelDescription(
   hasResult: boolean,
 ): string {
   if (!location) {
-    return "选择地点后，系统会把云层、光线窗口、风、湿度、能见度、月相和降水风险合并成一次出发判断。";
+    return "选择地点后，将显示综合指数、推荐时段、主要风险和出行建议。";
   }
   if (state.status === "loading") {
-    return "正在计算该地点的综合出行判断，卡片会保留同样的结构并在结果返回后刷新。";
+    return "正在读取该地点的天气与天文数据。";
   }
   if (state.status === "fallback" || state.status === "error") {
     return "该地点拍摄条件暂不可用，请稍后重试；已选地点和预报范围会保留在搜索卡片中。";
   }
   if (state.status === "partial") {
-    return "已生成综合判断；部分辅助数据暂不可用，结果页会给出更完整说明。";
+    return "拍摄条件已更新；部分辅助数据暂不可用，详情会在结果页标明。";
   }
   if (hasResult) {
-    return "已根据当前预报生成综合指数、推荐等级、最佳窗口、主要风险、云层风况和当前建议。";
+    return "已更新综合指数、推荐时段、主要风险、云层风况和出行建议。";
   }
-  return "选择地点后，系统会把云层、光线窗口、风、湿度、能见度、月相和降水风险合并成一次出发判断。";
+  return "选择地点后，将显示综合指数、推荐时段、主要风险和出行建议。";
 }
 
 function decisionSummaryText(location: SelectedLocation | null, state: ForecastLayerState): string {
   if (!location) {
-    return "选择地点后，将生成综合指数、最佳窗口、主要风险、当前建议和拍摄题材优先级。";
+    return "选择地点后，可查看综合指数、推荐时段、主要风险和题材建议。";
   }
   if (state.status === "loading") {
-    return "正在生成出行判断，完成后会同步刷新右侧卡片。";
+    return "正在读取天气与天文数据。";
   }
   if (state.status === "fallback" || state.status === "error") {
     return "该地点拍摄条件暂不可用，请稍后重试。";
@@ -422,7 +422,7 @@ function currentAdviceText(
     return "选择地点后生成到达时间、拍摄题材、风险和装备建议。";
   }
   if (state.status === "loading") {
-    return "正在生成到达时间、拍摄题材和装备建议。";
+    return "正在整理到达时间、拍摄题材和装备建议。";
   }
   if (!result || state.status === "fallback" || state.status === "error") {
     return "暂时无法生成建议，请稍后重试。";

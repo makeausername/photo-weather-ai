@@ -76,12 +76,12 @@ describe("SiteFooter", () => {
   it("uses a compact centered design-system layout that can wrap on mobile", () => {
     const html = renderToStaticMarkup(React.createElement(SiteFooter));
 
-    expect(html).toContain("border-t border-border bg-background text-muted-foreground");
-    expect(html).toContain("max-w-[1560px]");
+    expect(html).toContain("border-t border-border bg-card/70 text-muted-foreground");
+    expect(html).toContain("max-w-[1600px]");
     expect(html).toContain("flex-wrap");
     expect(html).toContain("items-center justify-center");
     expect(html).toContain("gap-x-3 gap-y-1.5");
-    expect(html).toContain("py-4");
+    expect(html).toContain("py-5");
     expect(html).toContain("text-center");
     expect(html).toContain("max-w-full");
     expect(html).toContain("min-[420px]:inline");

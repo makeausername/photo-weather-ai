@@ -42,7 +42,7 @@ function NavLink({
       href={href}
       onClick={onClick}
       className={cn(
-        "inline-flex h-8 items-center rounded-md px-3 text-sm font-medium transition",
+        "inline-flex h-10 items-center rounded-xl px-3.5 text-sm font-medium transition",
         active
           ? "bg-secondary text-secondary-foreground"
           : "text-muted-foreground hover:bg-secondary hover:text-foreground",
@@ -90,22 +90,22 @@ export function PublicHeader(props?: PublicHeaderProps) {
   return (
     <header
       ref={headerMenuRef}
-      className="sticky top-0 z-40 border-b border-border bg-card/92 backdrop-blur-xl"
+      className="sticky top-0 z-40 border-b border-border/90 bg-card/90 backdrop-blur-xl"
     >
-      <nav className="flex w-full min-w-0 items-center gap-4 px-[clamp(16px,4vw,72px)] py-3 min-[1200px]:grid min-[1200px]:grid-cols-[minmax(220px,1fr)_auto_minmax(220px,1fr)]">
+      <nav className="mx-auto flex min-h-[72px] w-full max-w-[1600px] min-w-0 items-center gap-4 px-[clamp(16px,4vw,64px)] lg:grid lg:grid-cols-[minmax(220px,1fr)_auto_minmax(220px,1fr)]">
         <Link
           href="/"
           className="flex min-w-0 shrink-0 items-center gap-3"
           onClick={() => setMenuOpen(false)}
         >
-          <img src="/brand-mark.svg" alt="" className="h-9 w-9 shrink-0" aria-hidden="true" />
+          <img src="/brand-mark.svg" alt="" className="h-10 w-10 shrink-0" aria-hidden="true" />
           <span className="grid min-w-0 leading-tight">
             <span className="truncate text-base font-bold text-card-foreground">逐光天气</span>
             <span className="truncate text-xs text-muted-foreground">风光摄影出行判断工具</span>
           </span>
         </Link>
 
-        <div className="hidden min-w-0 items-center justify-center gap-1 min-[1200px]:flex">
+        <div className="hidden min-w-0 items-center justify-center gap-1 lg:flex">
           {navLinks.map((link) => (
             <NavLink
               key={link.href}
@@ -116,13 +116,13 @@ export function PublicHeader(props?: PublicHeaderProps) {
           ))}
         </div>
 
-        <div className="hidden shrink-0 items-center justify-end gap-2 min-[1200px]:flex">
+        <div className="hidden shrink-0 items-center justify-end gap-2 lg:flex">
           <PublicAccountEntry variant="desktop" />
         </div>
 
         <button
           type="button"
-          className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary min-[1200px]:hidden"
+          className="ml-auto inline-flex h-11 items-center gap-1.5 rounded-xl border border-border bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary lg:hidden"
           aria-expanded={menuOpen}
           aria-controls="public-mobile-menu"
           onClick={() => setMenuOpen((current) => !current)}
@@ -144,10 +144,10 @@ export function PublicHeader(props?: PublicHeaderProps) {
       {menuOpen ? (
         <div
           id="public-mobile-menu"
-          className="w-full max-w-full min-w-0 border-t border-border bg-card min-[1200px]:hidden"
+          className="w-full max-w-full min-w-0 border-t border-border bg-card shadow-panel lg:hidden"
         >
-          <div className="grid w-full max-w-full min-w-0 gap-3 px-[clamp(16px,4vw,72px)] py-3">
-            <div className="grid w-full max-w-full min-w-0 grid-cols-2 gap-1 sm:grid-cols-3">
+          <div className="mx-auto grid w-full max-w-[1600px] min-w-0 gap-4 px-[clamp(16px,4vw,64px)] py-4">
+            <div className="grid w-full max-w-full min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">
               {navLinks.map((link) => (
                 <NavLink
                   key={link.href}

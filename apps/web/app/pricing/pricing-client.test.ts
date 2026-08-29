@@ -79,7 +79,7 @@ describe("pricing plan selection", () => {
   it("renders paid plans only and does not embed checkout UI", () => {
     const html = renderToStaticMarkup(React.createElement(PricingClient, { initialProducts: products }));
 
-    expect(html).toContain("定价方案");
+    expect(html).toContain("选择套餐");
     expect(html).toContain("月卡");
     expect(html).toContain("季卡");
     expect(html).toContain("年卡");

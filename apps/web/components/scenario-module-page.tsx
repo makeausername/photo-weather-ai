@@ -111,20 +111,20 @@ export function ScenarioModulePage({ config }: { readonly config: ScenarioPageCo
   }
 
   return (
-    <PublicShell contentClassName="grid gap-6 pb-14">
-      <header className="border-b border-border pb-5">
+    <PublicShell contentClassName="grid gap-8 pb-16 lg:gap-10">
+      <header className="border-b border-border pb-7">
         <div className="max-w-4xl">
-          <Badge variant="default">风光摄影出行判断工具</Badge>
-          <h1 className="mt-3 text-[32px] font-bold leading-tight tracking-normal text-foreground sm:text-[36px]">
+          <Badge variant="default">风光摄影天气</Badge>
+          <h1 className="mt-4 text-[34px] font-bold leading-tight tracking-[-0.03em] text-foreground sm:text-[42px]">
             {config.title}
           </h1>
-          <p className="mt-3 text-[15px] leading-7 text-muted-foreground sm:text-base">
+          <p className="mt-4 max-w-3xl text-[15px] leading-7 text-muted-foreground sm:text-base">
             {config.subtitle}
           </p>
         </div>
       </header>
 
-      <section className="grid gap-5 min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)_clamp(320px,22vw,380px)] min-[1200px]:items-start">
+      <section className="grid gap-6 min-[960px]:grid-cols-[clamp(340px,31vw,420px)_minmax(0,1fr)] xl:grid-cols-[clamp(340px,24vw,420px)_minmax(0,1fr)_clamp(320px,22vw,390px)] xl:items-start xl:gap-8">
         {config.learningItems ? (
           <ScenarioLearningPageContent config={config} />
         ) : (
@@ -202,14 +202,14 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
   }, [config.target, isAstro, isInlineDecisionTarget, selectedHorizon, selectedLocation]);
 
   return (
-    <PublicShell contentClassName="grid gap-6 pb-14">
-      <header className="border-b border-border pb-5">
+    <PublicShell contentClassName="grid gap-8 pb-16 lg:gap-10">
+      <header className="border-b border-border pb-7">
         <div className="max-w-4xl">
-          <Badge variant="default">风光摄影出行判断工具</Badge>
-          <h1 className="mt-3 text-[32px] font-bold leading-tight tracking-normal text-foreground sm:text-[36px]">
+          <Badge variant="default">风光摄影天气</Badge>
+          <h1 className="mt-4 text-[34px] font-bold leading-tight tracking-[-0.03em] text-foreground sm:text-[42px]">
             {config.title}
           </h1>
-          <p className="mt-3 text-[15px] leading-7 text-muted-foreground sm:text-base">
+          <p className="mt-4 max-w-3xl text-[15px] leading-7 text-muted-foreground sm:text-base">
             {config.subtitle}
           </p>
         </div>
@@ -217,8 +217,8 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
 
       <section
         className={cn(
-          "grid gap-5 min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)] min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)]",
-          isInlineDecisionTarget ? "min-[900px]:items-stretch" : "min-[1200px]:items-start",
+          "grid gap-6 min-[960px]:grid-cols-[clamp(340px,31vw,420px)_minmax(0,1fr)] xl:gap-8",
+          isInlineDecisionTarget ? "min-[960px]:items-stretch" : "xl:items-start",
         )}
         data-cloud-sea-page-mode={isCloudSea ? pageMode : undefined}
         data-subject-scenario-page-mode={pageMode}
@@ -364,7 +364,7 @@ function CloudSeaDecisionCardView({
   return (
     <article
       className={cn(
-        "grid min-w-0 content-start gap-3 overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm",
+        "grid min-w-0 content-start gap-4 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel",
         fillHeight && "min-[900px]:h-full",
       )}
       data-cloud-sea-decision-card={card.title}
@@ -446,7 +446,7 @@ export function buildCloudSeaResultCards(
       value: `${analysis.labels.whiteoutRisk}（${Math.round(analysis.whiteoutRiskScore)} / 100）`,
       description: firstCloudSeaPublicText(
         [analysis.whiteoutReasons[0], windowRiskContext?.whiteoutWindowSummaryZh],
-        "低云贴近机位或湿度过高时可能遮挡视野，需要现场复核云顶高度和远山能见度。",
+        "低云贴近拍摄点或湿度过高时可能遮挡视野，需要现场复核云顶高度和远山能见度。",
       ),
       badge: cloudSeaWhiteoutRiskBadge(analysis.whiteoutRiskScore),
       tone:
@@ -474,11 +474,11 @@ export function buildCloudSeaResultCards(
       tone: bestWindow ? undefined : "muted",
     },
     {
-      title: "地形与机位优势",
+      title: "地形条件",
       value: `${analysis.terrainSupport.level}（${Math.round(analysis.terrainSupport.score)} / 100）`,
       description: safeCloudSeaPublicText(
         analysis.terrainSupport.messageZh,
-        "优先复核机位是否高于低云层，山谷和高差是否能承托水汽沉降。",
+        "优先复核拍摄点是否高于低云层，山谷和高差是否能承托水汽沉降。",
       ),
       badge: "地形承托",
     },
@@ -514,15 +514,15 @@ function buildCloudSeaPendingCards(
   if (state.status === "idle") {
     return [
       {
-        title: "准备生成云海判断",
+        title: "云海拍摄条件",
         value: "等待计算",
-        description: "已接收地点选择，接下来会生成云海综合指数、白墙风险、最佳窗口和现场行动建议。",
-        badge: "准备中",
+        description: "将查看云海综合指数、白墙风险、推荐时段和现场注意事项。",
+        badge: "待查询",
       },
       {
-        title: "右侧将生成云海卡片",
-        description: "判断会围绕水汽基础、低云高度、地形承托、清晨窗口和雨后开口展开。",
-        badge: "预览",
+        title: "重点条件",
+        description: "重点查看水汽基础、低云高度、地形承托、清晨窗口和雨后开口。",
+        badge: "参考项",
       },
     ];
   }
@@ -530,10 +530,10 @@ function buildCloudSeaPendingCards(
   if (state.status === "loading") {
     return [
       {
-        title: "正在生成云海判断",
+        title: "正在读取云海条件",
         value: "水汽 / 低云 / 地形",
-        description: "正在结合水汽基础、低云高度、山谷地形承托、清晨窗口和风速打散风险。",
-        badge: "生成中",
+        description: "正在读取水汽、低云、山谷地形、清晨窗口和风速数据。",
+        badge: "查询中",
       },
       {
         title: "可拍机会会单独评估",
@@ -542,7 +542,7 @@ function buildCloudSeaPendingCards(
       },
       {
         title: "白墙风险同步复核",
-        description: "低云接近机位或湿度过高时会降低现场可执行性，结果返回后会单独标出。",
+        description: "低云接近拍摄点或湿度过高时会降低现场可执行性，结果返回后会单独标出。",
         badge: "风险",
         tone: "warning",
       },
@@ -561,7 +561,7 @@ function buildCloudSeaPendingCards(
     },
     {
       title: "现场复核重点",
-      description: "优先看低云是否低于机位、山谷是否能托住水汽、清晨窗口是否有开口。",
+      description: "优先看低云是否低于拍摄点、山谷是否能托住水汽、清晨时段是否有开口。",
       badge: "复核",
     },
   ];
@@ -643,7 +643,7 @@ function GlowDecisionCardView({
   return (
     <article
       className={cn(
-        "grid min-w-0 content-start gap-3 overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm",
+        "grid min-w-0 content-start gap-4 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel",
         fillHeight && "min-[900px]:h-full",
       )}
       data-glow-decision-card={card.title}
@@ -821,15 +821,15 @@ function buildGlowPendingCards(state: SubjectForecastLayerState): readonly GlowD
   if (state.status === "idle") {
     return [
       {
-        title: "准备生成朝霞晚霞判断",
+        title: "朝霞晚霞条件",
         value: "等待计算",
-        description: "已接收地点选择，接下来会生成朝霞机会、晚霞机会、霞光窗口、色彩载体和现场建议。",
-        badge: "准备中",
+        description: "将查看朝霞机会、晚霞机会、霞光时段、云层条件和现场注意事项。",
+        badge: "待查询",
       },
       {
-        title: "右侧将生成霞光卡片",
-        description: "判断会围绕日出日落窗口、中高云色彩载体、低云遮挡、地形光路、通透度和降水打断展开。",
-        badge: "预览",
+        title: "重点条件",
+        description: "重点查看日出日落、中高云、低云遮挡、地形光路、通透度和降水。",
+        badge: "参考项",
       },
     ];
   }
@@ -837,10 +837,10 @@ function buildGlowPendingCards(state: SubjectForecastLayerState): readonly GlowD
   if (state.status === "loading") {
     return [
       {
-        title: "正在生成朝霞晚霞判断",
+        title: "正在读取霞光条件",
         value: "日出 / 日落 / 云层",
-        description: "正在结合日出日落窗口、中高云色彩载体、低云遮挡、地形光路、通透度和降水打断。",
-        badge: "生成中",
+        description: "正在读取日出日落、分层云量、地形光路、通透度和降水数据。",
+        badge: "查询中",
       },
       {
         title: "朝霞晚霞会分开评估",
@@ -950,7 +950,7 @@ function AstroDecisionCardView({
   return (
     <article
       className={cn(
-        "grid min-w-0 content-start gap-3 overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm",
+        "grid min-w-0 content-start gap-4 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel",
         fillHeight && "min-[900px]:h-full",
       )}
       data-astro-decision-card={card.title}
@@ -1112,7 +1112,7 @@ export function buildAstroResultCards(
           analysis.lightPollutionEvidence[0]?.noteZh,
           actionText,
         ],
-        "复核整体暗空、银河方向光污染、地平线遮挡和机位前景后，再决定专程、附近蹲守或改拍备选题材。",
+        "复核整体暗空、银河方向光污染、地平线遮挡和前景后，再决定专程前往、附近等待或改拍备选题材。",
         5,
       ),
       badge: analysis.finalPhotographyDecision ? "行动" : "地平线",
@@ -1125,15 +1125,15 @@ function buildAstroPendingCards(state: SubjectForecastLayerState): readonly Astr
   if (state.status === "idle") {
     return [
       {
-        title: "准备生成星空银河判断",
+        title: "星空银河条件",
         value: "等待计算",
-        description: "已接收地点选择，接下来会生成星空指数、银河机会、暗夜窗口、月光影响和现场复核重点。",
-        badge: "准备中",
+        description: "将查看星空指数、银河机会、暗夜时段、月光影响和现场注意事项。",
+        badge: "待查询",
       },
       {
-        title: "右侧将生成星空卡片",
-        description: "判断会围绕天文黑夜、无月黑夜、银河核心窗口、云量通透、光污染和地平线遮挡展开。",
-        badge: "预览",
+        title: "重点条件",
+        description: "重点查看天文黑夜、无月时段、银河核心、云量通透、光污染和地平线遮挡。",
+        badge: "参考项",
       },
     ];
   }
@@ -1141,10 +1141,10 @@ function buildAstroPendingCards(state: SubjectForecastLayerState): readonly Astr
   if (state.status === "loading") {
     return [
       {
-        title: "正在生成星空银河判断",
+        title: "正在读取星空条件",
         value: "天文黑夜 / 月光 / 银河",
-        description: "正在结合天文黑夜、无月时段、银河核心高度与方向、月光影响和云量通透度。",
-        badge: "生成中",
+        description: "正在读取天文黑夜、无月时段、银河核心、月光和云量通透度数据。",
+        badge: "查询中",
       },
       {
         title: "银河窗口会单独评估",
@@ -1188,12 +1188,12 @@ function astroPanelTitle(
     return `${location.displayName} 星空银河拍摄判断`;
   }
   if (state.status === "loading") {
-    return "正在生成星空银河判断";
+    return "正在读取星空条件";
   }
   if (state.status === "fallback" || state.status === "error") {
     return "星空银河判断暂不可用";
   }
-  return "准备生成星空银河判断";
+  return "星空银河拍摄条件";
 }
 
 function astroPanelDescription(
@@ -1201,18 +1201,18 @@ function astroPanelDescription(
   hasGeneratedResult: boolean,
 ): string {
   if (state.status === "loading") {
-    return "正在生成星空银河判断：会拆分星空指数、银河机会、最佳银河窗口、月光影响、云量通透和光污染地形。";
+    return "正在读取星空指数、银河时段、月光、云量通透和光污染数据。";
   }
   if (state.status === "fallback" || state.status === "error") {
     return "本次星空银河判断暂不可用；已保留地点和预报范围，可稍后重试或先按现场复核重点判断。";
   }
   if (state.status === "partial") {
-    return "已生成星空银河判断；部分辅助数据可能缺失，建议把月光、云量通透、光污染方向和地形遮挡作为现场复核重点。";
+    return "星空条件已更新；部分辅助数据缺失，请重点复核月光、云量、光污染方向和地形遮挡。";
   }
   if (hasGeneratedResult) {
-    return "已根据当前预报生成星空指数、银河机会、最佳银河窗口、月光影响、云量通透和光污染地形建议。";
+    return "已更新星空指数、银河时段、月光影响、云量通透和光污染信息。";
   }
-  return "选择地点后会在右侧生成星空银河专用判断卡片，不会自动离开当前页面。";
+  return "选择地点后，可在本页查看星空与银河拍摄条件。";
 }
 
 function astroBadgeVariant(tone: AstroDecisionCard["tone"]): "accent" | "danger" | "muted" | "warning" {
@@ -1453,12 +1453,12 @@ function glowPanelTitle(
     return `${location.displayName} 朝霞晚霞拍摄判断`;
   }
   if (state.status === "loading") {
-    return "正在生成朝霞晚霞判断";
+    return "正在读取霞光条件";
   }
   if (state.status === "fallback" || state.status === "error") {
     return "朝霞晚霞判断暂不可用";
   }
-  return "准备生成朝霞晚霞判断";
+  return "朝霞晚霞拍摄条件";
 }
 
 function glowPanelDescription(
@@ -1466,18 +1466,18 @@ function glowPanelDescription(
   hasGeneratedResult: boolean,
 ): string {
   if (state.status === "loading") {
-    return "正在生成朝霞晚霞判断：会分别拆分朝霞机会、晚霞机会、霞光窗口、中高云色彩载体、遮挡光路和现场建议。";
+    return "正在读取朝霞、晚霞、分层云量、地形光路和通透度数据。";
   }
   if (state.status === "fallback" || state.status === "error") {
     return "本次朝霞晚霞判断暂不可用；已保留地点和预报范围，可稍后重试或先按现场复核重点判断。";
   }
   if (state.status === "partial") {
-    return "已生成朝霞晚霞判断；部分辅助数据可能缺失，建议把低云遮挡、地形光路、通透度和降水打断作为现场复核重点。";
+    return "霞光条件已更新；部分辅助数据缺失，请重点复核低云、地形光路、通透度和降水。";
   }
   if (hasGeneratedResult) {
-    return "已根据当前预报生成朝霞机会、晚霞机会、最佳霞光窗口、色彩载体、遮挡光路和现场行动建议。";
+    return "已更新朝霞、晚霞、霞光时段、云层条件和现场建议。";
   }
-  return "选择地点后会在右侧生成朝霞晚霞专用判断卡片，不会自动离开当前页面。";
+  return "选择地点后，可在本页查看朝霞与晚霞拍摄条件。";
 }
 
 function glowBadgeVariant(tone: GlowDecisionCard["tone"]): "accent" | "danger" | "muted" | "warning" {
@@ -1643,12 +1643,12 @@ function cloudSeaPanelTitle(
     return `${location.displayName} 云海拍摄判断`;
   }
   if (state.status === "loading") {
-    return "正在生成云海判断";
+    return "正在读取云海条件";
   }
   if (state.status === "fallback" || state.status === "error") {
     return "云海判断暂不可用";
   }
-  return "准备生成云海判断";
+  return "云海拍摄条件";
 }
 
 function cloudSeaPanelDescription(
@@ -1656,18 +1656,18 @@ function cloudSeaPanelDescription(
   hasGeneratedResult: boolean,
 ): string {
   if (state.status === "loading") {
-    return "正在生成云海判断：会单独拆分水汽基础、低云高度、白墙风险、地形承托、清晨窗口和雨后开口。";
+    return "正在读取水汽、低云高度、白墙风险、地形、清晨时段和雨后开口数据。";
   }
   if (state.status === "fallback" || state.status === "error") {
     return "本次云海判断暂不可用；已保留地点和预报范围，可稍后重试或先按现场复核重点判断。";
   }
   if (state.status === "partial") {
-    return "已生成云海判断；部分辅助数据可能缺失，建议把白墙风险、低云高度和雨后开口作为现场复核重点。";
+    return "云海条件已更新；部分辅助数据缺失，请重点复核白墙风险、低云高度和雨后开口。";
   }
   if (hasGeneratedResult) {
-    return "已根据当前预报生成云海综合指数、可拍机会、白墙风险、最佳窗口、地形优势和现场行动建议。";
+    return "已更新云海指数、可拍机会、白墙风险、推荐时段、地形条件和现场建议。";
   }
-  return "选择地点后会在右侧生成云海专用判断卡片，不会自动离开当前页面。";
+  return "选择地点后，可在本页查看云海拍摄条件。";
 }
 
 function cloudSeaBadgeVariant(
@@ -1766,7 +1766,7 @@ export function SubjectKnowledgeGuide({
       data-cloud-sea-pre-result={isCloudSea ? "knowledge-guide" : undefined}
       data-subject-knowledge-guide={config.target}
     >
-      <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
+      <div className="rounded-2xl border border-border bg-card p-5 shadow-panel sm:p-6">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="accent">{config.learningBadgeLabel ?? "判断参考"}</Badge>
           <Badge variant="muted">{forecastHorizonLabels[selectedHorizon]}</Badge>
@@ -1776,7 +1776,7 @@ export function SubjectKnowledgeGuide({
         </h2>
         <p className="mt-3 max-w-4xl text-sm leading-6 text-muted-foreground sm:text-[15px] sm:leading-7">
           {config.learningDescription ??
-            "选择地点后，系统会结合时间窗口、云层、通透度、降水和地形遮挡，给出是否值得出发的判断。"}
+            "选择地点后，可查看时间窗口、云层、通透度、降水和地形遮挡。"}
         </p>
       </div>
 
@@ -1784,7 +1784,7 @@ export function SubjectKnowledgeGuide({
         {items.map((item, index) => (
           <article
             key={item.title}
-            className="grid min-w-0 content-start gap-3 overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm"
+            className="grid min-w-0 content-start gap-4 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel"
             data-cloud-sea-knowledge-card={isCloudSea ? "true" : undefined}
             data-subject-knowledge-card={config.target}
           >
@@ -2021,7 +2021,7 @@ export function ScenarioFeatureGrid({
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((item, index) => (
-          <div key={item} className="rounded-lg border border-border bg-card p-4 shadow-sm">
+          <div key={item} className="rounded-2xl border border-border bg-card p-5 shadow-panel">
             <span className="text-xs font-bold text-primary">
               {String(index + 1).padStart(2, "0")}
             </span>

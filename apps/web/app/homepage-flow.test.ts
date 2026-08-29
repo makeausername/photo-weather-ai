@@ -280,7 +280,7 @@ describe("homepage forecast flow", () => {
 
     expect(html).toContain('data-homepage-guidance-panel="true"');
     expect(html).toContain('data-homepage-card-grid="true"');
-    expect(html).toContain("综合出行判断会看什么");
+    expect(html).toContain("拍摄前先看这六项");
     expect(html).toContain("综合判断");
     expect(html).toContain(forecastHorizonLabels[homepageDefaultHorizon]);
     expect(html).toContain("地点与窗口");
@@ -289,14 +289,14 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("能见度与通透");
     expect(html).toContain("月相与夜景");
     expect(html).toContain("降水与风险");
-    expect(html).toContain("把城市、景区或地点坐标与所选预报范围绑定");
+    expect(html).toContain("确定拍摄地点和预报范围");
     expect(html).toContain("01");
     expect(html).toContain("06");
     expect(html).toContain("sm:grid-cols-2");
     expect(html).toContain("xl:grid-cols-3");
-    expect(html).not.toContain("min-[900px]:grid-rows-[auto_minmax(0,1fr)]");
-    expect(html).not.toContain("min-[900px]:auto-rows-fr");
-    expect(html).not.toContain("min-[900px]:h-full");
+    expect(html).not.toContain("min-[960px]:grid-rows-[auto_minmax(0,1fr)]");
+    expect(html).not.toContain("min-[960px]:auto-rows-fr");
+    expect(html).not.toContain("min-[960px]:h-full");
     expect(html).not.toContain("云海判断需要关注什么");
     expect(html).not.toContain("朝霞晚霞判断需要看什么");
     expect(html).not.toContain("星空银河判断需要看什么");
@@ -316,13 +316,13 @@ describe("homepage forecast flow", () => {
     );
 
     expect(html).toContain("老君山金顶");
-    expect(html).toContain("正在计算该地点的综合出行判断");
+    expect(html).toContain("正在读取该地点的天气与天文数据");
     expect(html).toContain("加载中");
     expect(html).toContain('data-homepage-card-grid="true"');
     expect(html).toContain("地点与窗口");
     expect(html).toContain("降水与风险");
-    expect(html).not.toContain("min-[900px]:grid-rows-[auto_minmax(0,1fr)]");
-    expect(html).not.toContain("min-[900px]:auto-rows-fr");
+    expect(html).not.toContain("min-[960px]:grid-rows-[auto_minmax(0,1fr)]");
+    expect(html).not.toContain("min-[960px]:auto-rows-fr");
     expect(html).not.toContain('data-homepage-layer-visual="true"');
     expect(html).not.toContain("黄山光明顶");
   });
@@ -337,8 +337,8 @@ describe("homepage forecast flow", () => {
       }),
     );
 
-    expect(html).toContain("老君山金顶 综合出行判断");
-    expect(html).toContain("已根据当前预报生成综合指数、推荐等级、最佳窗口、主要风险、云层风况和当前建议。");
+    expect(html).toContain("老君山金顶 拍摄条件");
+    expect(html).toContain("已更新综合指数、推荐时段、主要风险、云层风况和出行建议。");
     expect(html).toContain("综合指数");
     expect(html).toContain("82 / 100");
     expect(html).toContain("推荐等级");
@@ -353,9 +353,9 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("低云 18%，湿度 68%，能见度 18.5 公里。");
     expect(html).toContain("当前建议");
     expect(html).toContain("根据窗口和风险安排到达时间与备选题材。");
-    expect(html).toContain("min-[900px]:grid-rows-[auto_minmax(0,1fr)]");
-    expect(html).toContain("min-[900px]:auto-rows-fr");
-    expect(html).toContain("min-[900px]:h-full");
+    expect(html).toContain("min-[960px]:grid-rows-[auto_minmax(0,1fr)]");
+    expect(html).toContain("min-[960px]:auto-rows-fr");
+    expect(html).toContain("min-[960px]:h-full");
     expect(html).not.toContain("和风天气");
     expect(html).not.toContain("Open-Meteo");
     expect(html).not.toContain("meteoblue");
@@ -400,7 +400,7 @@ describe("homepage forecast flow", () => {
   it("renders the homepage guidance cards on the full page before selection", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
 
-    expect(html).toContain("综合出行判断会看什么");
+    expect(html).toContain("拍摄前先看这六项");
     expect(html).toContain("地点与窗口");
     expect(html).toContain("云层与光线");
     expect(html).toContain("降水与风险");
@@ -915,11 +915,9 @@ describe("homepage forecast flow", () => {
 
     expect(html).toContain("minmax(0,1fr)");
     expect(html).toContain('data-homepage-workbench-layout="scenario-two-column"');
-    expect(html).toContain("min-[900px]:grid-cols-[clamp(320px,34vw,390px)_minmax(0,1fr)]");
-    expect(html).toContain("min-[900px]:items-stretch");
-    expect(html).toContain(
-      "min-[1200px]:grid-cols-[clamp(340px,24vw,410px)_minmax(0,1fr)]",
-    );
+    expect(html).toContain("min-[960px]:grid-cols-[clamp(340px,31vw,420px)_minmax(0,1fr)]");
+    expect(html).toContain("min-[960px]:items-stretch");
+    expect(html).toContain("xl:gap-8");
     expect(html).toContain('data-homepage-guidance-panel="true"');
     expect(html).toContain("min-w-0");
     expect(html).toContain("overflow-hidden");
@@ -936,9 +934,9 @@ describe("homepage forecast flow", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
 
     expect(html).toContain(
-      "输入拍摄地点后，生成出行判断、最佳窗口、优先题材和主要风险。",
+      "选择地点和预报范围，查看云层、光线、风、能见度与降水风险。",
     );
-    expect(html).toContain("综合出行判断会看什么");
+    expect(html).toContain("拍摄前先看这六项");
     expect(html).toContain("地点与窗口");
     expect(html).not.toContain("云海判断需要关注什么");
     expect(html).not.toContain("朝霞晚霞判断需要看什么");

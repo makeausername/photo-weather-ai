@@ -23,9 +23,9 @@ describe("responsive safeguards", () => {
 
     expect(html).toContain("min-h-screen bg-background");
     expect(html).not.toContain("overflow-x-hidden bg-background");
-    expect(html).toContain("w-full max-w-full min-w-0 px-[clamp(16px,4vw,72px)]");
-    expect(html).toContain("flex w-full min-w-0 items-center");
-    expect(html).toContain("mx-auto flex w-full max-w-[1560px] min-w-0");
+    expect(html).toContain("mx-auto w-full max-w-[1600px] min-w-0 px-[clamp(16px,4vw,64px)]");
+    expect(html).toContain("mx-auto flex min-h-[72px] w-full max-w-[1600px] min-w-0 items-center");
+    expect(html).toContain("mx-auto flex w-full max-w-[1600px] min-w-0");
     expect(html).not.toContain("px-[clamp(24px,4vw,72px)]");
   });
 

@@ -1243,7 +1243,7 @@ describe("account center foundation", () => {
     expect(publicAuthSource).not.toContain("max-w-[500px]");
     expect(publicAuthSource).not.toContain("max-w-[580px]");
     expect(publicAuthSource).not.toContain("grid w-full max-w-full min-w-0 justify-items-center");
-    expect(publicAuthSource).toContain("w-full max-w-full min-w-0 p-5 shadow-sm sm:p-6");
+    expect(publicAuthSource).toContain("w-full max-w-full min-w-0 p-6 sm:p-8");
 
     expect(globalsCssSource).toContain("input:-webkit-autofill");
     expect(globalsCssSource).toContain("input:-webkit-autofill:hover");

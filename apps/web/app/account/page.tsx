@@ -26,10 +26,10 @@ export default function AccountPage({ searchParams }: AccountPageProps) {
     firstSearchParam(searchParams?.orderNo) || firstSearchParam(searchParams?.out_trade_no);
 
   return (
-    <PublicShell contentClassName="grid gap-6 pb-14">
-      <header className="border-b border-border pb-5">
-        <p className="text-sm font-semibold text-primary">账户</p>
-        <h1 className="mt-3 text-[30px] font-bold leading-tight tracking-normal text-foreground sm:text-[36px]">
+    <PublicShell contentClassName="grid gap-8 pb-16">
+      <header className="border-b border-border pb-7">
+        <p className="text-xs font-bold tracking-[0.12em] text-primary">账户</p>
+        <h1 className="mt-3 text-[34px] font-bold leading-tight tracking-[-0.03em] text-foreground sm:text-[42px]">
           账户中心
         </h1>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground sm:text-[15px]">

@@ -237,7 +237,7 @@ export function PlaceSearchErrorAlert({ message }: { readonly message?: string }
   return (
     <div
       role="alert"
-      className="rounded-lg border border-danger bg-card px-3 py-2 text-sm leading-6 text-danger"
+      className="rounded-xl border border-danger/40 bg-danger/5 px-4 py-3 text-sm leading-6 text-danger"
     >
       {sanitizePlaceSearchErrorMessage(message)}
     </div>
@@ -413,7 +413,7 @@ export function HorizonSelector({
   readonly disabledOptions?: ReadonlySet<ForecastHorizon>;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-2 gap-2.5">
       {horizonOptions.map((option) => {
         const disabled = disabledOptions?.has(option) ?? false;
         return (
@@ -428,7 +428,7 @@ export function HorizonSelector({
               }
             }}
             className={cn(
-              "h-8 rounded-md border px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-55",
+              "h-10 rounded-xl border px-3 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-55",
               value === option
                 ? "border-primary bg-primary text-primary-foreground"
                 : "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary disabled:hover:border-border disabled:hover:bg-card",
@@ -448,7 +448,7 @@ export function PlaceSearchCard({
   description = "搜索景区、城市或具体地点",
   badgeLabel = "本地优先",
   searchPlaceholder = "请输入拍摄地点",
-  horizonLabel = "预报范围选择",
+  horizonLabel = "预报范围",
   defaultHorizon = "48h",
   defaultTarget = "general",
   fixedTarget,
@@ -791,18 +791,18 @@ export function PlaceSearchCard({
   return (
     <Card
       data-place-search-card="true"
-      className={cn("grid min-w-0 gap-4 p-4 shadow-sm", className)}
+      className={cn("grid min-w-0 gap-5 p-5 sm:p-6", className)}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-bold text-card-foreground">{title}</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+          <p className="text-base font-bold text-card-foreground">{title}</p>
+          <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{description}</p>
         </div>
         {badgeLabel ? <Badge variant="muted">{badgeLabel}</Badge> : null}
       </div>
 
       <form
-        className="grid gap-2"
+        className="grid gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           handleSubmitSearch();
@@ -817,7 +817,7 @@ export function PlaceSearchCard({
           onUseCurrentLocation={enableCurrentLocation ? handleUseCurrentLocation : undefined}
           loading={isCurrentLocationLoading}
         />
-        <Button type="submit" size="sm" className="h-9 w-full" disabled={status === "loading"}>
+        <Button type="submit" size="md" className="w-full" disabled={status === "loading"}>
           搜索地点
         </Button>
         {enableCurrentLocation && currentLocationPrivacyHint ? (
@@ -834,16 +834,16 @@ export function PlaceSearchCard({
 
       <div aria-live="polite" className="grid gap-2">
         {currentLocationStatus === "loading" ? (
-          <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
-            正在获取当前位置...
+          <div className="rounded-xl border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
+            正在获取当前位置…
           </div>
         ) : null}
 
         {currentLocationError ? <PlaceSearchErrorAlert message={currentLocationError} /> : null}
 
         {showSearchFeedback && status === "loading" ? (
-          <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
-            正在搜索地点...
+          <div className="rounded-xl border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
+            正在搜索地点…
           </div>
         ) : null}
 
@@ -852,7 +852,7 @@ export function PlaceSearchCard({
         ) : null}
 
         {showEmptyState ? (
-          <div className="rounded-lg border border-border bg-muted px-3 py-3 text-sm leading-6 text-muted-foreground">
+          <div className="rounded-xl border border-border bg-muted px-4 py-3 text-sm leading-6 text-muted-foreground">
             暂未找到相关地点，请尝试输入景区、城市或具体地点名称。
           </div>
         ) : null}
@@ -860,7 +860,7 @@ export function PlaceSearchCard({
         {showSearchResults ? (
           <div
             data-place-search-results="true"
-            className="max-h-[220px] overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-card"
+            className="max-h-[260px] overflow-x-hidden overflow-y-auto rounded-xl border border-border bg-card"
           >
             {results.map((result) => (
               <button
@@ -868,7 +868,7 @@ export function PlaceSearchCard({
                 type="button"
                 onClick={() => handleSelectResult(result)}
                 className={cn(
-                  "grid w-full min-w-0 gap-1.5 border-b border-border px-3 py-2.5 text-left transition last:border-b-0 hover:bg-secondary",
+                  "grid w-full min-w-0 gap-1.5 border-b border-border px-4 py-3 text-left transition last:border-b-0 hover:bg-secondary",
                   selectedPlace?.id === result.id && "bg-secondary",
                 )}
               >
@@ -893,7 +893,7 @@ export function PlaceSearchCard({
       {activeSelectedLocation ? (
         <div
           data-selected-location-card="true"
-          className="grid gap-3 rounded-lg border border-border bg-muted p-3"
+          className="grid gap-3 rounded-xl border border-border bg-muted p-4"
         >
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
@@ -962,7 +962,7 @@ export function PlaceSearchCard({
         </div>
 
         {fixedTarget ? (
-          <div className="rounded-lg border border-border bg-muted p-3">
+          <div className="rounded-xl border border-border bg-muted p-4">
             <p className="text-xs font-semibold text-muted-foreground">分析题材</p>
             <p className="mt-1 text-sm font-bold text-card-foreground">
               {forecastTargetLabels[fixedTarget]}
@@ -982,7 +982,7 @@ export function PlaceSearchCard({
                   aria-pressed={target === option}
                   onClick={() => setTarget(option)}
                   className={cn(
-                    "h-8 rounded-md border px-2 text-xs font-semibold transition",
+                    "h-10 rounded-xl border px-3 text-xs font-semibold transition",
                     target === option
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary",
@@ -994,13 +994,13 @@ export function PlaceSearchCard({
             </div>
           </div>
         ) : targetHelperText ? (
-          <p className="rounded-md border border-border bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
+          <p className="rounded-xl border border-border bg-muted px-4 py-3 text-xs leading-5 text-muted-foreground">
             {targetHelperText}
           </p>
         ) : null}
 
         {hasLimitedAccess ? (
-          <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
+          <div className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-xs leading-5 text-muted-foreground">
             当前账户只能查看未来 24 小时基础天气。开通月卡、季卡或年卡后可查看完整摄影判断。
             <a className="ml-2 font-semibold text-primary hover:underline" href="/pricing">
               开通会员
@@ -1010,7 +1010,7 @@ export function PlaceSearchCard({
 
         <Button
           type="button"
-          className="h-9 w-full"
+          className="w-full"
           disabled={!activeSelectedLocation || fullAccessCtaLocked}
           onClick={handleRunForecast}
         >

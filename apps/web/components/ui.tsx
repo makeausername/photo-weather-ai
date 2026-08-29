@@ -30,9 +30,9 @@ const buttonVariants: Record<ButtonVariant, string> = {
 };
 
 const buttonSizes: Record<ButtonSize, string> = {
-  sm: "h-8 px-2.5 text-xs",
-  md: "h-9 px-3.5 text-sm",
-  lg: "h-10 px-4 text-sm",
+  sm: "h-9 px-3 text-xs",
+  md: "h-11 px-4 text-sm",
+  lg: "h-12 px-5 text-sm",
 };
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -51,7 +51,7 @@ export function Button({
     <button
       type={type}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border font-semibold transition disabled:cursor-not-allowed disabled:opacity-55",
+        "inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border font-semibold transition duration-150 disabled:cursor-not-allowed disabled:opacity-55",
         buttonVariants[variant],
         buttonSizes[size],
         className,
@@ -71,7 +71,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     <input
       ref={ref}
       className={cn(
-        "h-10 w-full min-w-0 rounded-lg border border-border bg-card px-3 text-sm text-foreground shadow-sm transition placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted disabled:text-muted-foreground",
+        "h-12 w-full min-w-0 rounded-xl border border-border bg-card px-4 text-sm text-foreground transition placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted disabled:text-muted-foreground",
         className,
       )}
       {...props}
@@ -85,7 +85,7 @@ export function Textarea({ className, ...props }: TextareaProps) {
   return (
     <textarea
       className={cn(
-        "min-h-24 w-full min-w-0 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground shadow-sm transition placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted disabled:text-muted-foreground",
+        "min-h-28 w-full min-w-0 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground transition placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted disabled:text-muted-foreground",
         className,
       )}
       {...props}
@@ -99,7 +99,7 @@ export function Select({ className, ...props }: SelectProps) {
   return (
     <select
       className={cn(
-        "h-10 w-full min-w-0 rounded-lg border border-border bg-card px-3 text-sm text-foreground shadow-sm transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted disabled:text-muted-foreground",
+        "h-12 w-full min-w-0 rounded-xl border border-border bg-card px-4 text-sm text-foreground transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted disabled:text-muted-foreground",
         className,
       )}
       {...props}
@@ -114,7 +114,7 @@ type CardProps = HTMLAttributes<HTMLElement> & {
 export function Card({ children, className, ...props }: CardProps) {
   return (
     <section
-      className={cn("rounded-lg border border-border bg-card shadow-sm", className)}
+      className={cn("rounded-2xl border border-border bg-card shadow-panel", className)}
       {...props}
     >
       {children}
@@ -169,7 +169,7 @@ export function ResponsiveDataScroller({
     <div
       className={cn(
         "w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]",
-        bare ? "rounded-none border-0 bg-transparent" : "rounded-lg border border-border bg-card",
+        bare ? "rounded-none border-0 bg-transparent" : "rounded-xl border border-border bg-card",
         className,
       )}
       data-responsive-data-scroller="true"
@@ -205,7 +205,7 @@ type FormFieldProps = {
 
 export function FormField({ label, children, hint, error, className }: FormFieldProps) {
   return (
-    <label className={cn("grid gap-2 text-sm font-semibold text-card-foreground", className)}>
+    <label className={cn("grid gap-2.5 text-sm font-semibold text-card-foreground", className)}>
       <span>{label}</span>
       {children}
       {hint ? (
@@ -236,7 +236,7 @@ export function SwitchRow({
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-card p-3 text-sm shadow-sm transition hover:border-primary hover:bg-secondary",
+        "flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-card p-4 text-sm transition hover:border-primary hover:bg-secondary",
         disabled && "cursor-not-allowed opacity-60",
         className,
       )}
@@ -273,13 +273,13 @@ export function PageHeader({ eyebrow, title, description, action, className }: P
     >
       <div className="min-w-0">
         {eyebrow ? (
-          <p className="mb-2 text-xs font-bold tracking-normal text-primary">{eyebrow}</p>
+          <p className="mb-3 text-xs font-bold tracking-[0.12em] text-primary">{eyebrow}</p>
         ) : null}
-        <h1 className="text-2xl font-bold tracking-normal text-foreground sm:text-[28px]">
+        <h1 className="text-[30px] font-bold leading-tight tracking-[-0.025em] text-foreground sm:text-[36px]">
           {title}
         </h1>
         {description ? (
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground sm:text-[15px]">{description}</p>
         ) : null}
       </div>
       {action ? <div className="min-w-0 sm:shrink-0">{action}</div> : null}

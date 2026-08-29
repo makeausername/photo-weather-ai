@@ -281,13 +281,13 @@ export function PricingClient({
   }, [initialProducts]);
 
   return (
-    <PublicShell contentClassName="pb-14">
-      <div className="grid min-w-0 max-w-full gap-6">
+    <PublicShell contentClassName="pb-16">
+      <div className="grid min-w-0 max-w-full gap-8">
         <header className="flex min-w-0 max-w-full flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
-            <Badge variant="muted">订阅套餐</Badge>
-            <h1 className="mt-3 text-3xl font-bold tracking-normal text-foreground sm:text-[36px]">
-              定价方案
+            <Badge variant="muted">会员套餐</Badge>
+            <h1 className="mt-4 text-[34px] font-bold tracking-[-0.03em] text-foreground sm:text-[42px]">
+              选择套餐
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
               新用户注册即送 7 天完整权限。试用结束后自动回到免费版，可继续查询未来 24
@@ -296,7 +296,7 @@ export function PricingClient({
           </div>
           <Link
             href="/account"
-            className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary sm:w-fit sm:shrink-0"
+            className="inline-flex h-12 w-full items-center justify-center rounded-xl border border-border bg-card px-5 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary sm:w-fit sm:shrink-0"
           >
             查看账户权益
           </Link>
@@ -306,7 +306,7 @@ export function PricingClient({
           <p
             role="alert"
             className={cn(
-              "rounded-lg border bg-card px-3 py-2 text-sm",
+              "rounded-xl border bg-card px-4 py-3 text-sm",
               state === "error" ? "border-danger text-danger" : "border-warning text-warning-strong",
             )}
           >
@@ -318,7 +318,7 @@ export function PricingClient({
           id="paid-plans"
           className="grid min-w-0 max-w-full gap-4"
         >
-          <div className="grid min-w-0 max-w-full gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid min-w-0 max-w-full gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {state === "loading" ? (
               <Card className="min-w-0 max-w-full p-5 text-sm text-muted-foreground">
                 正在读取套餐...
@@ -350,7 +350,10 @@ function PaidPlanCard({
 
   return (
     <Card
-      className="grid min-w-0 max-w-full grid-rows-[auto_auto_1fr_auto] gap-4 border-border p-5 transition"
+      className={cn(
+        "grid min-w-0 max-w-full grid-rows-[auto_auto_1fr_auto] gap-5 border-border p-6 transition hover:-translate-y-0.5 hover:shadow-lift",
+        product.recommended && "border-primary/35",
+      )}
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
@@ -369,7 +372,7 @@ function PaidPlanCard({
           {product.durationText}
         </Badge>
       </div>
-      <p className="text-2xl font-bold text-foreground">{formatPrice(product)}</p>
+      <p className="text-3xl font-bold tracking-[-0.03em] text-foreground">{formatPrice(product)}</p>
       <ul className="grid gap-2 text-sm leading-6 text-muted-foreground">
         {paidFeatures(product).map((feature) => (
           <li key={feature}>{feature}</li>
@@ -379,14 +382,14 @@ function PaidPlanCard({
         {loggedIn ? (
           <Link
             href={checkoutPathForProduct(product.code)}
-            className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+            className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:bg-[var(--primary-hover)]"
           >
             立即购买
           </Link>
         ) : (
           <Link
             href={loginHrefForProduct(product.code)}
-            className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-[var(--primary-hover)]"
+            className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:bg-[var(--primary-hover)]"
           >
             登录后购买
           </Link>

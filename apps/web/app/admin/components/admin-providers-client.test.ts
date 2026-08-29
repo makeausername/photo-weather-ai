@@ -87,8 +87,8 @@ describe("admin provider module source", () => {
   });
 
   it("keeps the AdminShell sidebar wide enough for first-class module labels", () => {
-    expect(adminShellSource).toContain("lg:grid-cols-[260px_minmax(0,1fr)]");
-    expect(adminShellSource).toContain("xl:grid-cols-[272px_minmax(0,1fr)]");
+    expect(adminShellSource).toContain("lg:grid-cols-[272px_minmax(0,1fr)]");
+    expect(adminShellSource).toContain("xl:grid-cols-[288px_minmax(0,1fr)]");
     expect(adminShellSource).toContain("lg:w-full lg:min-w-0 lg:whitespace-normal");
     expect(adminShellSource).not.toContain("lg:grid-cols-[228px_minmax(0,1fr)]");
     expect(adminShellSource).not.toContain("truncate");

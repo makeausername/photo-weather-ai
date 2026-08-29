@@ -23,7 +23,7 @@ export function HomepageSearchPanel({
     <PlaceSearchCard
       className="min-[900px]:sticky min-[900px]:top-[88px]"
       badgeLabel={null}
-      description="搜索景区、城市或具体地点，系统会结合坐标和预报范围生成判断。"
+      description="搜索景区、城市或具体地点，查看所选预报范围内的拍摄条件。"
       searchPlaceholder="输入景区、城市或地点名称"
       horizonLabel="预报范围"
       defaultHorizon={homepageDefaultHorizon}

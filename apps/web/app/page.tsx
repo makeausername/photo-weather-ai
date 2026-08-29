@@ -4,15 +4,15 @@ import { Badge } from "../components/ui";
 
 export default function HomePage() {
   return (
-    <PublicShell contentClassName="grid gap-6 pb-14">
-      <header className="border-b border-border pb-5">
+    <PublicShell contentClassName="grid gap-8 pb-16 lg:gap-10">
+      <header className="border-b border-border pb-7">
         <div className="max-w-4xl">
-          <Badge variant="default">风光摄影出行判断工具</Badge>
-          <h1 className="mt-3 text-[32px] font-bold leading-tight tracking-normal text-foreground sm:text-[36px]">
-            逐光天气
+          <Badge variant="default">风光摄影天气</Badge>
+          <h1 className="mt-4 text-[34px] font-bold leading-tight tracking-[-0.03em] text-foreground sm:text-[42px]">
+            拍摄条件
           </h1>
-          <p className="mt-3 text-[15px] leading-7 text-muted-foreground sm:text-base">
-            输入拍摄地点后，生成出行判断、最佳窗口、优先题材和主要风险。
+          <p className="mt-4 max-w-3xl text-[15px] leading-7 text-muted-foreground sm:text-base">
+            选择地点和预报范围，查看云层、光线、风、能见度与降水风险。
           </p>
         </div>
       </header>

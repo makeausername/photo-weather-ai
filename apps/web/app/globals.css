@@ -4,29 +4,31 @@
 
 :root {
   color-scheme: light;
-  --background: #f7f4ec;
-  --foreground: #17231f;
-  --card: #fffdf7;
-  --card-foreground: #17231f;
-  --border: #ddd4c4;
-  --muted: #ece7dc;
-  --muted-foreground: #66736d;
-  --primary: #2f6f5e;
-  --primary-hover: #1f4f43;
-  --primary-foreground: #fffdf7;
-  --secondary: #e5ded0;
-  --secondary-foreground: #1f4f43;
-  --accent: #d88a20;
-  --accent-strong: #9a5d0c;
-  --accent-foreground: #2f1d05;
-  --info: #5f8d8a;
-  --info-strong: #47706d;
-  --success: #2f6f5e;
-  --warning: #d88a20;
-  --warning-strong: #9a5d0c;
-  --danger: #b9472d;
-  --ring: #a9c7b8;
-  --soft-shadow: 0 18px 42px rgb(23 35 31 / 10%);
+  --background: #f3f6f4;
+  --foreground: #14231e;
+  --card: #ffffff;
+  --card-foreground: #14231e;
+  --border: #dbe4df;
+  --muted: #edf2ef;
+  --muted-foreground: #62716a;
+  --primary: #176653;
+  --primary-hover: #104b3f;
+  --primary-foreground: #ffffff;
+  --secondary: #e7f0ec;
+  --secondary-foreground: #164f43;
+  --accent: #c98229;
+  --accent-strong: #8a5514;
+  --accent-foreground: #322008;
+  --info: #4f7d82;
+  --info-strong: #365f63;
+  --success: #247058;
+  --warning: #c98229;
+  --warning-strong: #8a5514;
+  --danger: #b74432;
+  --ring: #82ad9f;
+  --soft-shadow: 0 18px 48px rgb(20 35 30 / 8%);
+  --panel-shadow: 0 1px 2px rgb(20 35 30 / 4%), 0 12px 32px rgb(20 35 30 / 6%);
+  --lift-shadow: 0 16px 44px rgb(20 35 30 / 12%);
 }
 
 * {
@@ -40,12 +42,16 @@ html {
 
 body {
   min-height: 100%;
-  background: linear-gradient(180deg, #fffdf7 0%, var(--background) 28rem, #ece7dc 100%),
+  background:
+    radial-gradient(circle at 88% 0%, rgb(231 240 236 / 70%) 0, transparent 30rem),
+    linear-gradient(180deg, #fbfcfb 0%, var(--background) 34rem),
     var(--background);
   color: var(--foreground);
   font-family: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
     "Source Han Sans SC", ui-sans-serif, system-ui, sans-serif;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
 }
 
 button,
@@ -65,7 +71,7 @@ input:-webkit-autofill:focus {
 }
 
 ::selection {
-  background: rgb(47 111 94 / 22%);
+  background: rgb(23 102 83 / 20%);
 }
 
 :focus-visible {
@@ -83,5 +89,5 @@ a {
 }
 
 [data-responsive-table="true"] tbody tr:hover {
-  background-color: rgb(236 231 220 / 45%);
+  background-color: rgb(237 242 239 / 72%);
 }

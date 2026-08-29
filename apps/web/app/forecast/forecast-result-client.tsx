@@ -288,7 +288,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   }, []);
 
   return (
-    <PublicShell contentClassName="grid gap-5 pb-14">
+    <PublicShell contentClassName="grid gap-6 pb-16 lg:gap-8">
       {!usesSpecializedResultHeader ? (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -316,7 +316,7 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
           <header className="flex flex-col justify-between gap-4 border-b border-border pb-5 min-[900px]:flex-row min-[900px]:items-end">
             <div className="max-w-4xl">
               <Badge variant="default">{shellCopy.badgeLabel}</Badge>
-              <h1 className="mt-3 text-[32px] font-bold leading-tight tracking-normal text-foreground sm:text-[36px]">
+              <h1 className="mt-4 text-[34px] font-bold leading-tight tracking-[-0.03em] text-foreground sm:text-[42px]">
                 {shellCopy.pageTitle}
               </h1>
               <p className="mt-3 text-sm leading-6 text-muted-foreground sm:text-[15px]">
@@ -403,8 +403,8 @@ export function ForecastDecisionLoadingState({
             { label: horizonLabel, variant: "muted" },
           ],
           title: "云海拍摄判断",
-          message: "正在生成云海拍摄判断...",
-          description: "正在结合天气、地形、云层和光线窗口生成判断。",
+          message: "正在读取云海拍摄条件…",
+          description: "正在读取天气、地形、云层和光线时段。",
         }}
         info={cloudSeaDecisionInfoCard()}
         dataCloudSeaPageMode="loading"
@@ -418,12 +418,12 @@ export function ForecastDecisionLoadingState({
       target="general"
       context={decisionContextFromProgressContext("general", context)}
       loading={{
-        message: "正在生成拍摄天气分析...",
-        description: "正在结合天气条件、天文窗口和地形特征生成出行判断。",
+        message: "正在读取拍摄条件…",
+        description: "正在读取天气、天文时段和地形信息。",
       }}
       info={{
         title: "分析基础",
-        description: "页面会优先呈现是否值得去、什么时候到、拍什么和需要规避的风险。",
+        description: "重点查看是否值得出发、推荐到达时间、适合题材和主要风险。",
       }}
     />
   );
@@ -524,7 +524,7 @@ export function ForecastDecisionErrorState({
       }}
       info={{
         title: "分析基础",
-        description: "页面会优先呈现是否值得去、什么时候到、拍什么和需要规避的风险。",
+        description: "重点查看是否值得出发、推荐到达时间、适合题材和主要风险。",
       }}
     />
   );
@@ -623,7 +623,7 @@ function cloudSeaDecisionInfoCard() {
   return {
     title: "云海判断基础",
     description:
-      "页面会把云海形成、可拍机会、白墙风险、雨后开口和现场复核动作放在同一套判断结构里。",
+      "集中查看云海形成条件、可拍机会、白墙风险、雨后开口和现场注意事项。",
     badge: { label: "云海 / 白墙 / 雨后开口", variant: "accent" as const },
   };
 }
@@ -2105,7 +2105,7 @@ function deriveCloudSeaTravelDecision(
 }
 
 function cloudSeaPanelClassName(className?: string): string {
-  return cn("rounded-lg border border-border bg-card shadow-sm", className);
+  return cn("rounded-2xl border border-border bg-card shadow-panel", className);
 }
 
 function cloudSeaCompactCardClassName(className?: string): string {
@@ -3488,7 +3488,7 @@ function GlowProfessionalDataSection({ viewModel }: { readonly viewModel: GlowFo
 }
 
 function glowPanelClassName(className?: string): string {
-  return cn("rounded-lg border border-border bg-card shadow-sm", className);
+  return cn("rounded-2xl border border-border bg-card shadow-panel", className);
 }
 
 function glowCompactCardClassName(className?: string): string {

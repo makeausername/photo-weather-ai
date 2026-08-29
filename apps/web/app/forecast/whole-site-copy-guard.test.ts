@@ -55,8 +55,8 @@ describe("whole-site static copy guard", () => {
       renderScenarioEntryPages(),
     ].join("\n");
 
-    expect(source).toContain("输入拍摄地点后，生成出行判断、最佳窗口、优先题材和主要风险。");
-    expect(rendered).toContain("输入拍摄地点后，生成出行判断、最佳窗口、优先题材和主要风险。");
+    expect(source).toContain("选择地点和预报范围，查看云层、光线、风、能见度与降水风险。");
+    expect(rendered).toContain("选择地点和预报范围，查看云层、光线、风、能见度与降水风险。");
     expect(rendered).toContain("选择地点后");
 
     for (const forbiddenClaim of forbiddenStaticLiveClaims) {

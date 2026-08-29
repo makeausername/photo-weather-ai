@@ -5118,7 +5118,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("预报范围");
     expect(html).toContain("分析目标");
     expect(html).toContain("综合判断");
-    expect(html).toContain("正在生成拍摄天气分析");
+    expect(html).toContain("正在读取拍摄条件");
     expect(html).toContain("分析基础");
   });
 
@@ -5141,7 +5141,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("<aside");
     expect(html).toContain("首页");
     expect(html).toContain("云海拍摄判断");
-    expect(html).toContain("正在生成云海拍摄判断");
+    expect(html).toContain("正在读取云海拍摄条件");
     expect(html).toContain("云海判断基础");
     expect(html).toContain("地点 / 查询");
     expect(html).toContain("黄山光明顶");

@@ -7,9 +7,9 @@ export function SiteFooter() {
     <footer
       id="site-footer"
       aria-label="逐光天气页脚"
-      className="border-t border-border bg-background text-muted-foreground"
+      className="border-t border-border bg-card/70 text-muted-foreground"
     >
-      <div className="mx-auto flex w-full max-w-[1560px] min-w-0 flex-wrap items-center justify-center gap-x-3 gap-y-1.5 px-[clamp(16px,4vw,72px)] py-4 text-center text-xs leading-5 sm:py-5 sm:text-sm">
+      <div className="mx-auto flex w-full max-w-[1600px] min-w-0 flex-wrap items-center justify-center gap-x-3 gap-y-1.5 px-[clamp(16px,4vw,64px)] py-5 text-center text-xs leading-5 sm:py-6 sm:text-sm">
         <span>{footer.copyright}</span>
         <span aria-hidden="true" className="hidden text-muted-foreground/70 min-[420px]:inline">
           •
