@@ -98,6 +98,7 @@ type PlaceSearchCardProps = {
   readonly showSelectedLocationHorizon?: boolean;
   readonly showQuickLocations?: boolean;
   readonly showForecastSectionDivider?: boolean;
+  readonly autoPreviewEnabled?: boolean;
   readonly enableCurrentLocation?: boolean;
   readonly currentLocationPrivacyHint?: string;
   readonly requiresFullAccess?: boolean;
@@ -462,6 +463,7 @@ export function PlaceSearchCard({
   showSelectedLocationHorizon = false,
   showQuickLocations: shouldRenderQuickLocations = true,
   showForecastSectionDivider = true,
+  autoPreviewEnabled = false,
   enableCurrentLocation = false,
   currentLocationPrivacyHint = "浏览器定位仅用于本次天气判断，不会公开显示。",
   requiresFullAccess = false,
@@ -789,10 +791,7 @@ export function PlaceSearchCard({
   }, [activeSelectedLocation, activeTarget, horizon]);
 
   return (
-    <Card
-      data-place-search-card="true"
-      className={cn("grid min-w-0 gap-5 p-5 sm:p-6", className)}
-    >
+    <Card data-place-search-card="true" className={cn("grid min-w-0 gap-5 p-5 sm:p-6", className)}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-base font-bold text-card-foreground">{title}</p>
@@ -802,7 +801,7 @@ export function PlaceSearchCard({
       </div>
 
       <form
-        className="grid gap-3"
+        className="grid gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           handleSubmitSearch();
@@ -817,9 +816,9 @@ export function PlaceSearchCard({
           onUseCurrentLocation={enableCurrentLocation ? handleUseCurrentLocation : undefined}
           loading={isCurrentLocationLoading}
         />
-        <Button type="submit" size="md" className="w-full" disabled={status === "loading"}>
-          搜索地点
-        </Button>
+        <p className="text-xs leading-5 text-muted-foreground">
+          输入后会自动搜索，也可按 Enter 立即搜索。
+        </p>
         {enableCurrentLocation && currentLocationPrivacyHint ? (
           <p className="text-xs leading-5 text-muted-foreground">{currentLocationPrivacyHint}</p>
         ) : null}
@@ -877,15 +876,16 @@ export function PlaceSearchCard({
                   {showResultSourceBadges ? (
                     <Badge variant="muted">{sourceLabels[result.source]}</Badge>
                   ) : null}
-                  <Badge variant={result.isVerified ? "success" : "warning"}>
-                    {result.isVerified ? "已验证" : "待验证"}
-                  </Badge>
+                  {result.isVerified ? <Badge variant="success">已校准</Badge> : null}
                 </span>
                 <span className="text-xs leading-5 text-muted-foreground">
                   {formatAddressAndCity(result)}
                 </span>
               </button>
             ))}
+            <p className="border-t border-border px-4 py-2 text-[11px] leading-5 text-muted-foreground">
+              选择地点后将按其坐标生成天气判断；普通地图地点无需额外验证。
+            </p>
           </div>
         ) : null}
       </div>
@@ -947,10 +947,7 @@ export function PlaceSearchCard({
 
       <div
         data-forecast-range-section="true"
-        className={cn(
-          "grid gap-3",
-          showForecastSectionDivider && "border-t border-border pt-4",
-        )}
+        className={cn("grid gap-3", showForecastSectionDivider && "border-t border-border pt-4")}
       >
         <div className="grid gap-2">
           <p className="text-sm font-semibold text-card-foreground">{horizonLabel}</p>
@@ -961,17 +958,7 @@ export function PlaceSearchCard({
           />
         </div>
 
-        {fixedTarget ? (
-          <div className="rounded-xl border border-border bg-muted p-4">
-            <p className="text-xs font-semibold text-muted-foreground">分析题材</p>
-            <p className="mt-1 text-sm font-bold text-card-foreground">
-              {forecastTargetLabels[fixedTarget]}
-            </p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              本页专注当前题材，结果页会优先呈现对应窗口和风险。
-            </p>
-          </div>
-        ) : showTargetSelector ? (
+        {!fixedTarget && showTargetSelector ? (
           <div className="grid gap-2">
             <p className="text-sm font-semibold text-card-foreground">分析目标</p>
             <div className="grid grid-cols-2 gap-2">
@@ -1005,6 +992,15 @@ export function PlaceSearchCard({
             <a className="ml-2 font-semibold text-primary hover:underline" href="/pricing">
               开通会员
             </a>
+          </div>
+        ) : null}
+
+        {autoPreviewEnabled && activeSelectedLocation && !fullAccessCtaLocked ? (
+          <div
+            className="rounded-xl border border-primary/20 bg-secondary px-4 py-3 text-xs leading-5 text-secondary-foreground"
+            data-auto-preview-status="ready"
+          >
+            快速预览会随地点和时间范围自动更新；下方按钮用于打开完整报告。
           </div>
         ) : null}
 

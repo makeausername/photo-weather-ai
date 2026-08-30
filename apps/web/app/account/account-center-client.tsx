@@ -297,11 +297,14 @@ function ContactBindingCard({
 }) {
   return (
     <Card className="p-5 shadow-sm sm:p-6">
-      <SectionTitle title="绑定方式" description="换绑邮箱或手机号时需要验证码和当前密码。" />
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      <CollapsibleSection
+        title="绑定方式"
+        description="需要换绑邮箱或手机号时再展开；操作需验证码和当前密码。"
+        bodyClassName="grid gap-4 lg:grid-cols-2"
+      >
         <EmailBindingForm session={session} onSessionUpdate={onSessionUpdate} />
         <PhoneBindingForm session={session} onSessionUpdate={onSessionUpdate} />
-      </div>
+      </CollapsibleSection>
     </Card>
   );
 }
@@ -313,10 +316,12 @@ function SecuritySettingsCard({
 }) {
   return (
     <Card className="p-5 shadow-sm sm:p-6">
-      <SectionTitle title="安全设置" description="修改密码会保留本设备登录，并撤销其他登录会话。" />
-      <div className="mt-4">
+      <CollapsibleSection
+        title="安全设置"
+        description="需要修改密码时再展开；完成后会保留本设备登录，并撤销其他登录会话。"
+      >
         <ChangePasswordForm onSessionUpdate={onSessionUpdate} />
-      </div>
+      </CollapsibleSection>
     </Card>
   );
 }
@@ -1269,12 +1274,13 @@ function HistoryRow({
 function DangerZoneCard({ onAccountDeleted }: { readonly onAccountDeleted?: () => void }) {
   return (
     <Card className="border-danger p-5 shadow-sm sm:p-6">
-      <SectionTitle
+      <CollapsibleSection
         title="注销账户"
         description="注销后账户会被停用，邮箱和手机号会从账户资料中移除。"
-        aside={<Badge variant="danger">危险操作</Badge>}
-      />
-      <DeleteAccountForm onAccountDeleted={onAccountDeleted} />
+        actions={<Badge variant="danger">危险操作</Badge>}
+      >
+        <DeleteAccountForm onAccountDeleted={onAccountDeleted} />
+      </CollapsibleSection>
     </Card>
   );
 }

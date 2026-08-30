@@ -41,13 +41,14 @@ export function SubjectControlPanel({
         badgeLabel={null}
         defaultHorizon={config.defaultHorizon}
         fixedTarget={config.target}
-        ctaLabel={config.ctaLabel}
+        ctaLabel={subjectReportCtaLabel(config.target)}
         selectedLocationDetailMode="compact"
         showSelectedLocationActions
         showSelectedLocationHorizon
         showQuickLocations={false}
         showForecastSectionDivider={false}
         enableCurrentLocation
+        autoPreviewEnabled
         currentLocationPrivacyHint={config.currentLocationPrivacyHint}
         requiresFullAccess
         lockExtendedHorizonsForFree
@@ -57,4 +58,17 @@ export function SubjectControlPanel({
       />
     </aside>
   );
+}
+
+function subjectReportCtaLabel(target: ForecastTarget): string {
+  if (target === "cloud_sea") {
+    return "查看完整云海报告 →";
+  }
+  if (target === "glow") {
+    return "查看完整霞光报告 →";
+  }
+  if (target === "astro") {
+    return "查看完整星空报告 →";
+  }
+  return "查看完整报告 →";
 }

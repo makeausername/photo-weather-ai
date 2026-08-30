@@ -40,6 +40,10 @@ import {
 import {
   buildForecastRequestPayload,
   buildForecastUrlFromSelectedLocation,
+  forgetRecentSelectedLocation,
+  parseRecentSelectedLocation,
+  readRecentSelectedLocation,
+  rememberRecentSelectedLocation,
   selectedLocationFromBrowserGeolocation,
   selectedLocationFromSearchResult,
 } from "../components/selected-location";
@@ -547,7 +551,7 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("未来48小时");
     expect(html).toContain("未来72小时");
     expect(html).toContain("未来7天");
-    expect(html).toContain("请先选择地点");
+    expect(html).toContain("选择地点后查看完整报告");
     expect(html).toContain(homepageTargetHelperText);
     expect(html).not.toContain("分析目标");
     expect(html).not.toContain("查看拍摄天气分析");
@@ -614,10 +618,11 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("浏览器定位仅用于本次天气判断，不会公开显示。");
   });
 
-  it("keeps manual search submit available with the embedded locator layout", () => {
+  it("uses automatic place search with Enter as an explicit shortcut", () => {
     const html = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
 
-    expect(html).toMatch(/<button[^>]*type="submit"[^>]*>搜索地点<\/button>/);
+    expect(html).not.toMatch(/<button[^>]*type="submit"/);
+    expect(html).toContain("输入后会自动搜索，也可按 Enter 立即搜索。");
     expect(html).toContain('aria-label="目的地"');
     expect(html).toContain('data-current-location-button="true"');
   });
@@ -720,9 +725,10 @@ describe("homepage forecast flow", () => {
       }),
     );
 
-    expect(emptyHtml).toContain("请先选择地点");
+    expect(emptyHtml).toContain("选择地点后查看完整报告");
     expect(emptyHtml).toContain("disabled");
-    expect(selectedHtml).toContain("生成拍摄判断");
+    expect(selectedHtml).toContain("查看完整综合报告");
+    expect(selectedHtml).toContain("快速预览会随地点和时间范围自动更新");
     expect(selectedHtml).toContain('value="黄山光明顶"');
     expect(selectedHtml).toContain('data-selected-location-card="true"');
     expect(selectedHtml).toContain('data-forecast-range-section="true"');
@@ -732,7 +738,7 @@ describe("homepage forecast flow", () => {
     expect(selectedHtml).toContain("更换地点");
     expect(selectedHtml).toContain("清除选择");
     expect(selectedHtml).toContain("未来48小时");
-    expect(selectedHtml).not.toContain("请先选择地点");
+    expect(selectedHtml).not.toContain("选择地点后查看完整报告");
     expect(selectedHtml).not.toContain("常用机位");
     expect(selectedHtml).not.toContain('data-place-search-results="true"');
     expect(selectedHtml).not.toContain("高德地图");
@@ -777,8 +783,25 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("黄浦区");
     expect(html).toContain("上海市 / 上海市 / 黄浦区");
     expect(html).toContain("海拔将在生成判断时补全");
-    expect(html).toContain("生成拍摄判断");
-    expect(html).not.toContain("请先选择地点");
+    expect(html).toContain("查看完整综合报告");
+    expect(html).not.toContain("选择地点后查看完整报告");
+  });
+
+  it("persists a validated recent location for seamless scenario switching", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    };
+    const location = selectedLocationFromSearchResult(samplePlace);
+
+    rememberRecentSelectedLocation(location, storage);
+    expect(readRecentSelectedLocation(storage)).toEqual(location);
+    expect(parseRecentSelectedLocation("{}")).toBeNull();
+
+    forgetRecentSelectedLocation(storage);
+    expect(readRecentSelectedLocation(storage)).toBeNull();
   });
 
   it("sends current-location forecasts with WGS84 coordinates and without a spot id", () => {
@@ -933,9 +956,7 @@ describe("homepage forecast flow", () => {
   it("keeps public homepage copy product-friendly", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
 
-    expect(html).toContain(
-      "选择地点和预报范围，查看云层、光线、风、能见度与降水风险。",
-    );
+    expect(html).toContain("选择地点和预报范围，查看云层、光线、风、能见度与降水风险。");
     expect(html).toContain("拍摄前先看这六项");
     expect(html).toContain("地点与窗口");
     expect(html).not.toContain("云海判断需要关注什么");
