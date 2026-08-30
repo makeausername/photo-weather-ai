@@ -25,6 +25,8 @@ import {
   ForecastResultView,
   GlowResultPage,
   SourceDiagnosticsPanel,
+  buildAstroHourlyTimelineNightOptions,
+  filterProfessionalRowsForAstroNight,
   professionalHourlySignalDisplayForTarget,
   providerDiagnosticText,
   resolveForecastPageMode,
@@ -6763,6 +6765,10 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.overallRecommendation.preferredTarget).toBe("晚霞");
     expect(viewModel.overallRecommendation.preferredDate).toContain("2026年5月20日");
     expect(viewModel.overallRecommendation.arrivalAdvice).not.toContain("04:");
+    const riskDetail = viewModel.coreCards.find((card) => card.key === "glow-main-action")?.detail;
+    expect(riskDetail).toContain("晚霞：");
+    expect(riskDetail).not.toContain("朝霞：");
+    expect(riskDetail).not.toMatch(/。；|；。|。。/u);
     expect(today?.sunset.lifecycle).toBe("upcoming");
     expect(today?.sunset.probabilityPercent).toBeGreaterThan(0);
     expect(today?.preferredTarget).toBe("晚霞");
@@ -6863,6 +6869,13 @@ describe("forecast result target-aware view model", () => {
 
     const viewModel = buildGlowForecastViewModel(result);
     const today = viewModel.dailyOpportunities[0];
+    const html = renderToStaticMarkup(
+      React.createElement(GlowResultPage, {
+        query: queryForTarget("glow"),
+        result,
+        viewModel,
+      }),
+    );
 
     expect(today?.sunset.lifecycle).toBe("upcoming");
     expect(today?.sunset.probabilityPercent).toBe(0);
@@ -6871,6 +6884,42 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.overallRecommendation.preferredWindow).toContain("17:56");
     expect(today?.sunrise.probabilityDisplay).toBe("已结束");
     expect(today?.sunrise.probabilityPercent).toBeUndefined();
+    expect(html).toContain("预测概率 0%");
+    expect(html).toContain("若形成，潜在鲜艳度：");
+    expect(html).not.toMatch(/>鲜艳度：[^<]+<\/p>/u);
+  });
+
+  it("collapses equal daily temperature and body-feel bounds to one value", () => {
+    const base = resultForTarget("general");
+    const result: ForecastCalculationResult = {
+      ...base,
+      dailySummaries: base.dailySummaries.map((summary, index) =>
+        index === 0
+          ? {
+              ...summary,
+              weather: {
+                ...summary.weather!,
+                tempMin: 24,
+                tempMax: 24,
+                feelsLikeMin: 24,
+                feelsLikeMax: 24,
+                mountainFeelsLikeMin: 24,
+                mountainFeelsLikeMax: 24,
+              },
+            }
+          : summary,
+      ),
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel: buildForecastResultViewModel(result, "general"),
+      }),
+    );
+
+    expect(html).toContain("24°C");
+    expect(html).not.toContain("24-24°C");
   });
 
   it("keeps fully ended daily glow dates while falling back overall to the next future date", () => {
@@ -7370,7 +7419,8 @@ describe("forecast result target-aware view model", () => {
     expect(expandedAstroHtml).not.toContain('data-cloud-sea-hourly-preview="true"');
     expect(expandedAstroHtml).not.toContain('data-testid="cloud-layer-coverage-note"');
     expect(collapsedGlowHtml).toContain('data-testid="cloud-layer-coverage-note"');
-    expect(collapsedGlowHtml).toContain("分层覆盖说明测试");
+    expect(collapsedGlowHtml).toContain("当前展示范围字段覆盖");
+    expect(collapsedGlowHtml).not.toContain("分层覆盖说明测试");
     expect(collapsedGlowHtml).toContain('data-cloud-sea-hourly-preview="true"');
     expect(collapsedGlowHtml).toContain("默认显示关键夜拍小时摘要");
   });
@@ -7884,6 +7934,24 @@ describe("forecast result target-aware view model", () => {
       expect(html).not.toContain("data-professional-hourly-date-group");
     },
   );
+
+  it("limits the 7-day astro trend to one selectable astronomical night", () => {
+    const result = resultWithAstroHourlyRange("7d", 168);
+    const viewModel = buildAstroForecastViewModel(result);
+    const options = buildAstroHourlyTimelineNightOptions(viewModel);
+
+    expect(options).toHaveLength(7);
+    expect(options.filter((option) => option.recommended)).toHaveLength(1);
+    for (const option of options) {
+      const rows = filterProfessionalRowsForAstroNight(
+        viewModel.professionalHourlyData.rows,
+        option,
+      );
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.length).toBeLessThanOrEqual(13);
+      expect(rows.length).toBeLessThan(viewModel.professionalHourlyData.rows.length);
+    }
+  });
 
   it("highlights sunrise and sunset daily slots without a duplicate hourly section", () => {
     const result = resultWithGlowHourlyRange("24h", 24);

@@ -547,9 +547,19 @@ function buildScoreExplanation(input: {
   readonly finalCloudSeaScore: number;
   readonly capReasons: readonly string[];
 }): string {
+  const conciseCapReasons = input.capReasons
+    .slice(0, 3)
+    .map(stripTerminalPunctuation)
+    .filter(Boolean);
   const capText =
-    input.capReasons.length > 0 ? `限制因素：${input.capReasons.slice(0, 3).join("、")}。` : "未触发主要封顶规则。";
+    conciseCapReasons.length > 0
+      ? `限制因素：${conciseCapReasons.join("、")}。`
+      : "未触发主要封顶规则。";
   return `形成 ${input.rawFormationScore} -> ${input.calibratedFormationScore} 分，可拍 ${input.rawShootabilityScore} -> ${input.calibratedShootabilityScore} 分，最终 ${input.finalCloudSeaScore} 分。${capText}`;
+}
+
+function stripTerminalPunctuation(value: string): string {
+  return value.trim().replace(/[。！？!?；;，,、]+$/u, "");
 }
 
 function buildRecommendationExplanation(input: {
@@ -561,7 +571,7 @@ function buildRecommendationExplanation(input: {
   if (input.formationScore >= 70 && input.shouldBlockStrongRecommendation) {
     const reason =
       input.capReasons[0] ?? "可拍窗口和开口稳定性不足";
-    return `云海形成条件较好，但${reason.replace(/。$/, "")}，因此谨慎参考。`;
+    return `云海形成条件较好，但${stripTerminalPunctuation(reason)}，因此谨慎参考。`;
   }
   if (input.finalCloudSeaScore >= 86) {
     return "形成、开口、能见度和风险信号同时支持，可作为强推荐窗口，但出发前仍需复核短临天气。";

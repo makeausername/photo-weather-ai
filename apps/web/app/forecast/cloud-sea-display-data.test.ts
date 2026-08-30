@@ -20,6 +20,23 @@ const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
 describe("Cloud Sea display data rolling horizon", () => {
+  it("keeps the target score card on the calibrated Cloud Sea scale", () => {
+    const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
+    const result: ForecastCalculationResult = {
+      ...fixture.result,
+      finalScore: 22,
+      cloudSeaAnalysis: {
+        ...fixture.result.cloudSeaAnalysis,
+        scoreCalibration: {
+          ...fixture.result.cloudSeaAnalysis.scoreCalibration,
+          finalCloudSeaScore: 44,
+        },
+      },
+    };
+
+    expect(buildCloudSeaForecastViewModel(result).displayData.scoreCard.score).toBe(44);
+  });
+
   it("surfaces score calibration caps in score card, window card, action plan,", () => {
     const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
     const capReason = "厚实多层云覆盖下开口稳定性不足，最终分数不按近满分处理。";
@@ -414,6 +431,7 @@ describe("Cloud Sea display data rolling horizon", () => {
         horizonHours: 24,
         expectedRowCount: 24,
         requestedHours: 24,
+        professionalCoverageNoteZh: "原始服务商字段覆盖 54 / 72 小时。",
         fieldCoverageSummary: {
           totalHours: 48,
           totalCloudCoverage: 48,
@@ -445,6 +463,8 @@ describe("Cloud Sea display data rolling horizon", () => {
       cloudMidCoverage: 24,
       cloudHighCoverage: 24,
     });
+    expect(display.timeBasis?.professionalCoverageNoteZh).toContain("24/24");
+    expect(JSON.stringify(display)).not.toContain("54 / 72");
   });
 });
 

@@ -14,7 +14,7 @@ const defaultSuccessCacheTtlMs = 5 * 60 * 1000;
 const defaultStaleCacheTtlMs = 30 * 60 * 1000;
 const forecastCacheVersion = 2 as const;
 const sessionCachePrefix = `photo_weather_forecast_calculation:v${forecastCacheVersion}:`;
-const maxSessionCachePayloadChars = 450_000;
+const maxSessionCachePayloadChars = 2_000_000;
 
 export const forecastCalculationTransientFailureMessage =
   "本次分析请求超时或上游数据暂时不可用，已自动重试但仍未成功。可以直接重新分析，通常不需要重新选择地点。";
@@ -321,7 +321,11 @@ export function normalizeForecastClientError(error: unknown): ForecastRequestErr
 }
 
 function isFrontendForecastCacheable(query: ForecastCalculationRequestInput): boolean {
-  return query.target === "general" && query.horizon === "24h";
+  // The query key includes target, horizon, coordinates, start time and auth
+  // scope, so all successful forecast modes can safely reuse an exact result
+  // for the short freshness window. This is especially valuable for 7-day
+  // professional analyses when users revisit a result tab or reload the page.
+  return ["general", "cloud_sea", "glow", "astro"].includes(query.target);
 }
 
 function readCachedForecastResult(

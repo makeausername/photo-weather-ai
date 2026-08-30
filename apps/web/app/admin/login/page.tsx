@@ -2,10 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { sanitizeAuthErrorMessage } from "../../../components/auth-errors";
 import { Button, Card, FormField, Input } from "../../../components/ui";
-import { clearAdminSession, loginAdmin, sessionHasAdminAccess } from "../admin-api";
+import {
+  clearAdminSession,
+  getCurrentAdmin,
+  getStoredAdminTokens,
+  loginAdmin,
+  sessionHasAdminAccess,
+} from "../admin-api";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -13,6 +19,24 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!getStoredAdminTokens()) {
+      return;
+    }
+    let active = true;
+    void getCurrentAdmin()
+      .then((session) => {
+        if (active && sessionHasAdminAccess(session)) {
+          const returnTo = new URLSearchParams(window.location.search).get("returnTo");
+          router.replace(returnTo?.startsWith("/admin") ? returnTo : "/admin");
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

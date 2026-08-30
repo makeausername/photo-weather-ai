@@ -1341,7 +1341,7 @@ function dailyTemperatureRangeText(
 
   const temperature =
     typeof weather.tempMin === "number" && typeof weather.tempMax === "number"
-      ? `${Math.round(weather.tempMin)}-${Math.round(weather.tempMax)}°C`
+      ? formatTemperatureRange([weather.tempMin, weather.tempMax])
       : formatTemperature(averagePair(weather.tempMin, weather.tempMax));
   const feelsLikeMin = weather.mountainFeelsLikeMin ?? weather.feelsLikeMin;
   const feelsLikeMax = weather.mountainFeelsLikeMax ?? weather.feelsLikeMax;
@@ -1352,7 +1352,7 @@ function dailyTemperatureRangeText(
       : "体感温度";
   const feelsLike =
     typeof feelsLikeMin === "number" && typeof feelsLikeMax === "number"
-      ? `${feelsLikeLabel} ${Math.round(feelsLikeMin)}-${Math.round(feelsLikeMax)}°C`
+      ? `${feelsLikeLabel} ${formatTemperatureRange([feelsLikeMin, feelsLikeMax])}`
       : `${feelsLikeLabel} ${formatTemperature(averagePair(feelsLikeMin, feelsLikeMax))}`;
 
   return `${prefix}：${temperature}｜${feelsLike}｜${temperatureCorrectionText(weather, result)}`;
@@ -2394,14 +2394,7 @@ export function AstroResultPage({
               eyebrow: "看趋势",
               deferUntilActive: true,
               content: (
-                <HourlyWeatherTimeline
-                  points={buildHourlyTimelinePoints(
-                    viewModel.professionalHourlyData.rows,
-                    viewModel.professionalHourlyData.timeBasis?.timezone ?? "Asia/Shanghai",
-                  )}
-                  title="星空逐小时天气趋势"
-                  description="对照夜间云量、降水、气温与露点，先锁定云量下降且温露差稳定的时段。"
-                />
+                <AstroHourlyTimelinePanel viewModel={viewModel} />
               ),
             },
             {
@@ -3496,7 +3489,7 @@ function GlowDailyPhaseStat({
         {hasProbability ? `预测概率 ${slot.probabilityDisplay}` : slot.probabilityDisplay}
       </p>
       <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
-        鲜艳度：{slot.vividnessDisplay}
+        若形成，潜在鲜艳度：{slot.vividnessDisplay}
       </p>
       <p className="mt-2 break-words text-xs leading-5 text-muted-foreground">
         最佳时间：{slot.timeLabel}
@@ -4641,7 +4634,7 @@ function cloudSeaWindowHasLayerRoleRedirect(item: CloudSeaWindowItem): boolean {
 }
 
 type ProfessionalHourlyFilterMode = "all" | "cloudSea" | "morning" | "rain" | "risk";
-type ProfessionalHourlyRow = NonNullable<
+export type ProfessionalHourlyRow = NonNullable<
   ForecastCalculationResult["professionalHourlyData"]
 >[number];
 type CloudSeaAnalysisWindowLike = CloudSeaProfessionalHourlyWindow;
@@ -7137,6 +7130,164 @@ function buildHourlyTimelinePoints(
         : null,
       isNight: Number.isFinite(hour) ? hour < 6 || hour >= 18 : false,
     };
+  });
+}
+
+function AstroHourlyTimelinePanel({
+  viewModel,
+}: {
+  readonly viewModel: AstroForecastViewModel;
+}) {
+  const timezone = viewModel.professionalHourlyData.timeBasis?.timezone ?? "Asia/Shanghai";
+  const nightOptions = useMemo(
+    () => buildAstroHourlyTimelineNightOptions(viewModel),
+    [viewModel.bestNight?.nightKey, viewModel.nightlyCards],
+  );
+  const defaultNightKey =
+    nightOptions.find((option) => option.recommended)?.key ?? nightOptions[0]?.key ?? "";
+  const [selectedNightKey, setSelectedNightKey] = useState(defaultNightKey);
+  const selectedNight =
+    nightOptions.find((option) => option.key === selectedNightKey) ?? nightOptions[0];
+
+  useEffect(() => {
+    if (selectedNight && selectedNight.key !== selectedNightKey) {
+      setSelectedNightKey(selectedNight.key);
+    }
+  }, [selectedNight, selectedNightKey]);
+
+  if (!selectedNight) {
+    return (
+      <HourlyWeatherTimeline
+        points={buildHourlyTimelinePoints(viewModel.professionalHourlyData.rows, timezone)}
+        title="星空逐小时天气趋势"
+        description="对照夜间云量、降水、气温与露点；完整小时数据可在专业数据中展开。"
+      />
+    );
+  }
+
+  const selectedRows = filterProfessionalRowsForAstroNight(
+    viewModel.professionalHourlyData.rows,
+    selectedNight,
+  );
+  const rows = selectedRows.length > 0 ? selectedRows : viewModel.professionalHourlyData.rows;
+
+  return (
+    <HourlyWeatherTimeline
+      points={buildHourlyTimelinePoints(rows, timezone)}
+      title={`${selectedNight.label} 星空天气趋势`}
+      description="一次聚焦一个天文夜，避免把 7 天、168 小时压缩在同一张图；完整小时数据仍保留在专业数据表。"
+      controls={
+        <div
+          className="flex max-w-full gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]"
+          aria-label="选择星空趋势夜晚"
+          role="group"
+        >
+          {nightOptions.map((option) => {
+            const selected = option.key === selectedNight.key;
+            return (
+              <button
+                key={option.key}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => setSelectedNightKey(option.key)}
+                className={cn(
+                  "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                  selected
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-card text-muted-foreground hover:border-primary hover:text-foreground",
+                )}
+              >
+                {option.label}
+                {option.recommended ? " · 推荐" : ""}
+              </button>
+            );
+          })}
+        </div>
+      }
+    />
+  );
+}
+
+export type AstroHourlyTimelineNightOption = {
+  readonly key: string;
+  readonly label: string;
+  readonly startAt: string;
+  readonly endAt: string;
+  readonly recommended: boolean;
+};
+
+export function buildAstroHourlyTimelineNightOptions(
+  viewModel: AstroForecastViewModel,
+): readonly AstroHourlyTimelineNightOption[] {
+  const timezone = viewModel.professionalHourlyData.timeBasis?.timezone ?? "Asia/Shanghai";
+  return viewModel.nightlyCards
+    .map((night) => {
+      const fallbackRows = professionalRowsForLocalNight(
+        viewModel.professionalHourlyData.rows,
+        night.localEveningDate,
+        timezone,
+      );
+      const startAt = night.astronomicalNight.startAt ?? fallbackRows[0]?.time;
+      const endAt = night.astronomicalNight.endAt ?? fallbackRows.at(-1)?.time;
+      return startAt && endAt
+        ? {
+            key: night.nightKey,
+            label: `${night.localEveningDateLabel} ${night.weekdayLabel}`,
+            startAt,
+            endAt,
+            recommended: night.nightKey === viewModel.bestNight?.nightKey,
+          }
+        : null;
+    })
+    .filter((option): option is AstroHourlyTimelineNightOption => option !== null);
+}
+
+function professionalRowsForLocalNight(
+  rows: readonly ProfessionalHourlyRow[],
+  localEveningDate: string,
+  timezone: string,
+): readonly ProfessionalHourlyRow[] {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  });
+  return rows.filter((row) => {
+    const timestamp = Date.parse(row.time);
+    if (!Number.isFinite(timestamp)) {
+      return false;
+    }
+    const parts = formatter.formatToParts(new Date(timestamp));
+    const numberPart = (type: Intl.DateTimeFormatPartTypes) =>
+      Number(parts.find((part) => part.type === type)?.value);
+    const year = numberPart("year");
+    const month = numberPart("month");
+    const day = numberPart("day");
+    const hour = numberPart("hour");
+    if (![year, month, day, hour].every(Number.isFinite) || (hour > 6 && hour < 18)) {
+      return false;
+    }
+    const dateTimestamp = Date.UTC(year, month - 1, day);
+    const eveningTimestamp = hour <= 6 ? dateTimestamp - 24 * 60 * 60 * 1000 : dateTimestamp;
+    return new Date(eveningTimestamp).toISOString().slice(0, 10) === localEveningDate;
+  });
+}
+
+export function filterProfessionalRowsForAstroNight(
+  rows: readonly ProfessionalHourlyRow[],
+  night: Pick<AstroHourlyTimelineNightOption, "startAt" | "endAt">,
+): readonly ProfessionalHourlyRow[] {
+  const startTimestamp = Date.parse(night.startAt);
+  const endTimestamp = Date.parse(night.endAt);
+  if (!Number.isFinite(startTimestamp) || !Number.isFinite(endTimestamp)) {
+    return [];
+  }
+  return rows.filter((row) => {
+    const timestamp = Date.parse(row.time);
+    return Number.isFinite(timestamp) && timestamp >= startTimestamp && timestamp <= endTimestamp;
   });
 }
 

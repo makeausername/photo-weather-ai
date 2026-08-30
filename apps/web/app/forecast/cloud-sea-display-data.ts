@@ -272,7 +272,9 @@ export function buildCloudSeaDisplayData(
   const finalRecommendationLabel =
     input.result.finalRecommendationLabel ?? input.header.recommendationLabel;
   const finalDecisionSummary = input.result.finalDecisionSummaryZh ?? input.scoreCardSummary;
-  const finalScore = input.result.finalScore ?? input.result.cloudSeaAnalysis.shootableScore;
+  // This card is explicitly the Cloud Sea score. Keep it on the calibrated
+  // target scale instead of mixing in the cross-target/global score.
+  const finalScore = input.result.cloudSeaAnalysis.scoreCalibration.finalCloudSeaScore;
   const recommendationCards = applyImportantWindowRecommendationLabels(
     input.recommendationCards,
     importantWindows,
@@ -938,6 +940,9 @@ function buildDisplayProfessionalHourlyTimeBasis(
     rows.length < horizonWindow.expectedRowCount
       ? "当前数据源返回的未来小时数不足，已展示可用未来时段。"
       : null;
+  const hadProviderCoverageNote = Boolean(
+    timeBasis.professionalCoverageNoteZh ?? timeBasis.userFacingCoverageNoteZh,
+  );
 
   return {
     ...timeBasis,
@@ -965,12 +970,23 @@ function buildDisplayProfessionalHourlyTimeBasis(
     debugMeta: horizonWindow.debugMeta,
     partialData,
     missingDataNoteZh: shortCoverageNote ?? timeBasis.missingDataNoteZh,
-    professionalCoverageNoteZh:
-      timeBasis.professionalCoverageNoteZh ?? shortCoverageNote ?? undefined,
+    // Provider notes describe the raw response window and can contradict the
+    // selected display horizon after clipping. Only expose the recomputed
+    // display-window coverage note here.
+    professionalCoverageNoteZh: hadProviderCoverageNote
+      ? [shortCoverageNote, buildDisplayProfessionalCoverageNote(rows)].filter(Boolean).join(" ")
+      : shortCoverageNote ?? undefined,
     fieldCoverageSummary: timeBasis.fieldCoverageSummary
       ? buildDisplayFieldCoverageSummary(rows)
       : timeBasis.fieldCoverageSummary,
   };
+}
+
+function buildDisplayProfessionalCoverageNote(
+  rows: readonly ProfessionalHourlyDataPoint[],
+): string {
+  const summary = buildDisplayFieldCoverageSummary(rows);
+  return `当前展示范围字段覆盖：总云量 ${summary.totalCloudCoverage}/${summary.totalHours}，低云 ${summary.cloudLowCoverage}/${summary.totalHours}，中云 ${summary.cloudMidCoverage}/${summary.totalHours}，高云 ${summary.cloudHighCoverage}/${summary.totalHours} 小时。`;
 }
 
 function buildDisplayFieldCoverageSummary(

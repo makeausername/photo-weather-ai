@@ -178,6 +178,8 @@ describe("buildCloudSeaScoreCalibrationContext", () => {
     expect(result.confidenceLevel).toBe("low");
     expect(result.capReasons.join(" ")).toContain("云层分层缺失");
     expect(result.capReasons.join(" ")).toContain("多源");
+    expect(result.scoreExplanationZh).not.toMatch(/。。|。、|。；|；。/u);
+    expect(result.scoreExplanationZh).toMatch(/限制因素：.+。$/u);
   });
 
   it("is field-driven and stable across arbitrary dates for the same weather inputs", () => {

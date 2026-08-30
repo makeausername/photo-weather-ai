@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   confirmRegisterPublicAccount,
   getCaptchaPublicConfig,
+  getCurrentAccountSession,
   sendRegisterVerificationCode,
   type CaptchaPublicConfig,
   type RegisterVerificationChannel,
@@ -138,6 +139,18 @@ export function RegisterForm({ returnTo = null }: { readonly returnTo?: string |
       }),
     [code, confirmPassword, isSubmitting, password, targetIsValid],
   );
+
+  useEffect(() => {
+    let active = true;
+    void getCurrentAccountSession().then((session) => {
+      if (active && session) {
+        router.replace(safeReturnTo ?? "/account");
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [router, safeReturnTo]);
 
   useEffect(() => {
     let active = true;

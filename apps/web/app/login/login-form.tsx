@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { sanitizeAuthErrorMessage } from "../../components/auth-errors";
 import {
   getCaptchaPublicConfig,
+  getCurrentAccountSession,
   loginPublicAccountBySms,
   loginPublicAccount,
   sendLoginSmsCode,
@@ -84,6 +85,18 @@ export function LoginForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSendingSmsCode, setIsSendingSmsCode] = useState(false);
   const [captchaConfig, setCaptchaConfig] = useState<CaptchaPublicConfig | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getCurrentAccountSession().then((session) => {
+      if (active && session) {
+        router.replace(safeReturnTo ?? "/account");
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [router, safeReturnTo]);
 
   useEffect(() => {
     let active = true;
