@@ -100,7 +100,7 @@ import {
   ResultMeter,
   type ResultMeterTone,
 } from "./result-dashboard-components";
-import { ResultDisclosure, ResultViewTabs } from "./result-experience-controls";
+import { ResultViewTabs } from "./result-experience-controls";
 import type { HourlyTimelinePoint } from "./hourly-weather-timeline";
 import {
   isForecastRequestAbortError,
@@ -2076,30 +2076,17 @@ export function CloudSeaResultPage({
               {
                 value: "overview",
                 label: "概览",
-                eyebrow: "先做决定",
+                eyebrow: "核心结论",
                 content: (
                   <div className="grid min-w-0 max-w-full gap-4">
                     <CloudSeaMetricCards cards={viewModel.displayData.recommendationCards} />
-                    <ResultDisclosure
-                      items={[
-                        {
-                          value: "weather",
-                          label: "查看当前天气与窗口细节",
-                          description: "按需复核近时段天气、光线窗口和备选题材。",
-                          content: (
-                            <div className="grid gap-4">
-                              <CloudSeaNearTermWeatherSection
-                                display={viewModel.displayData.currentNearTermWeather}
-                              />
-                              <CloudSeaWindowCardsSection
-                                windows={viewModel.displayData.cloudSeaWindowCards}
-                                terrainContext={viewModel.terrainContext}
-                                travelDecision={travelDecision}
-                              />
-                            </div>
-                          ),
-                        },
-                      ]}
+                    <CloudSeaNearTermWeatherSection
+                      display={viewModel.displayData.currentNearTermWeather}
+                    />
+                    <CloudSeaWindowCardsSection
+                      windows={viewModel.displayData.cloudSeaWindowCards}
+                      terrainContext={viewModel.terrainContext}
+                      travelDecision={travelDecision}
                     />
                     {returnUrl ? <CloudSeaReturnLink href={returnUrl} /> : null}
                   </div>
@@ -2125,25 +2112,12 @@ export function CloudSeaResultPage({
               {
                 value: "details",
                 label: "依据与数据",
-                eyebrow: "按需复核",
+                eyebrow: "完整数据",
                 content: (
-                  <ResultDisclosure
-                    defaultValue={["decision"]}
-                    items={[
-                      {
-                        value: "decision",
-                        label: "判断依据与行动建议",
-                        description: "查看出发方案、主要风险和备选动作。",
-                        content: <CloudSeaDecisionSupportSection viewModel={viewModel} />,
-                      },
-                      {
-                        value: "professional",
-                        label: "专业小时数据",
-                        description: "逐小时复核云层、湿度、露点、降水、能见度和风。",
-                        content: <CloudSeaProfessionalDataSection viewModel={viewModel} />,
-                      },
-                    ]}
-                  />
+                  <div className="grid min-w-0 gap-4">
+                    <CloudSeaDecisionSupportSection viewModel={viewModel} />
+                    <CloudSeaProfessionalDataSection viewModel={viewModel} />
+                  </div>
                 ),
               },
             ]}
@@ -2235,9 +2209,9 @@ function CloudSeaDecisionSupportSection({
     >
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="text-base font-bold text-card-foreground">判断依据与行动建议</h2>
+          <h2 className="text-base font-bold text-card-foreground">出发行动与风险</h2>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-            汇总当前判断、出发方案和风险复核；专业小时数据在下方单独查看。
+            出发安排、主要风险、备选题材和现场检查。
           </p>
         </div>
       </div>
@@ -2335,23 +2309,14 @@ export function GlowResultPage({
             {
               value: "overview",
               label: "概览",
-              eyebrow: "先做决定",
+              eyebrow: "核心结论",
               content: (
                 <section
                   className="GlowWindowDecision glow-window-decision grid gap-4"
                   data-glow-section="GlowWindowDecision"
                 >
                   <GlowMetricCards cards={viewModel.coreCards} />
-                  <ResultDisclosure
-                    items={[
-                      {
-                        value: "environment",
-                        label: "查看环境与近时段天气",
-                        description: "按需复核云层载体、通透度、气溶胶和地平线遮挡。",
-                        content: <GlowNearTermWeatherSection viewModel={viewModel} />,
-                      },
-                    ]}
-                  />
+                  <GlowNearTermWeatherSection viewModel={viewModel} />
                 </section>
               ),
             },
@@ -2364,25 +2329,12 @@ export function GlowResultPage({
             {
               value: "details",
               label: "依据与数据",
-              eyebrow: "按需复核",
+              eyebrow: "完整数据",
               content: (
-                <ResultDisclosure
-                  defaultValue={["decision"]}
-                  items={[
-                    {
-                      value: "decision",
-                      label: "霞光判断与拍摄行动",
-                      description: "汇总判断依据、风险与备选窗口。",
-                      content: <GlowDecisionSupportSection viewModel={viewModel} />,
-                    },
-                    {
-                      value: "professional",
-                      label: "专业小时数据",
-                      description: "展开查看云层、能见度、湿度、降水和风。",
-                      content: <GlowProfessionalDataSection viewModel={viewModel} />,
-                    },
-                  ]}
-                />
+                <div className="grid min-w-0 gap-4">
+                  <GlowDecisionSupportSection viewModel={viewModel} />
+                  <GlowProfessionalDataSection viewModel={viewModel} />
+                </div>
               ),
             },
           ]}
@@ -2418,7 +2370,7 @@ export function AstroResultPage({
             {
               value: "nights",
               label: "逐夜机会",
-              eyebrow: "优先选夜晚",
+              eyebrow: "选择夜晚",
               content: (
                 <AstroNightOpportunitySection
                   nights={viewModel.nightlyCards}
@@ -2429,14 +2381,14 @@ export function AstroResultPage({
             {
               value: "timeline",
               label: "逐小时",
-              eyebrow: "看趋势",
+              eyebrow: "天气趋势",
               deferUntilActive: true,
               content: <AstroHourlyTimelinePanel viewModel={viewModel} />,
             },
             {
               value: "details",
               label: "专业数据",
-              eyebrow: "按需复核",
+              eyebrow: "完整数据",
               content: (
                 <AstroProfessionalDataSection query={query} result={result} viewModel={viewModel} />
               ),
@@ -2458,8 +2410,18 @@ function AstroTopContext({
   readonly viewModel: AstroForecastViewModel;
 }) {
   const decision = viewModel.decisionSummary;
-  const primaryActionItems = viewModel.actionPlan.slice(0, 4);
-  const supportingActionItems = viewModel.actionPlan.slice(4);
+  const primaryDecisionFacts = [
+    {
+      key: "worth" as const,
+      semanticKey: "decision-worth" as const,
+      label: "是否值得去",
+      value: decision.recommendationLabel,
+      tone: decision.recommendationTone,
+    },
+    ...viewModel.publicDisplay.decisionFacts.filter((fact) =>
+      ["best-night", "best-window", "backup"].includes(fact.key),
+    ),
+  ].slice(0, 4);
 
   return (
     <section
@@ -2501,30 +2463,7 @@ function AstroTopContext({
             {decision.oneSentenceAdvice}
           </p>
 
-          <AstroActionPlanGrid items={primaryActionItems} />
-
-          <ResultDisclosure
-            items={[
-              {
-                value: "supporting-decision-facts",
-                label: "更多行动依据",
-                description: "查看备选夜晚、补充行动和生成依据。",
-                content: (
-                  <div className="grid gap-3">
-                    <AstroActionPlanGrid items={supportingActionItems} />
-                    <dl
-                      className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))]"
-                      data-astro-decision-first-metrics="true"
-                    >
-                      {viewModel.publicDisplay.decisionFacts.map((item) => (
-                        <AstroDecisionFact key={item.key} item={item} />
-                      ))}
-                    </dl>
-                  </div>
-                ),
-              },
-            ]}
-          />
+          <AstroActionPlanGrid items={primaryDecisionFacts} />
 
           <div className="flex flex-wrap gap-2" data-astro-public-factor-chips="true">
             {viewModel.publicDisplay.factorChips.map((chip) => (
@@ -2564,7 +2503,11 @@ function AstroTopContext({
   );
 }
 
-function AstroActionPlanGrid({ items }: { readonly items: AstroForecastViewModel["actionPlan"] }) {
+function AstroActionPlanGrid({
+  items,
+}: {
+  readonly items: AstroForecastViewModel["publicDisplay"]["decisionFacts"];
+}) {
   if (items.length === 0) {
     return null;
   }
@@ -2575,14 +2518,14 @@ function AstroActionPlanGrid({ items }: { readonly items: AstroForecastViewModel
       data-astro-action-plan="true"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-card-foreground">行动方案</h2>
-        <Badge variant="muted">出发前复核</Badge>
+        <h2 className="text-sm font-bold text-card-foreground">核心判断</h2>
+        <Badge variant="muted">一眼看懂</Badge>
       </div>
-      <dl className="mt-3 grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))]">
+      <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {items.map((item) => (
           <div
             key={item.key}
-            className="min-w-0 rounded-xl border border-border bg-card px-3 py-3"
+            className="min-w-0 rounded-xl border border-border bg-card px-2.5 py-3 sm:px-3"
             data-astro-action-plan-item={item.key}
           >
             <dt className="text-[11px] font-semibold leading-4 text-muted-foreground">
@@ -2590,43 +2533,21 @@ function AstroActionPlanGrid({ items }: { readonly items: AstroForecastViewModel
             </dt>
             <dd
               className={cn(
-                "mt-1 break-words text-sm font-bold leading-5",
+                "mt-1 break-words text-[13px] font-bold leading-5 sm:text-sm",
                 cardToneText(item.tone),
               )}
             >
               {item.value}
             </dd>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              {compactAstroText(item.detail, 42)}
-            </p>
+            {item.detail ? (
+              <p className="mt-1 hidden text-xs leading-5 text-muted-foreground sm:block">
+                {compactAstroText(item.detail, 42)}
+              </p>
+            ) : null}
           </div>
         ))}
       </dl>
     </section>
-  );
-}
-
-function AstroDecisionFact({
-  item,
-}: {
-  readonly item: AstroForecastViewModel["publicDisplay"]["decisionFacts"][number];
-}) {
-  return (
-    <div
-      className="min-w-0 rounded-xl border border-border bg-muted/70 px-3 py-3"
-      data-astro-decision-fact={item.key}
-      data-astro-semantic-key={item.semanticKey}
-    >
-      <dt className="text-[11px] font-semibold leading-4 text-muted-foreground">{item.label}</dt>
-      <dd className={cn("mt-1 break-words text-sm font-bold leading-5", cardToneText(item.tone))}>
-        {item.value}
-      </dd>
-      {item.detail ? (
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          {compactAstroText(item.detail, 64)}
-        </p>
-      ) : null}
-    </div>
   );
 }
 
@@ -2656,29 +2577,74 @@ function AstroNightOpportunitySection({
   readonly nights: AstroForecastViewModel["nightlyCards"];
   readonly horizon: ForecastCalculationResult["horizon"];
 }) {
+  const preferredNight =
+    nights.find((night) => night.recommendationLevel === "recommended") ??
+    nights.find((night) => night.recommendationLevel === "watch") ??
+    nights.find((night) => night.recommendationLevel === "backup") ??
+    nights.find((night) => Boolean(night.milkyWay.bestStartAt)) ??
+    nights[0];
+  const [selectedNightKey, setSelectedNightKey] = useState(preferredNight?.nightKey ?? "");
+  const selectedNight =
+    nights.find((night) => night.nightKey === selectedNightKey) ?? preferredNight;
+
+  useEffect(() => {
+    if (preferredNight && !nights.some((night) => night.nightKey === selectedNightKey)) {
+      setSelectedNightKey(preferredNight.nightKey);
+    }
+  }, [nights, preferredNight, selectedNightKey]);
+
+  if (!selectedNight) {
+    return <ResultUnavailablePanel message="当前范围内没有可用的逐夜数据。" />;
+  }
+
   return (
     <section className="grid gap-3" data-astro-section="AstroNightOpportunitySection">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-card-foreground">逐夜星空银河机会</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            按本地观测夜比较月相、天文黑夜、银河窗口、天气覆盖和是否推荐拍摄。
+            先选夜晚，再查看银河窗口、月光和天气阻碍。
           </p>
         </div>
         <Badge variant="muted">{forecastHorizonLabels[horizon]}</Badge>
       </div>
       <div
-        className="grid gap-3 min-[980px]:grid-cols-2"
+        className="flex max-w-full gap-2 overflow-x-auto pb-1"
+        aria-label="选择观测夜晚"
+        data-astro-night-selector="true"
         data-astro-night-grid-odd={nights.length % 2 === 1 ? "true" : "false"}
       >
-        {nights.map((night, index) => (
-          <AstroNightCard
-            key={night.nightKey}
-            night={night}
-            isLastOdd={nights.length % 2 === 1 && index === nights.length - 1}
-          />
-        ))}
+        {nights.map((night) => {
+          const selected = night.nightKey === selectedNight.nightKey;
+          return (
+            <button
+              key={night.nightKey}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => setSelectedNightKey(night.nightKey)}
+              className={cn(
+                "grid min-h-16 w-[clamp(108px,30vw,132px)] flex-none content-center gap-1 rounded-xl border px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                selected
+                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                  : "border-border bg-card text-card-foreground hover:border-primary/50 hover:bg-secondary",
+              )}
+              data-astro-night-selector-item={night.nightKey}
+              data-astro-night-recommendation-level={night.recommendationLevel}
+              data-astro-night-coverage={night.horizonCoverageState}
+            >
+              <span className="text-xs font-bold">
+                {night.localEveningDateLabel.replace(/^\d{4}年/, "")}
+              </span>
+              <span
+                className={cn("text-[11px]", selected ? "opacity-85" : "text-muted-foreground")}
+              >
+                {night.recommendationLabel}
+              </span>
+            </button>
+          );
+        })}
       </div>
+      <AstroNightCard night={selectedNight} />
     </section>
   );
 }
@@ -2833,13 +2799,13 @@ function astroRecommendationBadgeVariant(
 
 const astroProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
   sectionTitle: "逐小时天气数据",
-  sectionDescription: "按所选预报范围展示云量、能见度、湿度、降水和风等夜拍判断依据。",
+  sectionDescription: "云量、能见度、湿度、降水和风。",
   focusFilterLabel: "关键夜拍窗口",
   allFilterLabel: "全部小时",
   riskFilterLabel: "风险小时",
   defaultFilterMode: "cloudSea",
   signalColumnLabel: "参考",
-  signalColumnDescription: "用于复核星空银河窗口内的云量、低云、湿度、降水和风。",
+  signalColumnDescription: "标记银河窗口、月光与天气风险。",
   initiallyExpanded: false,
   expandButtonLabel: "展开完整小时表",
   collapseButtonLabel: "收起完整小时表",
@@ -2883,7 +2849,7 @@ function AstroProfessionalDataSection({
       <div className="min-w-0">
         <h2 className="text-lg font-bold text-card-foreground">专业数据</h2>
         <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-          核心专业摘要直接展示；完整逐小时表按需展开，避免重复操作。
+          天文窗口、天气、光污染与地形。
         </p>
       </div>
 
@@ -2982,7 +2948,9 @@ function AstroProfessionalGroupSection({
   const body = (
     <>
       {publicGroup.description ? (
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{publicGroup.description}</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          {compactAstroText(publicGroup.description, 72)}
+        </p>
       ) : null}
       <dl className="mt-3 grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr))]">
         {publicGroup.items.map((item) => (
@@ -3052,7 +3020,11 @@ function AstroProfessionalFact({
     <div className="rounded-md border border-border bg-card px-3 py-2">
       <p className="text-[11px] leading-4 text-muted-foreground">{label}</p>
       <p className="mt-1 break-words text-sm font-semibold text-card-foreground">{value}</p>
-      {detail ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p> : null}
+      {detail ? (
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          {compactAstroText(detail, 72)}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -3224,28 +3196,11 @@ function GlowMetricCards({ cards }: { readonly cards: readonly ForecastResultCar
             <GlowPrimaryMetricCard card={card} />
           </ForecastMetricCard>
         ))}
-        {supportingCards.length > 0 ? (
-          <div className="min-w-0 sm:col-span-2 min-[1180px]:col-span-4">
-            <ResultDisclosure
-              items={[
-                {
-                  value: "glow-environment",
-                  label: "环境补充指标",
-                  description: "按需查看气溶胶、通透度与地形遮挡。",
-                  content: (
-                    <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-                      {supportingCards.map((card) => (
-                        <ForecastMetricCard key={card.key} target="glow">
-                          <GlowPrimaryMetricCard card={card} />
-                        </ForecastMetricCard>
-                      ))}
-                    </div>
-                  ),
-                },
-              ]}
-            />
-          </div>
-        ) : null}
+        {supportingCards.map((card) => (
+          <ForecastMetricCard key={card.key} target="glow">
+            <GlowPrimaryMetricCard card={card} />
+          </ForecastMetricCard>
+        ))}
       </ForecastMetricGrid>
     </section>
   );
@@ -3270,7 +3225,7 @@ function GlowPrimaryMetricCard({ card }: { readonly card: ForecastResultCard }) 
         {card.value}
       </p>
       <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-        {userFacingResultText(card.detail)}
+        {compactResultCardDetail(card.detail)}
       </p>
       {typeof card.score === "number" ? (
         <ResultMeter
@@ -3308,9 +3263,9 @@ function GlowNearTermWeatherSection({ viewModel }: { readonly viewModel: GlowFor
       data-testid="glow-near-term-weather"
     >
       <GlowSectionHeading
-        title="当前 / 近时段霞光天气"
-        description="聚焦霞光云层载体、光路遮挡、云层压制、低云/雾墙与通透度，辅助判断晨昏拍摄窗口。"
-        badge="天气相关"
+        title="霞光条件"
+        description="中高云、通透度、气溶胶与地平线遮挡。"
+        badge="近时段"
       />
       <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))]">
         {cards.map((card) => (
@@ -3544,8 +3499,8 @@ function GlowDecisionSupportSection({ viewModel }: { readonly viewModel: GlowFor
       data-glow-section="GlowDecisionSupport"
     >
       <GlowSectionHeading
-        title="霞光判断依据与拍摄复核"
-        description="把判断依据、拍摄行动、风险复核和备选窗口放在同一组，便于出发前快速确认。"
+        title="拍摄行动与风险"
+        description="出发安排、主要风险和备选窗口。"
         badge={recommendation.recommendation}
         badgeVariant={glowRecommendationBadgeVariant(recommendation.recommendation)}
       />
@@ -4026,28 +3981,11 @@ function CloudSeaMetricCards({ cards }: { readonly cards: readonly ForecastResul
           <CloudSeaPrimaryResultCard card={card} />
         </ForecastMetricCard>
       ))}
-      {supportingCards.length > 0 ? (
-        <div className="min-w-0 sm:col-span-2 min-[1180px]:col-span-4">
-          <ResultDisclosure
-            items={[
-              {
-                value: "cloud-sea-supporting-signals",
-                label: "补充出行信号",
-                description: "按需查看到达建议和主要风险，首屏只保留四个核心驱动。",
-                content: (
-                  <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-                    {supportingCards.map((card) => (
-                      <ForecastMetricCard key={card.key} target="cloud_sea" dataCloudSeaMetricCard>
-                        <CloudSeaPrimaryResultCard card={card} />
-                      </ForecastMetricCard>
-                    ))}
-                  </div>
-                ),
-              },
-            ]}
-          />
-        </div>
-      ) : null}
+      {supportingCards.map((card) => (
+        <ForecastMetricCard key={card.key} target="cloud_sea" dataCloudSeaMetricCard>
+          <CloudSeaPrimaryResultCard card={card} />
+        </ForecastMetricCard>
+      ))}
     </ForecastMetricGrid>
   );
 }
@@ -4070,7 +4008,7 @@ function CloudSeaPrimaryResultCard({ card }: { readonly card: ForecastResultCard
         {card.value}
       </p>
       <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-        {userFacingResultText(card.detail)}
+        {compactResultCardDetail(card.detail)}
       </p>
       {typeof card.score === "number" ? (
         <ResultMeter
@@ -7001,7 +6939,7 @@ export function ComprehensiveForecastView({
           {
             value: "overview",
             label: "概览",
-            eyebrow: "先做决定",
+            eyebrow: "核心结论",
             content: (
               <div className="grid min-w-0 max-w-full gap-5">
                 <ComprehensiveCoreDecisionCards
@@ -7010,51 +6948,26 @@ export function ComprehensiveForecastView({
                   bestSubject={bestSubject}
                   mainRisk={mainRisk}
                 />
-                <ResultDisclosure
-                  items={[
-                    {
-                      value: "weather-details",
-                      label: "当前与近时段天气",
-                      description: "查看温度、云量、湿度、降水、风与能见度。",
-                      content: <WeatherEssentialsPanel result={result} />,
-                    },
-                    {
-                      value: "daily-opportunities",
-                      label: "逐日与题材机会",
-                      description: "比较各日趋势和可执行拍摄窗口。",
-                      content: (
-                        <div className="grid gap-4">
-                          {result.dailySummaries.length > 0 ? (
-                            <ComprehensiveMultiDaySummary query={query} result={result} />
-                          ) : null}
-                          <OpportunityWindowSection query={query} result={result} />
-                        </div>
-                      ),
-                    },
-                    {
-                      value: "risk-actions",
-                      label: "风险与出行行动",
-                      description: "集中查看主要风险、备选题材和行动建议。",
-                      content: (
-                        <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-                          <RiskDecisionSection result={result} mainRisk={mainRisk} />
-                          <ActionableAdviceSection
-                            result={result}
-                            bestSubject={bestSubject}
-                            mainRisk={mainRisk}
-                          />
-                        </div>
-                      ),
-                    },
-                  ]}
-                />
+                <WeatherEssentialsPanel result={result} />
+                {result.dailySummaries.length > 0 ? (
+                  <ComprehensiveMultiDaySummary query={query} result={result} />
+                ) : null}
+                <OpportunityWindowSection query={query} result={result} />
+                <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+                  <RiskDecisionSection result={result} mainRisk={mainRisk} />
+                  <ActionableAdviceSection
+                    result={result}
+                    bestSubject={bestSubject}
+                    mainRisk={mainRisk}
+                  />
+                </div>
               </div>
             ),
           },
           {
             value: "hourly",
             label: "逐小时",
-            eyebrow: "看趋势",
+            eyebrow: "天气趋势",
             deferUntilActive: true,
             content: viewModel.professionalHourlyData ? (
               <div className="grid min-w-0 max-w-full gap-4">
@@ -7073,7 +6986,7 @@ export function ComprehensiveForecastView({
           {
             value: "professional",
             label: "专业数据",
-            eyebrow: "按需复核",
+            eyebrow: "完整表格",
             content: viewModel.professionalHourlyData ? (
               <CloudSeaProfessionalHourlyDataPanel
                 target="general"
@@ -7091,10 +7004,10 @@ export function ComprehensiveForecastView({
 }
 
 const generalProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
-  sectionTitle: "完整专业小时数据",
-  sectionBadge: "高级复核",
-  sectionDescription: "在同一时间轴复核云层、气温、露点、湿度、降水、能见度和风。",
-  usageText: "建议先在逐小时趋势中定位变化，再在这里核对具体数值与字段覆盖。",
+  sectionTitle: "逐小时完整数据",
+  sectionBadge: "专业数据",
+  sectionDescription: "云层、气温、露点、湿度、降水、能见度和风。",
+  usageText: "",
   allFilterLabel: "全部小时",
   showFocusFilter: false,
   showMorningFilter: true,
@@ -7952,26 +7865,11 @@ function ComprehensiveCoreDecisionCards({
           <PrimaryResultCard card={card} />
         </ForecastMetricCard>
       ))}
-      <div className="min-w-0 sm:col-span-2 xl:col-span-4">
-        <ResultDisclosure
-          items={[
-            {
-              value: "supporting-signals",
-              label: "补充题材信号",
-              description: "按需查看推荐等级、云雾与霞光机会，避免首屏重复堆叠。",
-              content: (
-                <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {supportingCards.map((card) => (
-                    <ForecastMetricCard key={card.key} target="general">
-                      <PrimaryResultCard card={card} />
-                    </ForecastMetricCard>
-                  ))}
-                </div>
-              ),
-            },
-          ]}
-        />
-      </div>
+      {supportingCards.map((card) => (
+        <ForecastMetricCard key={card.key} target="general">
+          <PrimaryResultCard card={card} />
+        </ForecastMetricCard>
+      ))}
     </ForecastMetricGrid>
   );
 }
@@ -8759,7 +8657,9 @@ function PrimaryResultCard({ card }: { readonly card: ForecastResultCard }) {
         {card.value}
       </p>
       <p className="mt-2 text-xs leading-5 text-muted-foreground">
-        {userFacingResultText(card.detail)}
+        {card.key === "comprehensive-arrival"
+          ? userFacingResultText(card.detail)
+          : compactResultCardDetail(card.detail)}
       </p>
       {typeof card.score === "number" ? (
         <ResultMeter
@@ -8771,6 +8671,15 @@ function PrimaryResultCard({ card }: { readonly card: ForecastResultCard }) {
       ) : null}
     </div>
   );
+}
+
+function compactResultCardDetail(value: string): string {
+  const normalized = userFacingResultText(value).trim();
+  const summary = normalized.split(/[。！？!?；;]/)[0]?.trim() ?? normalized;
+  if (summary.length > 84) {
+    return `${summary.slice(0, 84).replace(/[，、\s]+$/, "")}…`;
+  }
+  return /[。！？!?]$/.test(summary) ? summary : `${summary}。`;
 }
 
 function cardToneText(tone: ForecastResultCardTone): string {

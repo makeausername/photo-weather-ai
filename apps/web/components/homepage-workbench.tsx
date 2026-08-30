@@ -259,7 +259,7 @@ function HomepageInsightCardView({
   return (
     <article
       className={cn(
-        "grid min-w-0 content-start gap-4 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel transition",
+        "grid min-w-0 content-start gap-3 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-panel transition sm:p-5",
         fillHeight && "min-[960px]:h-full",
         loading && "animate-pulse",
       )}
@@ -338,14 +338,14 @@ function buildHomepageResultCards(
         typeof (result.finalScore ?? result.overallScore) === "number"
           ? `${Math.round(result.finalScore ?? result.overallScore)} / 100`
           : "待计算",
-      description: "综合天气、光线、窗口和风险后的出发参考分。",
+      description: "天气、光线、窗口与风险。",
       badge: "已生成",
     },
     {
       title: "推荐等级",
       value: finalResultLabel || "待计算",
       description: finalDecisionSummary,
-      badge: "判断",
+      badge: "结论",
     },
     {
       title: "最佳窗口",
@@ -372,7 +372,7 @@ function buildHomepageResultCards(
     {
       title: "当前建议",
       value: currentAdviceText(location, state, result),
-      description: "用于准备到达时间、备选题材和随身装备。",
+      description: "穿着与随身装备。",
       badge: "行动",
     },
   ];
@@ -409,10 +409,10 @@ function homepagePanelDescription(
     return "该地点拍摄条件暂不可用，请稍后重试；已选地点和预报范围会保留在搜索卡片中。";
   }
   if (state.status === "partial") {
-    return "拍摄条件已更新；部分辅助数据暂不可用，详情会在结果页标明。";
+    return "拍摄条件已更新，部分数据暂缺。";
   }
   if (hasResult) {
-    return "已更新综合指数、推荐时段、主要风险、云层风况和出行建议。";
+    return "指数、窗口、风险和现场准备已更新。";
   }
   return "选择地点后，将显示综合指数、推荐时段、主要风险和出行建议。";
 }
@@ -428,9 +428,9 @@ function decisionSummaryText(location: SelectedLocation | null, state: ForecastL
     return "该地点拍摄条件暂不可用，请稍后重试。";
   }
   if (state.status === "partial") {
-    return "部分辅助数据暂不可用，结果页会给出更完整说明。";
+    return "部分数据暂缺，结论已保守处理。";
   }
-  return "综合最佳窗口、主要风险和装备建议，优先安排到达时间与备选题材。";
+  return "先看窗口与风险，再安排到达时间。";
 }
 
 function currentAdviceText(
@@ -452,12 +452,11 @@ function currentAdviceText(
   const clothingLayers = clothing?.layers.slice(0, 2).join("、") ?? "";
   const accessories = clothing?.accessories.slice(0, 2).join("、") ?? "";
   const adviceParts = [
-    clothing?.summaryZh,
-    clothingLayers ? `穿着：${clothingLayers}` : "",
-    accessories ? `携带：${accessories}` : "",
+    clothingLayers ? `穿 ${clothingLayers}` : "",
+    accessories ? `带 ${accessories}` : "",
   ].filter(Boolean);
 
-  return adviceParts.length > 0 ? adviceParts.join("；") : "根据窗口和风险安排到达时间与备选题材。";
+  return adviceParts.length > 0 ? adviceParts.join(" · ") : "按窗口和风险准备。";
 }
 
 function formatCloudWindValue(current: NormalizedCurrentWeather | undefined): string {

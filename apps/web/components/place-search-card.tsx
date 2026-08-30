@@ -1000,7 +1000,7 @@ export function PlaceSearchCard({
             className="rounded-xl border border-primary/20 bg-secondary px-4 py-3 text-xs leading-5 text-secondary-foreground"
             data-auto-preview-status="ready"
           >
-            快速预览会随地点和时间范围自动更新；下方按钮用于打开完整报告。
+            预览已更新
           </div>
         ) : null}
 

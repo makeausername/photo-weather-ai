@@ -109,13 +109,13 @@ describe("responsive safeguards", () => {
     expect(hourlyTimelineSource).toContain('data-hourly-weather-timeline="true"');
     expect(forecastSource).toContain('import("./hourly-weather-timeline")');
     expect(forecastSource.match(/deferUntilActive: true/g)).toHaveLength(2);
-    expect(forecastSource).toContain('value: "supporting-signals"');
+    expect(forecastSource).toContain('data-astro-night-selector="true"');
     expect(adminShellSource).toContain("@radix-ui/react-dialog");
     expect(adminShellSource).toContain('data-admin-mobile-navigation="sheet"');
     expect(adminShellSource).not.toContain("overflow-x-auto pb-2");
     expect(adminSettingsSource).toContain("@radix-ui/react-accordion");
     expect(adminSettingsSource).toContain('data-admin-settings-groups="accordion"');
-    expect(adminSettingsSource).toContain('设置：展开或收起`');
+    expect(adminSettingsSource).toContain("设置：展开或收起`");
     expect(forecastSource).toContain('data-cloud-sea-professional-table-scroll="true"');
     expect(forecastSource).toContain('data-professional-hourly-table-layout="mobile-scroll-safe"');
     expect(forecastSource).toContain("border-separate border-spacing-0");

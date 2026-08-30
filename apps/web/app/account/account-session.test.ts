@@ -450,10 +450,10 @@ describe("account center foundation", () => {
     expect(html).toContain("会员与套餐");
     expect(html).toContain("正在读取会员状态");
     expect(html).toContain("查询历史");
-    expect(html).toContain("查询历史默认收起，展开后查看最近分析。");
-    expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain("展开");
-    expect(html).not.toContain("暂无查询历史");
+    expect(html).toContain("最近10次拍摄分析。");
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain("收起");
+    expect(html).toContain("暂无查询历史");
     expect(html).not.toContain('type="password"');
     expect(html).not.toContain("保存新密码");
     expect(html).toContain("lg:w-full lg:max-w-[520px] lg:flex-1");
@@ -584,7 +584,7 @@ describe("account center foundation", () => {
     expect(accountCenterClientSource).not.toContain("markPaymentOrderPaid");
   });
 
-  it("keeps forecast history collapsed by default while preserving target jump links", () => {
+  it("shows recent forecast history by default while preserving target jump links", () => {
     const html = renderAuthenticatedAccountCenter(baseAccountSession, [cloudSeaHistoryRecord]);
     const href = buildForecastHistoryHref(cloudSeaHistoryRecord);
 
@@ -603,12 +603,12 @@ describe("account center foundation", () => {
     expect(href).toContain("photoSpotId=spot-test");
     expect(html).toContain("查询历史");
     expect(html).toContain("1 笔");
-    expect(html).toContain('aria-expanded="false"');
-    expect(html).not.toContain("测试山顶");
-    expect(html).not.toContain("推荐前往");
-    expect(html).not.toContain("82 分");
-    expect(html).not.toContain("打开分析");
-    expect(html).not.toContain('href="/cloud-sea?');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain("测试山顶");
+    expect(html).toContain("推荐前往");
+    expect(html).toContain("82 分");
+    expect(html).toContain("打开分析");
+    expect(html).toContain('href="/cloud-sea?');
     expect(html).not.toContain("坐标不足");
   });
 
@@ -868,14 +868,14 @@ describe("account center foundation", () => {
     expect(html).not.toContain("overflow-x-auto");
   });
 
-  it("keeps empty history collapsed by default without large placeholders", () => {
+  it("keeps empty history compact without large placeholders", () => {
     const html = renderAuthenticatedAccountCenter(baseAccountSession, []);
 
     expect(html).toContain("查询历史");
-    expect(html).toContain("查询历史默认收起，展开后查看最近分析。");
-    expect(html).not.toContain("暂无查询历史");
-    expect(html).not.toContain("完成一次天气分析后，最近记录会自动出现在这里。");
-    expect(html).not.toContain("开始分析");
+    expect(html).toContain("最近10次拍摄分析。");
+    expect(html).toContain("暂无查询历史");
+    expect(html).toContain("完成一次天气分析后，最近记录会自动出现在这里。");
+    expect(html).toContain("开始分析");
     expect(html).not.toContain("占位");
   });
 

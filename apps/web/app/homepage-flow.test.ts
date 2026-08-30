@@ -342,7 +342,7 @@ describe("homepage forecast flow", () => {
     );
 
     expect(html).toContain("老君山金顶 拍摄条件");
-    expect(html).toContain("已更新综合指数、推荐时段、主要风险、云层风况和出行建议。");
+    expect(html).toContain("指数、窗口、风险和现场准备已更新。");
     expect(html).toContain("综合指数");
     expect(html).toContain("82 / 100");
     expect(html).toContain("推荐等级");
@@ -356,7 +356,7 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("云层 72% / 风 4.6 m/s 260°");
     expect(html).toContain("低云 18%，湿度 68%，能见度 18.5 公里。");
     expect(html).toContain("当前建议");
-    expect(html).toContain("根据窗口和风险安排到达时间与备选题材。");
+    expect(html).toContain("按窗口和风险准备。");
     expect(html).toContain("min-[960px]:grid-rows-[auto_minmax(0,1fr)]");
     expect(html).toContain("min-[960px]:auto-rows-fr");
     expect(html).toContain("min-[960px]:h-full");
@@ -728,7 +728,7 @@ describe("homepage forecast flow", () => {
     expect(emptyHtml).toContain("选择地点后查看完整报告");
     expect(emptyHtml).toContain("disabled");
     expect(selectedHtml).toContain("查看完整综合报告");
-    expect(selectedHtml).toContain("快速预览会随地点和时间范围自动更新");
+    expect(selectedHtml).toContain("预览已更新");
     expect(selectedHtml).toContain('value="黄山光明顶"');
     expect(selectedHtml).toContain('data-selected-location-card="true"');
     expect(selectedHtml).toContain('data-forecast-range-section="true"');
