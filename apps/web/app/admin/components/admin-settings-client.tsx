@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import * as Accordion from "@radix-ui/react-accordion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
@@ -261,129 +262,165 @@ export function AdminSettingsClient() {
         </div>
       ) : null}
 
-      {Object.entries(groupedSettings).map(([group, groupSettings]) => (
-        <Card key={group} className="overflow-hidden">
-          <div className="flex flex-col gap-2 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-lg font-bold">{groupLabels[group] ?? "其他设置"}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{groupSettings.length} 项设置</p>
-            </div>
-            <Badge variant="muted">系统参数</Badge>
-          </div>
-
-          <div className="divide-y divide-border">
-            {groupSettings.map((setting) => {
-              const text = settingText[setting.key] ?? {
-                label: setting.label || setting.key,
-                description: setting.description ?? setting.key,
-              };
-              const saveState = statusByKey[setting.key];
-
-              return (
-                <article
-                  key={setting.key}
-                  className={getAdaptiveGridClassName(2, {
-                    breakpoint: "lg",
-                    gapClassName: "gap-5",
-                    className: "p-5",
-                  })}
-                >
-                  <div className="grid content-start gap-3">
-                    <div>
-                      <h3 className="font-bold text-foreground">{text.label}</h3>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{text.description}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="muted">{setting.key}</Badge>
-                      <Badge variant="muted">{valueTypeLabels[setting.valueType] ?? "文本"}</Badge>
-                      <Badge variant={setting.isPublic ? "success" : "muted"}>
-                        {setting.isPublic ? "公开" : "服务端"}
-                      </Badge>
-                      {setting.isSecret ? <Badge variant="warning">密钥</Badge> : null}
-                      <Badge variant={setting.isEditable ? "default" : "muted"}>
-                        {setting.isEditable ? "可编辑" : "锁定"}
-                      </Badge>
-                    </div>
+      <Accordion.Root
+        type="multiple"
+        defaultValue={Object.keys(groupedSettings).slice(0, 1)}
+        className="grid min-w-0 max-w-full gap-4"
+        data-admin-settings-groups="accordion"
+      >
+        {Object.entries(groupedSettings).map(([group, groupSettings]) => (
+          <Accordion.Item key={group} value={group} asChild>
+            <Card className="min-w-0 max-w-full overflow-hidden">
+              <Accordion.Header asChild>
+                <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold">{groupLabels[group] ?? "其他设置"}</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {groupSettings.length} 项设置
+                    </p>
                   </div>
-
-                  <div className="grid gap-3">
-                    {setting.valueType === "json" ? (
-                      <details className="rounded-lg border border-border bg-muted p-4">
-                        <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
-                          高级配置
-                        </summary>
-                        <FormField label="配置值" className="mt-4">
-                          <Textarea
-                            value={editValues[setting.key] ?? ""}
-                            disabled={!setting.isEditable}
-                            aria-label={`${text.label} 的配置值`}
-                            onChange={(event) =>
-                              setEditValues((current) => ({
-                                ...current,
-                                [setting.key]: event.target.value,
-                              }))
-                            }
-                          />
-                        </FormField>
-                      </details>
-                    ) : setting.valueType === "boolean" ? (
-                      <FormField label="配置值">
-                        <Select
-                          value={editValues[setting.key] ?? "false"}
-                          disabled={!setting.isEditable}
-                          aria-label={`${text.label} 的配置值`}
-                          onChange={(event) =>
-                            setEditValues((current) => ({
-                              ...current,
-                              [setting.key]: event.target.value,
-                            }))
-                          }
-                        >
-                          <option value="true">启用</option>
-                          <option value="false">停用</option>
-                        </Select>
-                      </FormField>
-                    ) : (
-                      <FormField label="配置值">
-                        <Input
-                          type={setting.valueType === "url" ? "url" : "text"}
-                          inputMode={setting.valueType === "number" ? "decimal" : undefined}
-                          value={editValues[setting.key] ?? ""}
-                          disabled={!setting.isEditable}
-                          aria-label={`${text.label} 的配置值`}
-                          onChange={(event) =>
-                            setEditValues((current) => ({
-                              ...current,
-                              [setting.key]: event.target.value,
-                            }))
-                          }
-                        />
-                      </FormField>
-                    )}
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Button
-                        disabled={
-                          !setting.isEditable || statusByKey[setting.key]?.status === "saving"
-                        }
-                        onClick={() => void saveSetting(setting)}
+                  <div className="flex items-center gap-2">
+                    <Badge variant="muted">系统参数</Badge>
+                    <Accordion.Trigger className="group inline-flex h-9 items-center gap-2 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-card-foreground outline-none transition hover:border-primary hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring">
+                      <span className="group-data-[state=open]:hidden">展开</span>
+                      <span className="hidden group-data-[state=open]:inline">收起</span>
+                      <svg
+                        className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-180"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        aria-hidden="true"
                       >
-                        {statusByKey[setting.key]?.status === "saving" ? "保存中..." : "保存"}
-                      </Button>
-                      {saveState?.message ? (
-                        <span
-                          className={`rounded-lg border px-3 py-2 text-sm ${stateClass(saveState.status)}`}
-                        >
-                          {saveState.message}
-                        </span>
-                      ) : null}
-                    </div>
+                        <path d="M3 6l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </Accordion.Trigger>
                   </div>
-                </article>
-              );
-            })}
-          </div>
-        </Card>
-      ))}
+                </div>
+              </Accordion.Header>
+
+              <Accordion.Content
+                forceMount
+                className="divide-y divide-border data-[state=closed]:hidden"
+              >
+                {groupSettings.map((setting) => {
+                  const text = settingText[setting.key] ?? {
+                    label: setting.label || setting.key,
+                    description: setting.description ?? setting.key,
+                  };
+                  const saveState = statusByKey[setting.key];
+
+                  return (
+                    <article
+                      key={setting.key}
+                      className={getAdaptiveGridClassName(2, {
+                        breakpoint: "lg",
+                        gapClassName: "gap-5",
+                        className: "p-5",
+                      })}
+                    >
+                      <div className="grid content-start gap-3">
+                        <div>
+                          <h3 className="font-bold text-foreground">{text.label}</h3>
+                          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                            {text.description}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="muted">{setting.key}</Badge>
+                          <Badge variant="muted">
+                            {valueTypeLabels[setting.valueType] ?? "文本"}
+                          </Badge>
+                          <Badge variant={setting.isPublic ? "success" : "muted"}>
+                            {setting.isPublic ? "公开" : "服务端"}
+                          </Badge>
+                          {setting.isSecret ? <Badge variant="warning">密钥</Badge> : null}
+                          <Badge variant={setting.isEditable ? "default" : "muted"}>
+                            {setting.isEditable ? "可编辑" : "锁定"}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3">
+                        {setting.valueType === "json" ? (
+                          <details className="rounded-lg border border-border bg-muted p-4">
+                            <summary className="cursor-pointer text-sm font-semibold text-card-foreground">
+                              高级配置
+                            </summary>
+                            <FormField label="配置值" className="mt-4">
+                              <Textarea
+                                value={editValues[setting.key] ?? ""}
+                                disabled={!setting.isEditable}
+                                aria-label={`${text.label} 的配置值`}
+                                onChange={(event) =>
+                                  setEditValues((current) => ({
+                                    ...current,
+                                    [setting.key]: event.target.value,
+                                  }))
+                                }
+                              />
+                            </FormField>
+                          </details>
+                        ) : setting.valueType === "boolean" ? (
+                          <FormField label="配置值">
+                            <Select
+                              value={editValues[setting.key] ?? "false"}
+                              disabled={!setting.isEditable}
+                              aria-label={`${text.label} 的配置值`}
+                              onChange={(event) =>
+                                setEditValues((current) => ({
+                                  ...current,
+                                  [setting.key]: event.target.value,
+                                }))
+                              }
+                            >
+                              <option value="true">启用</option>
+                              <option value="false">停用</option>
+                            </Select>
+                          </FormField>
+                        ) : (
+                          <FormField label="配置值">
+                            <Input
+                              type={setting.valueType === "url" ? "url" : "text"}
+                              inputMode={setting.valueType === "number" ? "decimal" : undefined}
+                              value={editValues[setting.key] ?? ""}
+                              disabled={!setting.isEditable}
+                              aria-label={`${text.label} 的配置值`}
+                              onChange={(event) =>
+                                setEditValues((current) => ({
+                                  ...current,
+                                  [setting.key]: event.target.value,
+                                }))
+                              }
+                            />
+                          </FormField>
+                        )}
+                        <div className="flex flex-wrap items-center gap-3">
+                          <Button
+                            disabled={
+                              !setting.isEditable || statusByKey[setting.key]?.status === "saving"
+                            }
+                            onClick={() => void saveSetting(setting)}
+                          >
+                            {statusByKey[setting.key]?.status === "saving" ? "保存中..." : "保存"}
+                          </Button>
+                          {saveState?.message ? (
+                            <span
+                              className={`rounded-lg border px-3 py-2 text-sm ${stateClass(saveState.status)}`}
+                            >
+                              {saveState.message}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </Accordion.Content>
+            </Card>
+          </Accordion.Item>
+        ))}
+      </Accordion.Root>
     </div>
   );
 }

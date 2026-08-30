@@ -179,7 +179,7 @@ export function AdminProductsClient({
   }
 
   return (
-    <div className="grid gap-5" data-admin-products="pricing-management">
+    <div className="grid min-w-0 max-w-full gap-5" data-admin-products="pricing-management">
       <AdminActionToast feedback={actionToast} onDismiss={() => setActionToast(null)} />
       {message ? (
         <p
@@ -223,12 +223,12 @@ export function AdminProductsClient({
 
       <section
         className={cn(
-          "grid gap-5 xl:items-start",
+          "grid min-w-0 max-w-full gap-5 xl:items-start",
           useProductSidePanel && "xl:grid-cols-[minmax(0,1fr)_390px]",
         )}
         data-admin-product-layout={useProductSidePanel ? "side-edit" : "stacked-edit"}
       >
-        <Card className="p-4 sm:p-5">
+        <Card className="min-w-0 max-w-full p-4 sm:p-5">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 className="text-lg font-bold text-card-foreground">套餐列表</h2>
@@ -343,7 +343,7 @@ function EditPanel({
   const standard = standardPublicCodes.has(product.code);
 
   return (
-    <Card className="p-4 sm:p-5">
+    <Card className="min-w-0 max-w-full p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-card-foreground">编辑套餐</h2>

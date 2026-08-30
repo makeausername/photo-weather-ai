@@ -3216,9 +3216,10 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("展开小时降雨");
     expect(html).not.toContain('data-general-rain-row="');
     expect(html).toContain('data-general-rain-preview="true"');
-    expect(html).not.toContain('data-professional-hourly-target="general"');
-    expect(html).not.toContain("云量口径");
-    expect(html).not.toContain("只看有风险时段");
+    expect(html).toContain('data-result-view-tab="professional"');
+    expect(html).toContain('data-result-view-panel="professional"');
+    expect(html).toContain('data-result-disclosure-item="professional-hourly"');
+    expect(html).toContain('data-professional-hourly-target="general"');
 
     const actionPlanIndex = html.indexOf('data-testid="action-plan"');
     const hourlySectionIndex = html.indexOf('data-general-section="GeneralHourlyWeatherSection"');
@@ -3435,7 +3436,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-testid="near-term-weather"');
     expect(html).not.toContain('data-testid="subject-breakdown"');
     expect(html).toContain('data-testid="action-plan"');
-    expect(html).toContain("repeat(auto-fit,minmax(min(100%,220px),1fr))");
+    expect(html).toContain("sm:grid-cols-2 xl:grid-cols-4");
+    expect(html).toContain('data-result-disclosure-item="supporting-signals"');
     expect(html).toContain('data-result-meter="true"');
     expect(html).not.toContain("xl:grid-cols-7");
     expect(html).toContain("repeat(auto-fit,minmax(220px,1fr))");
