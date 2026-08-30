@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  clothingEquipmentAdvice,
   compactPrecipitationDisplayText,
   isProbabilityOnlyPrecipitationSignal,
+  joinChineseSentences,
   rainRiskText,
 } from "./forecast-copy";
 
@@ -26,6 +28,31 @@ function precipitationRisk(overrides: Partial<{
 }
 
 describe("forecast precipitation copy", () => {
+  it("uses natural low-risk wording and joins sentences without duplicate punctuation", () => {
+    const copy = rainRiskText({
+      precipitationProbabilityPercent: 0,
+      precipitationAmountMm: 0,
+    });
+
+    expect(copy.detail).toContain("降水风险较低");
+    expect(copy.detail).not.toContain("降水风险无明显");
+    expect(joinChineseSentences(copy.detail, "风雨对拍摄干扰相对可控。")).not.toContain("。。");
+  });
+
+  it("normalizes punctuation inside equipment lists", () => {
+    const advice = clothingEquipmentAdvice({
+      titleZh: "轻量分层",
+      summaryZh: "按体感增减衣物。",
+      layers: ["速干长袖"],
+      accessories: ["防风帽或头巾。"],
+      riskNotes: ["三脚架和人员站位需要留余量。"],
+      comfortLevel: "comfortable",
+    });
+
+    expect(advice[1]).toBe("装备重点：防风帽或头巾、三脚架和人员站位需要留余量。");
+    expect(advice[1]).not.toContain("。。");
+  });
+
   it("treats 45% probability with 0 mm as an inconsistent signal, not confirmed rain", () => {
     const weather = {
       precipitationProbabilityPercent: 45,

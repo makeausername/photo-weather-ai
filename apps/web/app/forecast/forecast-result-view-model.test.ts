@@ -3174,7 +3174,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("当前天气或地形仍包含演示数据");
   });
 
-  it("shows the general result hourly rainfall panel collapsed by default", () => {
+  it("defers the general result hourly chart while retaining collapsed professional data", () => {
     const hourlyRange = resultWithGlowHourlyRange("48h", 48);
     const result: ForecastCalculationResult = {
       ...resultForTarget("general"),
@@ -3209,22 +3209,15 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain('data-general-section="GeneralHourlyWeatherSection"');
-    expect(html).toContain('data-general-professional-hourly-expanded="false"');
-    expect(html).toContain('data-general-hourly-toggle="true"');
-    expect(html).toContain("未来小时降雨");
-    expect(html).toContain("逐小时降水");
-    expect(html).toContain("展开小时降雨");
     expect(html).not.toContain('data-general-rain-row="');
-    expect(html).toContain('data-general-rain-preview="true"');
+    expect(html).not.toContain("正在加载逐小时趋势图");
     expect(html).toContain('data-result-view-tab="professional"');
     expect(html).toContain('data-result-view-panel="professional"');
     expect(html).toContain('data-result-disclosure-item="professional-hourly"');
     expect(html).toContain('data-professional-hourly-target="general"');
 
-    const actionPlanIndex = html.indexOf('data-testid="action-plan"');
-    const hourlySectionIndex = html.indexOf('data-general-section="GeneralHourlyWeatherSection"');
-    expect(actionPlanIndex).toBeGreaterThan(-1);
-    expect(hourlySectionIndex).toBeGreaterThan(actionPlanIndex);
+    expect(html).toContain('data-result-view-tab="hourly"');
+    expect(html).toContain('data-result-view-panel="hourly"');
   });
 
   it("keeps the expanded general hourly rainfall panel free of cloud-sea diagnostics", () => {

@@ -60,6 +60,7 @@ import {
   clothingEquipmentAdvice,
   compactPrecipitationDisplayText,
   isProbabilityOnlyPrecipitationSignal,
+  joinChineseSentences,
   rainRiskText,
   windowLabelText,
 } from "./forecast-copy";
@@ -739,10 +740,10 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
             current?.windGust ?? firstDay?.windGust,
           )}
           value={precipitationDisplayValue(current ?? firstDay)}
-          detail={`${precipitationDisplayDetail(current ?? firstDay)}。${windPrecipitationActionText(
-            result,
-            current ?? firstDay,
-          )}`}
+          detail={joinChineseSentences(
+            precipitationDisplayDetail(current ?? firstDay),
+            windPrecipitationActionText(result, current ?? firstDay),
+          )}
         />
         <CompactInfoCard
           title="湿度与露点"
@@ -2391,6 +2392,7 @@ export function AstroResultPage({
               value: "timeline",
               label: "逐小时",
               eyebrow: "看趋势",
+              deferUntilActive: true,
               content: (
                 <HourlyWeatherTimeline
                   points={buildHourlyTimelinePoints(
@@ -7033,6 +7035,7 @@ export function ComprehensiveForecastView({
             value: "hourly",
             label: "逐小时",
             eyebrow: "看趋势",
+            deferUntilActive: true,
             content: viewModel.professionalHourlyData ? (
               <div className="grid min-w-0 max-w-full gap-4">
                 <HourlyWeatherTimeline

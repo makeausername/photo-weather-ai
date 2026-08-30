@@ -281,7 +281,10 @@ export function AdminSettingsClient() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="muted">系统参数</Badge>
-                    <Accordion.Trigger className="group inline-flex h-9 items-center gap-2 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-card-foreground outline-none transition hover:border-primary hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring">
+                    <Accordion.Trigger
+                      aria-label={`${groupLabels[group] ?? "其他"}设置：展开或收起`}
+                      className="group inline-flex h-9 items-center gap-2 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-card-foreground outline-none transition hover:border-primary hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
+                    >
                       <span className="group-data-[state=open]:hidden">展开</span>
                       <span className="hidden group-data-[state=open]:inline">收起</span>
                       <svg

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { PublicShell } from "../components/public-shell";
+import { ResultViewTabs } from "./forecast/result-experience-controls";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/",
@@ -16,6 +17,32 @@ const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
 describe("responsive safeguards", () => {
+  it("mounts deferred result content only when its tab is active", () => {
+    const items = [
+      {
+        value: "overview",
+        label: "概览",
+        content: React.createElement("div", { "data-overview-content": "true" }),
+      },
+      {
+        value: "hourly",
+        label: "逐小时",
+        deferUntilActive: true,
+        content: React.createElement("div", { "data-hourly-content": "true" }),
+      },
+    ];
+    const overviewHtml = renderToStaticMarkup(
+      React.createElement(ResultViewTabs, { label: "结果视图", items }),
+    );
+    const hourlyHtml = renderToStaticMarkup(
+      React.createElement(ResultViewTabs, { label: "结果视图", items, defaultValue: "hourly" }),
+    );
+
+    expect(overviewHtml).toContain('data-overview-content="true"');
+    expect(overviewHtml).not.toContain('data-hourly-content="true"');
+    expect(hourlyHtml).toContain('data-hourly-content="true"');
+  });
+
   it("keeps the shared public shell mobile-safe without widening the page", () => {
     const html = renderToStaticMarkup(
       React.createElement(PublicShell, null, React.createElement("main", null, "响应式内容")),
@@ -72,17 +99,23 @@ describe("responsive safeguards", () => {
     expect(resultControlsSource).toContain("@radix-ui/react-tabs");
     expect(resultControlsSource).toContain("@radix-ui/react-accordion");
     expect(resultControlsSource).toContain("forceMount");
+    expect(resultControlsSource).toContain("readonly deferUntilActive?: boolean");
+    expect(resultControlsSource).toContain(
+      "item.deferUntilActive && activeValue !== item.value ? null : item.content",
+    );
     expect(resultControlsSource).toContain("data-[state=inactive]:hidden");
     expect(resultControlsSource).not.toContain('from "recharts"');
     expect(hourlyTimelineSource).toContain('from "recharts"');
     expect(hourlyTimelineSource).toContain('data-hourly-weather-timeline="true"');
     expect(forecastSource).toContain('import("./hourly-weather-timeline")');
+    expect(forecastSource.match(/deferUntilActive: true/g)).toHaveLength(2);
     expect(forecastSource).toContain('value: "supporting-signals"');
     expect(adminShellSource).toContain("@radix-ui/react-dialog");
     expect(adminShellSource).toContain('data-admin-mobile-navigation="sheet"');
     expect(adminShellSource).not.toContain("overflow-x-auto pb-2");
     expect(adminSettingsSource).toContain("@radix-ui/react-accordion");
     expect(adminSettingsSource).toContain('data-admin-settings-groups="accordion"');
+    expect(adminSettingsSource).toContain('设置：展开或收起`');
     expect(forecastSource).toContain('data-cloud-sea-professional-table-scroll="true"');
     expect(forecastSource).toContain('data-professional-hourly-table-layout="mobile-scroll-safe"');
     expect(forecastSource).toContain("border-separate border-spacing-0");

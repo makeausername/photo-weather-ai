@@ -2,13 +2,14 @@
 
 import * as Accordion from "@radix-ui/react-accordion";
 import * as Tabs from "@radix-ui/react-tabs";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { cn } from "../../components/ui";
 
 export type ResultViewTab = {
   readonly value: string;
   readonly label: string;
   readonly eyebrow?: string;
+  readonly deferUntilActive?: boolean;
   readonly content: ReactNode;
 };
 
@@ -23,13 +24,16 @@ export function ResultViewTabs({
   readonly defaultValue?: string;
   readonly className?: string;
 }) {
+  const [activeValue, setActiveValue] = useState(defaultValue ?? "");
+
   if (!defaultValue || items.length === 0) {
     return null;
   }
 
   return (
     <Tabs.Root
-      defaultValue={defaultValue}
+      value={activeValue}
+      onValueChange={setActiveValue}
       className={cn("grid min-w-0 max-w-full gap-4", className)}
       data-result-view-tabs="true"
     >
@@ -65,7 +69,7 @@ export function ResultViewTabs({
           className="min-w-0 max-w-full outline-none data-[state=inactive]:hidden focus-visible:ring-2 focus-visible:ring-ring"
           data-result-view-panel={item.value}
         >
-          {item.content}
+          {item.deferUntilActive && activeValue !== item.value ? null : item.content}
         </Tabs.Content>
       ))}
     </Tabs.Root>
