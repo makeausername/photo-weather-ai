@@ -34,7 +34,12 @@ describe("responsive safeguards", () => {
     const moonSource = readAppSource("../components/moon-phase-calendar.tsx");
     const dashboardSource = readAppSource("./forecast/result-dashboard-components.tsx");
     const forecastSource = readAppSource("./forecast/forecast-result-client.tsx");
+    const resultControlsSource = readAppSource("./forecast/result-experience-controls.tsx");
+    const hourlyTimelineSource = readAppSource("./forecast/hourly-weather-timeline.tsx");
+    const adminShellSource = readAppSource("./admin/components/admin-shell.tsx");
+    const adminSettingsSource = readAppSource("./admin/components/admin-settings-client.tsx");
     const pricingSource = readAppSource("./pricing/pricing-client.tsx");
+    const adminProductsSource = readAppSource("./admin/components/admin-products-client.tsx");
     const authSource = readAppSource("../components/public-auth.tsx");
     const packageSource = readAppSource("../../../package.json");
     const mobileAuditSource = readAppSource("../../../scripts/audit-mobile-layout.mjs");
@@ -59,6 +64,25 @@ describe("responsive safeguards", () => {
     expect(authSource).toContain("max-w-xl");
     expect(authSource).not.toContain("grid w-full max-w-full min-w-0 justify-items-center");
     expect(authSource).toContain("[overflow-wrap:anywhere]");
+    expect(adminProductsSource).toContain(
+      'className="grid min-w-0 max-w-full gap-5" data-admin-products="pricing-management"',
+    );
+    expect(adminProductsSource).toContain('"grid min-w-0 max-w-full gap-5 xl:items-start"');
+    expect(adminProductsSource).toContain('Card className="min-w-0 max-w-full p-4 sm:p-5"');
+    expect(resultControlsSource).toContain("@radix-ui/react-tabs");
+    expect(resultControlsSource).toContain("@radix-ui/react-accordion");
+    expect(resultControlsSource).toContain("forceMount");
+    expect(resultControlsSource).toContain("data-[state=inactive]:hidden");
+    expect(resultControlsSource).not.toContain('from "recharts"');
+    expect(hourlyTimelineSource).toContain('from "recharts"');
+    expect(hourlyTimelineSource).toContain('data-hourly-weather-timeline="true"');
+    expect(forecastSource).toContain('import("./hourly-weather-timeline")');
+    expect(forecastSource).toContain('value: "supporting-signals"');
+    expect(adminShellSource).toContain("@radix-ui/react-dialog");
+    expect(adminShellSource).toContain('data-admin-mobile-navigation="sheet"');
+    expect(adminShellSource).not.toContain("overflow-x-auto pb-2");
+    expect(adminSettingsSource).toContain("@radix-ui/react-accordion");
+    expect(adminSettingsSource).toContain('data-admin-settings-groups="accordion"');
     expect(forecastSource).toContain('data-cloud-sea-professional-table-scroll="true"');
     expect(forecastSource).toContain('data-professional-hourly-table-layout="mobile-scroll-safe"');
     expect(forecastSource).toContain("border-separate border-spacing-0");
