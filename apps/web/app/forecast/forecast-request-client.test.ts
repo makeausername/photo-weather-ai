@@ -386,6 +386,28 @@ describe("forecast request client", () => {
     expect(sessionStorage.dumpKeys().join(" ")).not.toContain("full-access-token");
   });
 
+  it("reuses an exact 7-day astro result instead of repeating the expensive analysis", async () => {
+    installBrowserStorage();
+    const result = resultForTarget("astro");
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse(result));
+    const query = { ...baseQuery, horizon: "7d", target: "astro" } as const;
+
+    await expect(
+      requestForecastCalculation(query, {
+        fetcher: fetcher as unknown as typeof fetch,
+        successCacheTtlMs: 60_000,
+      }),
+    ).resolves.toEqual(result);
+    await expect(
+      requestForecastCalculation(query, {
+        fetcher: fetcher as unknown as typeof fetch,
+        successCacheTtlMs: 60_000,
+      }),
+    ).resolves.toEqual(result);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores the previous cache schema after an hourly result rollout", async () => {
     const { sessionStorage } = installBrowserStorage();
     const query = { ...baseQuery, horizon: "24h", target: "general" } as const;

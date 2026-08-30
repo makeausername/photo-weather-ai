@@ -1972,9 +1972,9 @@ export function buildGlowForecastViewModel(
     aerosolCard,
     terrainObstructionCards,
   );
-  const recommendedAction = firstText(
+  const recommendedAction = preferredGlowTravelRecommendation(
     analysis.travelRecommendations,
-    "建议结合朝霞、晚霞和现场云层变化灵活安排。",
+    overallRecommendation.preferredTarget,
   );
 
   return sanitizeForecastPublicCopyTree(result, "glow", {
@@ -2029,13 +2029,13 @@ export function buildGlowForecastViewModel(
         "risk",
         "霞光风险拆解",
         `光路${lightPathRiskLabel} / 云层压制${cloudSuppressionRiskLabel}`,
-        [
+        joinChineseClauses([
           `低云/雾墙风险${lowCloudFogWallRiskLabel}（${analysis.lowCloudFogWallRisk ?? analysis.lowCloudObstructionRisk} 分）`,
           `霞光光路遮挡风险${lightPathRiskLabel}（${analysis.glowLightPathObstructionRisk} 分）`,
           `云层压制风险${cloudSuppressionRiskLabel}（${analysis.cloudSuppressionRisk} 分）`,
           glowLightPathPublicCopy(analysis),
           recommendedAction,
-        ].join("；"),
+        ]),
         analysis.glowLightPathObstructionRisk >= 70 || analysis.cloudSuppressionRisk >= 70
           ? "danger"
           : "info",
@@ -2072,6 +2072,35 @@ export function buildGlowForecastViewModel(
     missingDataNotes: analysis.missingDataNotes,
     dataNotice: buildGlowDataNotice(result),
   });
+}
+
+function preferredGlowTravelRecommendation(
+  recommendations: readonly string[],
+  preferredTarget: GlowOverallRecommendation["preferredTarget"],
+): string {
+  const targetPrefixes =
+    preferredTarget === "朝霞晚霞"
+      ? ["朝霞：", "晚霞："]
+      : preferredTarget === "朝霞" || preferredTarget === "晚霞"
+        ? [`${preferredTarget}：`]
+        : [];
+  const targetMatches = targetPrefixes
+    .map((prefix) => recommendations.find((item) => item.trim().startsWith(prefix)))
+    .filter((item): item is string => Boolean(item));
+
+  return firstText(
+    targetMatches.length > 0
+      ? targetMatches
+      : recommendations.filter((item) => !/^(朝霞|晚霞)：/u.test(item.trim())),
+    "建议结合当前推荐窗口和现场云层变化灵活安排。",
+  );
+}
+
+function joinChineseClauses(parts: readonly string[]): string {
+  return parts
+    .map((part) => part.trim().replace(/[。！？!?；;，,、]+$/u, ""))
+    .filter(Boolean)
+    .join("；");
 }
 
 function buildGlowOverallRecommendation(

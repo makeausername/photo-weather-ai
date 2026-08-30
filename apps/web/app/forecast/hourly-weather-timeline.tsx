@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import {
   Area,
   Bar,
@@ -29,10 +30,12 @@ export function HourlyWeatherTimeline({
   points,
   title = "逐小时天气趋势",
   description = "同一时间轴对照降水、云量、气温与露点，先看趋势，再按需展开明细。",
+  controls,
 }: {
   readonly points: readonly HourlyTimelinePoint[];
   readonly title?: string;
   readonly description?: string;
+  readonly controls?: ReactNode;
 }) {
   if (points.length === 0) {
     return null;
@@ -54,6 +57,8 @@ export function HourlyWeatherTimeline({
           {points.length} 小时
         </span>
       </div>
+
+      {controls ? <div className="mt-4 min-w-0">{controls}</div> : null}
 
       <div className="mt-4 h-[280px] min-w-0 sm:h-[320px]" role="img" aria-label={title}>
         <ResponsiveContainer width="100%" height="100%">
