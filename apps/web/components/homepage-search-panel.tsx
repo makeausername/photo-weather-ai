@@ -30,13 +30,14 @@ export function HomepageSearchPanel({
       defaultTarget={homepageDefaultTarget}
       showTargetSelector={false}
       targetHelperText={homepageTargetHelperText}
-      ctaLabel="生成拍摄判断"
-      ctaDisabledLabel="请先选择地点"
+      ctaLabel="查看完整综合报告 →"
+      ctaDisabledLabel="选择地点后查看完整报告"
       showResultSourceBadges={false}
       selectedLocationDetailMode="compact"
       showSelectedLocationActions
       showQuickLocations={false}
       enableCurrentLocation
+      autoPreviewEnabled
       lockExtendedHorizonsForFree
       selectedLocation={selectedLocation}
       onSelectedLocationChange={onSelectedLocationChange}

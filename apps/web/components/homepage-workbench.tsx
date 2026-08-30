@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   forecastHorizonLabels,
   type ForecastCalculationResult,
@@ -13,7 +13,13 @@ import {
   homepageDefaultHorizon,
   homepageDefaultTarget,
 } from "./homepage-search-panel";
-import { buildForecastRequestPayload, type SelectedLocation } from "./selected-location";
+import {
+  buildForecastRequestPayload,
+  forgetRecentSelectedLocation,
+  readRecentSelectedLocation,
+  rememberRecentSelectedLocation,
+  type SelectedLocation,
+} from "./selected-location";
 import {
   normalizeForecastClientErrorMessage,
   requestForecastCalculation,
@@ -79,6 +85,22 @@ export function HomepageWorkbench() {
   });
 
   useEffect(() => {
+    const recentLocation = readRecentSelectedLocation();
+    if (recentLocation) {
+      setSelectedLocation(recentLocation);
+    }
+  }, []);
+
+  const handleSelectedLocationChange = useCallback((location: SelectedLocation | null) => {
+    setSelectedLocation(location);
+    if (location) {
+      rememberRecentSelectedLocation(location);
+    } else {
+      forgetRecentSelectedLocation();
+    }
+  }, []);
+
+  useEffect(() => {
     if (!selectedLocation) {
       setLayerState({ status: "idle", result: null });
       return;
@@ -130,7 +152,7 @@ export function HomepageWorkbench() {
     >
       <HomepageSearchPanel
         selectedLocation={selectedLocation}
-        onSelectedLocationChange={setSelectedLocation}
+        onSelectedLocationChange={handleSelectedLocationChange}
         onForecastOptionsChange={setForecastOptions}
       />
       <HomepageGuidancePanel
@@ -266,10 +288,7 @@ function HomepageInsightCardView({
       <div className="min-w-0">
         <h3 className="text-base font-bold leading-6 text-card-foreground">{card.title}</h3>
         {loading ? (
-          <div
-            className="mt-2 h-4 w-1/2 animate-pulse rounded-full bg-muted"
-            aria-hidden="true"
-          />
+          <div className="mt-2 h-4 w-1/2 animate-pulse rounded-full bg-muted" aria-hidden="true" />
         ) : null}
         {card.value ? (
           <p
@@ -309,7 +328,8 @@ function buildHomepageResultCards(
   const bestWindow = result.bestWindows[0];
   const mainRisk = result.riskFlags[0];
   const finalResultLabel = result.finalRecommendationLabel ?? result.recommendationLabel;
-  const finalDecisionSummary = result.finalDecisionSummaryZh ?? decisionSummaryText(location, state);
+  const finalDecisionSummary =
+    result.finalDecisionSummaryZh ?? decisionSummaryText(location, state);
 
   return [
     {

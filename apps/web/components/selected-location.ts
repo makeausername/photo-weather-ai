@@ -32,6 +32,84 @@ export type SelectedLocation = {
   readonly photoSpotId?: string;
 };
 
+export const recentSelectedLocationStorageKey = "photo_weather_recent_selected_location:v1";
+
+type SelectedLocationStorage = Pick<Storage, "getItem" | "removeItem" | "setItem">;
+
+export function serializeRecentSelectedLocation(location: SelectedLocation): string {
+  return JSON.stringify(location);
+}
+
+export function parseRecentSelectedLocation(
+  value: string | null | undefined,
+): SelectedLocation | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const candidate = JSON.parse(value) as Partial<SelectedLocation>;
+    const validSource =
+      candidate.source === "local_photo_spot" ||
+      candidate.source === "amap" ||
+      candidate.source === "manual" ||
+      candidate.source === "browser_geolocation";
+    const validDataStatus =
+      candidate.dataStatus === "verified" || candidate.dataStatus === "pending";
+
+    if (
+      typeof candidate.id !== "string" ||
+      typeof candidate.name !== "string" ||
+      typeof candidate.displayName !== "string" ||
+      typeof candidate.originalSource !== "string" ||
+      typeof candidate.coordinateSource !== "string" ||
+      !validSource ||
+      !validDataStatus ||
+      typeof candidate.latitudeWgs84 !== "number" ||
+      !Number.isFinite(candidate.latitudeWgs84) ||
+      typeof candidate.longitudeWgs84 !== "number" ||
+      !Number.isFinite(candidate.longitudeWgs84)
+    ) {
+      return null;
+    }
+
+    return candidate as SelectedLocation;
+  } catch {
+    return null;
+  }
+}
+
+export function readRecentSelectedLocation(
+  storage: SelectedLocationStorage | null = browserSessionStorage(),
+): SelectedLocation | null {
+  try {
+    return parseRecentSelectedLocation(storage?.getItem(recentSelectedLocationStorageKey));
+  } catch {
+    return null;
+  }
+}
+
+export function rememberRecentSelectedLocation(
+  location: SelectedLocation,
+  storage: SelectedLocationStorage | null = browserSessionStorage(),
+): void {
+  try {
+    storage?.setItem(recentSelectedLocationStorageKey, serializeRecentSelectedLocation(location));
+  } catch {
+    // A disabled or full session store must never block a forecast query.
+  }
+}
+
+export function forgetRecentSelectedLocation(
+  storage: SelectedLocationStorage | null = browserSessionStorage(),
+): void {
+  try {
+    storage?.removeItem(recentSelectedLocationStorageKey);
+  } catch {
+    // Clearing the visible selection is still valid when browser storage is unavailable.
+  }
+}
+
 type SearchResultLike = {
   readonly id: string;
   readonly name: string;
@@ -267,4 +345,12 @@ function cleanReverseText(value: string | null | undefined): string | undefined 
 
 function finiteNumberOrUndefined(value: number | null | undefined): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function browserSessionStorage(): SelectedLocationStorage | null {
+  try {
+    return typeof window === "undefined" ? null : window.sessionStorage;
+  } catch {
+    return null;
+  }
 }

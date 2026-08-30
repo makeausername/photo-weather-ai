@@ -13,7 +13,13 @@ import {
 } from "../app/forecast/forecast-request-client";
 import { PlaceSearchCard } from "./place-search-card";
 import { PublicShell } from "./public-shell";
-import { buildForecastRequestPayload, type SelectedLocation } from "./selected-location";
+import {
+  buildForecastRequestPayload,
+  forgetRecentSelectedLocation,
+  readRecentSelectedLocation,
+  rememberRecentSelectedLocation,
+  type SelectedLocation,
+} from "./selected-location";
 import { SubjectControlPanel } from "./subject-control-panel";
 import { Badge, Card, cn } from "./ui";
 
@@ -147,6 +153,20 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
     status: "idle",
     result: null,
   });
+  useEffect(() => {
+    const recentLocation = readRecentSelectedLocation();
+    if (recentLocation) {
+      setSelectedLocation(recentLocation);
+    }
+  }, []);
+  const handleSelectedLocationChange = useCallback((location: SelectedLocation | null) => {
+    setSelectedLocation(location);
+    if (location) {
+      rememberRecentSelectedLocation(location);
+    } else {
+      forgetRecentSelectedLocation();
+    }
+  }, []);
   const handleForecastOptionsChange = useCallback(
     (options: { readonly horizon: ForecastHorizon; readonly target: ForecastTarget }) => {
       setSelectedHorizon(options.horizon);
@@ -228,7 +248,9 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
           <ScenarioSearchPanel
             config={config}
             selectedLocation={isInlineDecisionTarget ? selectedLocation : undefined}
-            onSelectedLocationChange={isInlineDecisionTarget ? setSelectedLocation : undefined}
+            onSelectedLocationChange={
+              isInlineDecisionTarget ? handleSelectedLocationChange : undefined
+            }
             onForecastOptionsChange={handleForecastOptionsChange}
           />
         ) : null}
@@ -731,7 +753,10 @@ export function buildGlowResultCards(
     },
     {
       title: "晚霞机会",
-      value: formatGlowScoreWithLabel(analysis.sunsetGlowScore, analysis.labels.sunsetGlowOpportunity),
+      value: formatGlowScoreWithLabel(
+        analysis.sunsetGlowScore,
+        analysis.labels.sunsetGlowOpportunity,
+      ),
       description: firstGlowPublicText(
         [
           sunsetWindow?.noteZh,
@@ -868,7 +893,8 @@ function buildGlowPendingCards(state: SubjectForecastLayerState): readonly GlowD
     },
     {
       title: "现场复核重点",
-      description: "优先看太阳方向是否有云缝、低云是否遮挡光路、透明度是否足够，以及降水是否打断关键窗口。",
+      description:
+        "优先看太阳方向是否有云缝、低云是否遮挡光路、透明度是否足够，以及降水是否打断关键窗口。",
       badge: "复核",
     },
   ];
@@ -1025,7 +1051,10 @@ export function buildAstroResultCards(
     },
     {
       title: "银河机会",
-      value: formatAstroScoreWithLabel(analysis.milkyWayScore, analysis.labels.milkyWayShootability),
+      value: formatAstroScoreWithLabel(
+        analysis.milkyWayScore,
+        analysis.labels.milkyWayShootability,
+      ),
       description: joinAstroPublicText(
         [
           milkyWayWindow?.noteZh,
@@ -1153,7 +1182,8 @@ function buildAstroPendingCards(state: SubjectForecastLayerState): readonly Astr
       },
       {
         title: "光污染与天气同步复核",
-        description: "云量、通透度、露水风险、风和光污染方向会影响是否值得专程，结果返回后会单独标出。",
+        description:
+          "云量、通透度、露水风险、风和光污染方向会影响是否值得专程，结果返回后会单独标出。",
         badge: "复核",
         tone: "warning",
       },
@@ -1173,7 +1203,8 @@ function buildAstroPendingCards(state: SubjectForecastLayerState): readonly Astr
     },
     {
       title: "现场复核重点",
-      description: "优先看无月黑夜是否覆盖银河窗口、云量是否打开、银河方向光污染是否偏高，以及地形是否挡住地平线。",
+      description:
+        "优先看无月黑夜是否覆盖银河窗口、云量是否打开、银河方向光污染是否偏高，以及地形是否挡住地平线。",
       badge: "复核",
     },
   ];
@@ -1215,7 +1246,9 @@ function astroPanelDescription(
   return "选择地点后，可在本页查看星空与银河拍摄条件。";
 }
 
-function astroBadgeVariant(tone: AstroDecisionCard["tone"]): "accent" | "danger" | "muted" | "warning" {
+function astroBadgeVariant(
+  tone: AstroDecisionCard["tone"],
+): "accent" | "danger" | "muted" | "warning" {
   if (tone === "danger") {
     return "danger";
   }
@@ -1235,8 +1268,7 @@ function astroMilkyWayDecisionWindow(
     analysis.recommendedMilkyWayWindow ??
     analysis.recommendedMilkyWayWindows[0] ??
     analysis.bestAstroWindows.find(
-      (window) =>
-        window.type === "recommended_milky_way" || window.type === "milky_way_candidate",
+      (window) => window.type === "recommended_milky_way" || window.type === "milky_way_candidate",
     )
   );
 }
@@ -1259,7 +1291,8 @@ function astroWindowDirectionText(window: AstroWindowForDecision | undefined): s
 
   const parts = [
     window.directionZh ? `银河核心方向 ${window.directionZh}` : undefined,
-    typeof window.galacticCenterAltitude === "number" && Number.isFinite(window.galacticCenterAltitude)
+    typeof window.galacticCenterAltitude === "number" &&
+    Number.isFinite(window.galacticCenterAltitude)
       ? `银心高度约 ${Math.round(window.galacticCenterAltitude)}°`
       : undefined,
   ].filter(Boolean);
@@ -1320,10 +1353,7 @@ function astroTerrainHorizonText(
     return undefined;
   }
 
-  const qualitativeSummary = safeAstroPublicText(
-    assessment.qualitativeFallback?.summaryZh,
-    "",
-  );
+  const qualitativeSummary = safeAstroPublicText(assessment.qualitativeFallback?.summaryZh, "");
   if (qualitativeSummary) {
     return qualitativeSummary;
   }
@@ -1480,7 +1510,9 @@ function glowPanelDescription(
   return "选择地点后，可在本页查看朝霞与晚霞拍摄条件。";
 }
 
-function glowBadgeVariant(tone: GlowDecisionCard["tone"]): "accent" | "danger" | "muted" | "warning" {
+function glowBadgeVariant(
+  tone: GlowDecisionCard["tone"],
+): "accent" | "danger" | "muted" | "warning" {
   if (tone === "danger") {
     return "danger";
   }
@@ -1500,9 +1532,7 @@ function glowWindowForPhase(
   return glowDecisionWindows(analysis).find((window) => window.phase === phase);
 }
 
-function glowDecisionWindows(
-  analysis: GlowAnalysisForDecision,
-): readonly GlowWindowForDecision[] {
+function glowDecisionWindows(analysis: GlowAnalysisForDecision): readonly GlowWindowForDecision[] {
   const windows = [
     analysis.bestGlowWindow,
     ...analysis.bestGlowWindows,

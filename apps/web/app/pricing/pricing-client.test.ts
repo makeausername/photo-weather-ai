@@ -4,7 +4,12 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { PricingClient, checkoutPathForProduct, type BillingProduct } from "./pricing-client";
+import {
+  PricingClient,
+  checkoutPathForProduct,
+  displayProductDescription,
+  type BillingProduct,
+} from "./pricing-client";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/pricing",
@@ -77,7 +82,9 @@ const products: readonly BillingProduct[] = [
 
 describe("pricing plan selection", () => {
   it("renders paid plans only and does not embed checkout UI", () => {
-    const html = renderToStaticMarkup(React.createElement(PricingClient, { initialProducts: products }));
+    const html = renderToStaticMarkup(
+      React.createElement(PricingClient, { initialProducts: products }),
+    );
 
     expect(html).toContain("选择套餐");
     expect(html).toContain("月卡");
@@ -121,5 +128,15 @@ describe("pricing plan selection", () => {
     expect(checkoutPathForProduct("monthly_full")).toBe("/checkout?product=monthly_full");
     expect(checkoutPathForProduct("quarterly_full")).toBe("/checkout?product=quarterly_full");
     expect(checkoutPathForProduct("yearly_full")).toBe("/checkout?product=yearly_full");
+  });
+
+  it("repairs stale or truncated paid-plan descriptions", () => {
+    expect(
+      displayProductDescription({
+        ...products[0]!,
+        code: "monthly_full",
+        description: "开通后 30 天内查看完整摄影判断、专业时序表和。",
+      }),
+    ).toBe("开通后 30 天内查看完整摄影判断、专业时序表和历史报告。");
   });
 });

@@ -1991,24 +1991,18 @@ export function buildGlowForecastViewModel(
       scoreCard(
         "glow-sunrise-opportunity",
         "sunriseGlow",
-        "朝霞机会",
+        "朝霞综合机会",
         `${analysis.sunriseGlowScore} 分`,
-        firstText(
-          result.scores.sunriseGlow.reasons,
-          "按日出前后霞光云层载体、光路遮挡、云层压制、低云/雾墙、通透度和地形遮挡折算。",
-        ),
+        `综合机会分为 ${analysis.sunriseGlowScore} 分；逐日卡会另列具体窗口的实际适拍度，避免把色彩潜力误当成可执行分。`,
         "accent",
         analysis.sunriseGlowScore,
       ),
       scoreCard(
         "glow-sunset-opportunity",
         "sunsetGlow",
-        "晚霞机会",
+        "晚霞综合机会",
         `${analysis.sunsetGlowScore} 分`,
-        firstText(
-          result.scores.sunsetGlow.reasons,
-          "按日落前后霞光云层载体、光路遮挡、云层压制、低云/雾墙、降水和通透度折算。",
-        ),
+        `综合机会分为 ${analysis.sunsetGlowScore} 分；逐日卡会另列具体窗口的实际适拍度，避免把色彩潜力误当成可执行分。`,
         "accent",
         analysis.sunsetGlowScore,
       ),
@@ -6360,7 +6354,8 @@ function buildAstroDecisionSummary({
         : "暂不专程，等待临近复核";
 
   return {
-    recommendationLabel: result.finalRecommendationLabel ?? worth?.value ?? result.astroAnalysis.recommendationLabel,
+    recommendationLabel:
+      result.finalRecommendationLabel ?? worth?.value ?? result.astroAnalysis.recommendationLabel,
     recommendationTone: worth?.tone ?? "muted",
     bestNightLabel: bestNight?.localEveningDateLabel ?? "暂无明确最佳夜",
     bestWindowLabel: bestWindow?.value ?? "暂无可靠最佳拍摄窗口",
@@ -6878,6 +6873,10 @@ const astroPublicProfessionalMetadataItemLabels = new Set(
     "数据说明",
     "缺失数据",
     "逐小时窗口",
+    "本地辐亮度",
+    "周边光穹",
+    "环境风险指数",
+    "有效采样",
   ].map(normalizeAstroProfessionalMetadataKey),
 );
 
@@ -6889,7 +6888,9 @@ export function filterAstroPublicProfessionalDataGroups(
       return [];
     }
 
-    const items = group.items.filter(isAstroPublicProfessionalDataItem);
+    const items = group.items
+      .filter(isAstroPublicProfessionalDataItem)
+      .map(sanitizeAstroPublicProfessionalDataItem);
     if (items.length === 0) {
       return [];
     }
@@ -6911,6 +6912,15 @@ function isAstroPublicProfessionalDataItem(item: ForecastResultSectionItem): boo
   return !astroPublicProfessionalMetadataItemLabels.has(
     normalizeAstroProfessionalMetadataKey(item.label),
   );
+}
+
+function sanitizeAstroPublicProfessionalDataItem(
+  item: ForecastResultSectionItem,
+): ForecastResultSectionItem {
+  return {
+    ...item,
+    detail: item.detail.replace(/；有效采样\s*\d+\/\d+。?/g, "。"),
+  };
 }
 
 function normalizeAstroProfessionalMetadataKey(label: string): string {

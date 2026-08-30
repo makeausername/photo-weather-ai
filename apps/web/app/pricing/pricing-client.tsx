@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
+  getAccountAccess,
   getCurrentAccountSession,
   listPublicBillingProducts,
+  shouldShowAdminEntry,
   type PublicBillingProduct,
 } from "../../components/account-session";
 import { Badge, Card, cn } from "../../components/ui";
@@ -171,10 +173,15 @@ function displayProductName(product: PublicBillingProduct): string {
   return sanitizePricingCopy(product.name) ?? planDisplayCopy[product.code]?.name ?? "套餐";
 }
 
-function displayProductDescription(product: PublicBillingProduct): string | null {
+export function displayProductDescription(product: PublicBillingProduct): string | null {
   const description = sanitizePricingCopy(product.description);
   const defaultDescription = planDisplayCopy[product.code]?.description ?? null;
-  if (description && legacyPlanDescriptions[product.code]?.includes(description)) {
+  if (
+    description &&
+    (containsStalePricingCopy(product.description ?? "") ||
+      legacyPlanDescriptions[product.code]?.includes(description) ||
+      /和[。.!！]?$/.test(description))
+  ) {
     return defaultDescription;
   }
   return description ?? defaultDescription;
@@ -225,6 +232,8 @@ export function PricingClient({
     initialPaidProducts ?? [],
   );
   const [loggedIn, setLoggedIn] = useState(initialLoggedIn);
+  const [hasFullAccess, setHasFullAccess] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [state, setState] = useState<"loading" | "ready" | "error">(
     initialProducts ? "ready" : "loading",
   );
@@ -234,9 +243,16 @@ export function PricingClient({
     let cancelled = false;
 
     getCurrentAccountSession()
-      .then((session) => {
+      .then(async (session) => {
         if (!cancelled) {
           setLoggedIn(Boolean(session));
+          setIsAdmin(Boolean(session && shouldShowAdminEntry(session)));
+        }
+        if (session) {
+          const access = await getAccountAccess().catch(() => null);
+          if (!cancelled) {
+            setHasFullAccess(access?.hasFullAccess === true);
+          }
         }
       })
       .catch(() => {
@@ -307,17 +323,16 @@ export function PricingClient({
             role="alert"
             className={cn(
               "rounded-xl border bg-card px-4 py-3 text-sm",
-              state === "error" ? "border-danger text-danger" : "border-warning text-warning-strong",
+              state === "error"
+                ? "border-danger text-danger"
+                : "border-warning text-warning-strong",
             )}
           >
             {message}
           </p>
         ) : null}
 
-        <section
-          id="paid-plans"
-          className="grid min-w-0 max-w-full gap-4"
-        >
+        <section id="paid-plans" className="grid min-w-0 max-w-full gap-4">
           <div className="grid min-w-0 max-w-full gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {state === "loading" ? (
               <Card className="min-w-0 max-w-full p-5 text-sm text-muted-foreground">
@@ -329,6 +344,8 @@ export function PricingClient({
                 key={product.code}
                 product={product}
                 loggedIn={loggedIn}
+                hasFullAccess={hasFullAccess}
+                isAdmin={isAdmin}
               />
             ))}
           </div>
@@ -341,9 +358,13 @@ export function PricingClient({
 function PaidPlanCard({
   product,
   loggedIn,
+  hasFullAccess,
+  isAdmin,
 }: {
   readonly product: PublicBillingProduct;
   readonly loggedIn: boolean;
+  readonly hasFullAccess: boolean;
+  readonly isAdmin: boolean;
 }) {
   const badgeText = displayProductBadgeText(product);
   const description = displayProductDescription(product);
@@ -360,6 +381,7 @@ function PaidPlanCard({
           <div className="flex flex-wrap gap-2">
             {product.recommended ? <Badge variant="accent">推荐</Badge> : null}
             {badgeText ? <Badge variant="info">{badgeText}</Badge> : null}
+            {hasFullAccess ? <Badge variant="success">完整权益已生效</Badge> : null}
           </div>
           <h2 className="mt-3 text-lg font-bold text-card-foreground">
             {displayProductName(product)}
@@ -372,19 +394,28 @@ function PaidPlanCard({
           {product.durationText}
         </Badge>
       </div>
-      <p className="text-3xl font-bold tracking-[-0.03em] text-foreground">{formatPrice(product)}</p>
+      <p className="text-3xl font-bold tracking-[-0.03em] text-foreground">
+        {formatPrice(product)}
+      </p>
       <ul className="grid gap-2 text-sm leading-6 text-muted-foreground">
         {paidFeatures(product).map((feature) => (
           <li key={feature}>{feature}</li>
         ))}
       </ul>
       <div>
-        {loggedIn ? (
+        {isAdmin ? (
+          <Link
+            href="/account"
+            className="inline-flex h-12 w-full items-center justify-center rounded-xl border border-primary bg-secondary px-5 text-sm font-semibold text-primary transition hover:bg-primary hover:text-primary-foreground"
+          >
+            管理员已拥有完整权限
+          </Link>
+        ) : loggedIn ? (
           <Link
             href={checkoutPathForProduct(product.code)}
             className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:bg-[var(--primary-hover)]"
           >
-            立即购买
+            {hasFullAccess ? "延长完整权益" : "立即购买"}
           </Link>
         ) : (
           <Link
