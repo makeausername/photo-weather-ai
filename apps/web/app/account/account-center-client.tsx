@@ -270,7 +270,7 @@ function ProfileCard({ session }: { readonly session: PublicAccountSession }) {
     <Card className="p-5 shadow-sm sm:p-6">
       <SectionTitle
         title="账户资料"
-        description="查看当前账户的基础资料和公开显示信息。"
+        description="登录信息与账户状态。"
         aside={<Badge variant={statusBadgeVariant(session.user.status)}>{statusText}</Badge>}
       />
       <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
@@ -299,7 +299,7 @@ function ContactBindingCard({
     <Card className="p-5 shadow-sm sm:p-6">
       <CollapsibleSection
         title="绑定方式"
-        description="需要换绑邮箱或手机号时再展开；操作需验证码和当前密码。"
+        description="更换邮箱或手机号。"
         bodyClassName="grid gap-4 lg:grid-cols-2"
       >
         <EmailBindingForm session={session} onSessionUpdate={onSessionUpdate} />
@@ -316,10 +316,7 @@ function SecuritySettingsCard({
 }) {
   return (
     <Card className="p-5 shadow-sm sm:p-6">
-      <CollapsibleSection
-        title="安全设置"
-        description="需要修改密码时再展开；完成后会保留本设备登录，并撤销其他登录会话。"
-      >
+      <CollapsibleSection title="安全设置" description="修改密码并管理登录安全。">
         <ChangePasswordForm onSessionUpdate={onSessionUpdate} />
       </CollapsibleSection>
     </Card>
@@ -1085,7 +1082,7 @@ function ForecastHistoryCard({
 }: {
   readonly initialHistory?: readonly AccountForecastHistoryRecord[];
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [items, setItems] = useState<readonly AccountForecastHistoryRecord[] | null>(
     initialHistory ?? null,
   );
@@ -1153,11 +1150,11 @@ function ForecastHistoryCard({
     <Card className="min-w-0 max-w-full p-5 shadow-sm sm:p-6">
       <CollapsibleSection
         title="查询历史"
-        description="查询历史默认收起，展开后查看最近分析。"
+        description="最近10次拍摄分析。"
         count={items?.length}
         open={open}
         onOpenChange={handleHistoryOpenChange}
-        defaultOpen={false}
+        defaultOpen
         lazyRender
       >
         {state === "loading" ? (

@@ -2,7 +2,7 @@ import type { ScenarioPageConfig } from "../components/scenario-module-page";
 
 export const cloudSeaScenarioConfig = {
   title: "云海判断",
-  subtitle: "结合湿度、低云、风速、海拔高差、能见度和光线窗口，区分云海形成、可拍机会与白墙风险。",
+  subtitle: "查看云海机会、可拍窗口与白墙风险。",
   target: "cloud_sea",
   defaultHorizon: "48h",
   ctaLabel: "查看云海拍摄判断",
@@ -31,8 +31,7 @@ export const cloudSeaScenarioConfig = {
     "部分地形或云层数据仍需结合临近预报复核。",
   ],
   learningTitle: "云海判断需要关注什么",
-  learningDescription:
-    "选择地点后，查看水汽、低云、地形、风速、光线时段、降水和白墙风险。",
+  learningDescription: "选择地点后，查看水汽、低云、地形、风速、光线时段、降水和白墙风险。",
   learningBadgeLabel: "判断参考",
   learningItems: [
     {
@@ -50,20 +49,17 @@ export const cloudSeaScenarioConfig = {
     {
       title: "拍摄点是否高于云层",
       tag: "地形优势",
-      description:
-        "高山、山脊和观景台更容易看到云海；低海拔地点更多表现为晨雾、低云或通透变化。",
+      description: "高山、山脊和观景台更容易看到云海；低海拔地点更多表现为晨雾、低云或通透变化。",
     },
     {
       title: "风速是否合适",
       tag: "层次变化",
-      description:
-        "风太小容易闷成白墙，风太大云雾容易被吹散。适中风速更利于云雾流动和层次变化。",
+      description: "风太小容易闷成白墙，风太大云雾容易被吹散。适中风速更利于云雾流动和层次变化。",
     },
     {
       title: "是否有光线窗口",
       tag: "出片窗口",
-      description:
-        "清晨日出前后最值得守。夜间云海形成不等于能出片，是否有光线和开口同样重要。",
+      description: "清晨日出前后最值得守。夜间云海形成不等于能出片，是否有光线和开口同样重要。",
     },
     {
       title: "是否存在雨后开口",
@@ -76,7 +72,7 @@ export const cloudSeaScenarioConfig = {
 
 export const glowScenarioConfig = {
   title: "朝霞晚霞",
-  subtitle: "围绕日出日落、晨昏时间、云层高度、能见度与地形遮挡，辅助判断朝霞和晚霞机会。",
+  subtitle: "查看朝霞晚霞窗口、云层条件与光路遮挡。",
   target: "glow",
   defaultHorizon: "72h",
   ctaLabel: "查看朝霞晚霞判断",
@@ -143,8 +139,7 @@ export const glowScenarioConfig = {
 
 export const astroScenarioConfig = {
   title: "星空银河",
-  subtitle:
-    "结合天文黑夜、月相月照、月出月落、银河窗口、云量和能见度，辅助判断星空与银河拍摄机会。",
+  subtitle: "查看观星夜晚、银河窗口、月光与天气阻碍。",
   target: "astro",
   defaultHorizon: "7d",
   ctaLabel: "查看星空银河判断",

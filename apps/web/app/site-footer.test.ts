@@ -16,13 +16,7 @@ vi.mock("next/navigation", () => ({
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
-const removedFooterNavigationLabels = [
-  "综合判断",
-  "云海",
-  "朝霞晚霞",
-  "星空银河",
-  "定价",
-] as const;
+const removedFooterNavigationLabels = ["综合判断", "云海", "朝霞晚霞", "星空银河", "定价"] as const;
 
 const removedFooterCopy = [
   siteConfig.brand.tagline,
@@ -35,7 +29,7 @@ function countOccurrences(value: string, needle: string): number {
 }
 
 describe("SiteFooter", () => {
-  it("renders only the copyright and safe ICP filing link", () => {
+  it("renders copyright, essential legal links, and the safe ICP filing link", () => {
     expect(siteConfig.legal.icpNumber).toBe("\u6caaICP\u59072025140939\u53f7-3");
     expect(siteConfig.legal.icpUrl).toBe("https://beian.miit.gov.cn");
 
@@ -44,14 +38,18 @@ describe("SiteFooter", () => {
     expect(html).toContain(siteConfig.footer.copyright);
     expect(html).toContain(siteConfig.legal.icpNumber);
     expect(html).toContain(`href="${siteConfig.legal.icpUrl}"`);
-    expect(countOccurrences(html, "href=")).toBe(1);
+    expect(countOccurrences(html, "href=")).toBe(5);
+    expect(html).toContain('href="/help"');
+    expect(html).toContain('href="/privacy"');
+    expect(html).toContain('href="/terms"');
+    expect(html).toContain('href="/disclaimer"');
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="noopener noreferrer"');
     expect(html).toContain("focus-visible:ring-2");
     expect(html).toContain("focus-visible:ring-ring");
   });
 
-  it("removes the old brand introduction, product navigation, and disclaimer content", () => {
+  it("removes the old brand introduction and product navigation while keeping legal navigation", () => {
     const html = renderToStaticMarkup(React.createElement(SiteFooter));
 
     expect(html).not.toContain("/brand-mark.svg");
@@ -64,7 +62,7 @@ describe("SiteFooter", () => {
       expect(html).not.toContain(text);
     }
     expect(html).not.toContain("页脚产品导航");
-    expect(html).not.toContain("<nav");
+    expect(html).toContain('<nav aria-label="帮助与法律信息"');
     expect(html).not.toContain("<ul");
     expect(html).not.toContain("grid-cols");
     expect(html).not.toContain("\u7ba1\u7406\u540e\u53f0");
@@ -80,7 +78,7 @@ describe("SiteFooter", () => {
     expect(html).toContain("max-w-[1600px]");
     expect(html).toContain("flex-wrap");
     expect(html).toContain("items-center justify-center");
-    expect(html).toContain("gap-x-3 gap-y-1.5");
+    expect(html).toContain("gap-x-3 gap-y-2");
     expect(html).toContain("py-5");
     expect(html).toContain("text-center");
     expect(html).toContain("max-w-full");
@@ -89,7 +87,7 @@ describe("SiteFooter", () => {
     expect(html).not.toContain("justify-end");
     expect(html).not.toContain("border-y");
     expect(html).not.toContain("min-h-");
-    expect(html).not.toContain("grid ");
+    expect(html).not.toContain("grid-cols");
     expect(html).not.toContain("bg-[#071614]");
     expect(html).not.toContain("rgb(7_22_20)");
     expect(html).not.toContain("shadow");

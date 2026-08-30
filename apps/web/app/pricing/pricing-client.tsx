@@ -332,6 +332,22 @@ export function PricingClient({
           </p>
         ) : null}
 
+        {hasFullAccess ? (
+          <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-primary/30 bg-secondary px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="font-bold text-card-foreground">
+                {isAdmin ? "管理员账户已拥有完整权益" : "完整权益已生效"}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {isAdmin ? "无需购买套餐。" : "购买新套餐后，有效期自动顺延。"}
+              </p>
+            </div>
+            <Link href="/account" className="text-sm font-semibold text-primary">
+              查看账户
+            </Link>
+          </div>
+        ) : null}
+
         <section id="paid-plans" className="grid min-w-0 max-w-full gap-4">
           <div className="grid min-w-0 max-w-full gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {state === "loading" ? (
@@ -381,7 +397,6 @@ function PaidPlanCard({
           <div className="flex flex-wrap gap-2">
             {product.recommended ? <Badge variant="accent">推荐</Badge> : null}
             {badgeText ? <Badge variant="info">{badgeText}</Badge> : null}
-            {hasFullAccess ? <Badge variant="success">完整权益已生效</Badge> : null}
           </div>
           <h2 className="mt-3 text-lg font-bold text-card-foreground">
             {displayProductName(product)}
@@ -408,7 +423,7 @@ function PaidPlanCard({
             href="/account"
             className="inline-flex h-12 w-full items-center justify-center rounded-xl border border-primary bg-secondary px-5 text-sm font-semibold text-primary transition hover:bg-primary hover:text-primary-foreground"
           >
-            管理员已拥有完整权限
+            查看账户
           </Link>
         ) : loggedIn ? (
           <Link
