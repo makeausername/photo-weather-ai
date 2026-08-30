@@ -79,6 +79,17 @@ export function stripRepeatedCopyLabel(text: string | undefined, label: string):
   return trimmed.replace(new RegExp(`^(?:${escaped}\\s*[：:]\\s*)+`), "").trim();
 }
 
+function stripTerminalSentencePunctuation(text: string): string {
+  return text.trim().replace(/[。！？!?]+$/u, "");
+}
+
+export function joinChineseSentences(...parts: readonly string[]): string {
+  return parts
+    .map(stripTerminalSentencePunctuation)
+    .filter(Boolean)
+    .join("。");
+}
+
 export function rainRiskText(weather: RainRiskWeather | undefined): RainRiskCopy {
   const amount = precipitationAmount(weather);
   const probability = displayedPrecipitationProbability(weather, amount);
@@ -142,7 +153,11 @@ export function rainRiskText(weather: RainRiskWeather | undefined): RainRiskCopy
     ? `${precipitationSignalWord(weather, amount)}信号`
     : "";
   const detailParts = [
-    level === "待复核" ? "降水概率暂缺" : `降水风险${level}`,
+    level === "待复核"
+      ? "降水概率暂缺"
+      : level === "无明显"
+        ? "降水风险较低"
+        : `降水风险${level}`,
     explicitWeatherSignalText,
     amountText,
     nonMeaningfulAmountText,
@@ -383,9 +398,9 @@ export function astroBlockedReasonText(
 
 export function clothingEquipmentAdvice(guide: ClothingGuide): readonly string[] {
   const clothing = [guide.summaryZh, ...guide.layers.slice(0, 2)].filter(Boolean).join(" ");
-  const equipment = [...guide.accessories.slice(0, 3), ...guide.riskNotes.slice(0, 2)].filter(
-    Boolean,
-  );
+  const equipment = [...guide.accessories.slice(0, 3), ...guide.riskNotes.slice(0, 2)]
+    .map(stripTerminalSentencePunctuation)
+    .filter(Boolean);
 
   return [
     clothing || guide.titleZh,

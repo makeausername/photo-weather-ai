@@ -51,9 +51,9 @@ export default function AdminLoginPage() {
       <section className="mx-auto grid min-h-[calc(100vh-6rem)] w-full max-w-[1180px] gap-10 py-10 lg:grid-cols-[minmax(0,1fr)_440px] lg:items-center">
         <div className="hidden min-w-0 lg:block">
           <p className="text-xs font-bold tracking-[0.12em] text-primary">后台运营</p>
-          <h1 className="mt-4 max-w-2xl text-[42px] font-bold leading-tight tracking-[-0.03em] text-foreground">
+          <h2 className="mt-4 max-w-2xl text-[42px] font-bold leading-tight tracking-[-0.03em] text-foreground">
             管理服务商配置与历史校准
-          </h1>
+          </h2>
           <p className="mt-4 max-w-2xl text-base leading-8 text-muted-foreground">
             控制台用于维护逐光天气的服务商配置、历史校准和审计记录。密钥保存后仅展示脱敏结果。
           </p>
@@ -71,7 +71,7 @@ export default function AdminLoginPage() {
             <div className="mb-4 inline-flex rounded-full border border-border bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
               逐光天气管理后台
             </div>
-            <h2 className="text-[28px] font-bold tracking-[-0.02em] text-foreground">后台登录</h2>
+            <h1 className="text-[28px] font-bold tracking-[-0.02em] text-foreground">后台登录</h1>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
               请使用初始化脚本创建的超级管理员账号登录。
             </p>
