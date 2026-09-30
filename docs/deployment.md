@@ -422,8 +422,13 @@ It uses `.env.production`, rebuilds images, starts dependencies, reruns database
 
 ## Update
 
+Run these commands from the existing server checkout:
+
 ```bash
-bash scripts/update.sh
+git status --short
+bash scripts/backup.sh
+DEPLOY_BRANCH=main bash scripts/update.sh
+bash scripts/status.sh
 ```
 
 The update script defaults to the production `main` branch, fetches and fast-forwards it from `origin`, rebuilds images sequentially, force-recreates the web/API/worker/Caddy containers, and verifies that the running web image carries the exact Git revision that was just built. It stops instead of reporting success when the checkout contains uncommitted files or the running web revision is stale. Staging deployments can select another branch explicitly with `DEPLOY_BRANCH=branch-name bash scripts/update.sh`. The Caddy template routes `/billing/*` directly to `api:4000` before the `web:3000` catch-all, without stripping the billing path; `/admin/*` remains owned by the web/admin frontend unless a narrower API route handles it.
@@ -435,6 +440,8 @@ bash scripts/test-real-weather.sh
 ```
 
 Set `PHOTO_WEATHER_API_BASE_URL=https://your-domain/api` if `.env.production` does not contain `NEXT_PUBLIC_API_BASE_URL`.
+
+Forecast data pipeline updates require rebuilding both API and web, which `update.sh` already does. The QWeather weather-alert endpoint uses the existing API host and credential; if the account cannot access it, forecast results explicitly show alerts as unavailable. After updating, verify one ordinary forecast and the cloud-sea, glow and astronomy results, including the warning banner and validity times when a local warning is active. An empty successful warning response is distinct from an unavailable endpoint. No additional environment variable or database migration is required for the forecast data pipeline fixes.
 
 ## Backup
 
@@ -510,7 +517,6 @@ docker compose --env-file .env.production -f docker-compose.prod.yml config >/tm
 If a previous installer run left a broken env file, run `bash scripts/install.sh` again. When it prints `检测到现有 .env.production 格式错误。`, choose the default `Y` to back up the old file as `.env.production.broken-YYYYMMDD-HHMMSS` and regenerate a clean configuration.
 
 Third-party API keys may contain characters that are easy to break in env files. The production installer now leaves initial provider keys empty; configure weather, map, model, account verification, and object storage provider keys in the admin console after deployment.
-
 
 ```bash
 bash scripts/test-providers.sh

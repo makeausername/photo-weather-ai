@@ -101,9 +101,7 @@ export function maskQWeatherApiHost(apiHost: string | null | undefined): string 
   }
 
   const maskedLabel =
-    firstLabel.length <= 4
-      ? `${firstLabel.slice(0, 1)}***`
-      : `${firstLabel.slice(0, 4)}***`;
+    firstLabel.length <= 4 ? `${firstLabel.slice(0, 1)}***` : `${firstLabel.slice(0, 4)}***`;
   return `${maskedLabel}.${rest.join(".")}`;
 }
 
@@ -188,6 +186,15 @@ export class QWeatherClient {
         ? "和风天气连接测试通过。"
         : `和风天气连接测试未通过，返回码：${qweatherCode ?? result.statusCode}。`,
     };
+  }
+
+  async fetchWeatherAlerts(
+    coordinates: Coordinates,
+  ): Promise<QWeatherFetchResult<Record<string, unknown>>> {
+    return this.fetchJson<Record<string, unknown>>(
+      `/weatheralert/v1/current/${formatCoordinate(coordinates.latitude)}/${formatCoordinate(coordinates.longitude)}`,
+      { localTime: true },
+    );
   }
 
   private async fetchJson<TBody>(

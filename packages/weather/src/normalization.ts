@@ -79,6 +79,13 @@ export function metersToKilometers(value: unknown): number | null {
   return parsed === null ? null : roundTo(parsed / 1000, 1);
 }
 
+// Open-Meteo defines 0.7 cm of snow depth per mm of precipitation water equivalent.
+// https://open-meteo.com/en/docs/gem-api
+export function snowfallCmToWaterEquivalentMm(value: unknown): number | null {
+  const parsed = toNumber(value);
+  return parsed === null ? null : roundTo(parsed / 0.7, 1);
+}
+
 export function normalizeIsoTime(value: unknown, offsetSeconds = 8 * 60 * 60): string {
   const text = toText(value);
   if (!text) {
@@ -87,10 +94,7 @@ export function normalizeIsoTime(value: unknown, offsetSeconds = 8 * 60 * 60): s
 
   const withSeconds = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(text)
     ? `${text}:00`
-    : text.replace(
-        /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(Z|[+-]\d{2}:\d{2})$/,
-        "$1:00$2",
-      );
+    : text.replace(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(Z|[+-]\d{2}:\d{2})$/, "$1:00$2");
   if (/Z$|[+-]\d{2}:\d{2}$/.test(withSeconds)) {
     return withSeconds;
   }
@@ -141,19 +145,25 @@ export function weatherConditionFromCode(code: string | null): WeatherCondition 
     if (
       (numericCode >= 51 && numericCode <= 67) ||
       (numericCode >= 80 && numericCode <= 82) ||
+      (numericCode >= 95 && numericCode <= 99) ||
       /^3\d{2}/.test(code)
     ) {
       return "rain";
     }
-    if ((numericCode >= 71 && numericCode <= 77) || numericCode >= 85 || /^4\d{2}/.test(code)) {
+    if (
+      (numericCode >= 71 && numericCode <= 77) ||
+      numericCode === 85 ||
+      numericCode === 86 ||
+      /^4\d{2}/.test(code)
+    ) {
       return "snow";
     }
   }
 
-  if (/^(100|0)$/.test(code)) {
+  if (/^(100|150|0)$/.test(code)) {
     return "clear";
   }
-  if (/^(101|102|2|3)$/.test(code)) {
+  if (/^(101|102|103|151|152|153|1|2|3)$/.test(code)) {
     return "partly_cloudy";
   }
 
@@ -166,10 +176,7 @@ export function averageNullable(values: readonly (number | null)[]): number | nu
     return null;
   }
 
-  return roundTo(
-    usableValues.reduce((sum, value) => sum + value, 0) / usableValues.length,
-    1,
-  );
+  return roundTo(usableValues.reduce((sum, value) => sum + value, 0) / usableValues.length, 1);
 }
 
 function normalizePercentBoundary(value: number): number | null {

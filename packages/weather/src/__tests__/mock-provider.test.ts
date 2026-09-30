@@ -158,7 +158,7 @@ describe("fixture weather provider normalization", () => {
     delete hourly.precipitation_probability;
     hourly.precipitation = [1.6, 0];
     hourly.rain = [1.2, 0];
-    hourly.snowfall = [0.4, 0];
+    hourly.snowfall = [0.28, 0]; // 0.28 cm snow depth = 0.4 mm water equivalent.
     fixture.hourly = hourly;
 
     const provider = new OpenMeteoProvider({ forecast: fixture });

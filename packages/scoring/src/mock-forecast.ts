@@ -4,6 +4,7 @@ import type {
   AstroWindowBundle,
   ForecastProviderRuntimeSnapshot,
   ForecastWeatherSourceSummary,
+  ForecastWeatherAlert,
   ForecastCalculationBasis,
   ForecastCalendarDayInfo,
   ForecastCalculationInput,
@@ -87,6 +88,8 @@ export type NormalizedForecastInputOptions = {
   readonly weatherEstimatedFields?: readonly string[];
   readonly weatherSourceSummaries?: readonly ForecastWeatherSourceSummary[];
   readonly weatherMissingDataNotes?: readonly string[];
+  readonly weatherAlerts?: readonly ForecastWeatherAlert[];
+  readonly weatherAlertsStatus?: "available" | "unavailable";
   readonly weatherFusionSummary?: WeatherFusionSummary;
   readonly weatherProviderRuntimeSnapshot?: readonly ForecastProviderRuntimeSnapshot[];
   readonly rollingProviderCoverage?: ForecastCalculationInput["rollingProviderCoverage"];
@@ -213,6 +216,8 @@ export function buildForecastInputFromWeatherBundle(
     query,
     {
       hourlyWeather: weatherBundle.hourly,
+      weatherAlerts: weatherBundle.alerts,
+      weatherAlertsStatus: weatherBundle.alertsStatus ?? "unavailable",
       dailyWeather: weatherBundle.daily,
       currentWeather: weatherBundle.currentWeather,
       isMock: weatherBundle.dataMode !== "real",
@@ -221,11 +226,12 @@ export function buildForecastInputFromWeatherBundle(
       weatherProviderLabelZh: weatherBundle.providerLabelZh,
       weatherDataMode: weatherBundle.dataMode,
       weatherNoticeZh: weatherBundle.noticeZh,
-      weatherMissingFields: collectWeatherFields(
-        weatherBundle.hourly,
-        weatherBundle.daily,
-        "missingFields",
-      ),
+      weatherMissingFields: [
+        ...new Set([
+          ...(weatherBundle.missingFields ?? []),
+          ...collectWeatherFields(weatherBundle.hourly, weatherBundle.daily, "missingFields"),
+        ]),
+      ],
       weatherEstimatedFields: collectWeatherFields(
         weatherBundle.hourly,
         weatherBundle.daily,
@@ -333,6 +339,8 @@ export function buildForecastInputFromNormalizedWeather(
     weatherEstimatedFields,
     weatherSourceSummaries: weather.weatherSourceSummaries ?? [],
     weatherMissingDataNotes: weather.weatherMissingDataNotes ?? [],
+    weatherAlerts: weather.weatherAlerts ?? [],
+    weatherAlertsStatus: weather.weatherAlertsStatus ?? "unavailable",
     weatherFusionSummary: weather.weatherFusionSummary,
     weatherProviderRuntimeSnapshot: weather.weatherProviderRuntimeSnapshot,
     rollingProviderCoverage: weather.rollingProviderCoverage,

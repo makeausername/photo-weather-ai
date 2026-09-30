@@ -101,6 +101,7 @@ import {
   type ResultMeterTone,
 } from "./result-dashboard-components";
 import { ResultViewTabs } from "./result-experience-controls";
+import { WeatherAlerts } from "./weather-alerts";
 import type { HourlyTimelinePoint } from "./hourly-weather-timeline";
 import {
   isForecastRequestAbortError,
@@ -365,7 +366,10 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       ) : null}
 
       {query && result && pageMode === "result" ? (
-        <ForecastResultView query={query} result={result} />
+        <>
+          <WeatherAlerts result={result} />
+          <ForecastResultView query={query} result={result} />
+        </>
       ) : null}
     </PublicShell>
   );

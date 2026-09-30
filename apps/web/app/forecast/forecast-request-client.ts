@@ -12,7 +12,7 @@ const defaultRetryCount = 2;
 const defaultRetryDelayMs = [600, 1200, 2400] as const;
 const defaultSuccessCacheTtlMs = 5 * 60 * 1000;
 const defaultStaleCacheTtlMs = 30 * 60 * 1000;
-const forecastCacheVersion = 2 as const;
+const forecastCacheVersion = 3 as const;
 const sessionCachePrefix = `photo_weather_forecast_calculation:v${forecastCacheVersion}:`;
 const maxSessionCachePayloadChars = 2_000_000;
 
@@ -35,6 +35,8 @@ type ForecastCacheRecord = {
 
 type ForecastInFlightRecord = {
   readonly promise: Promise<ForecastCalculationResult>;
+  readonly controller: AbortController;
+  consumers: number;
 };
 
 export type ForecastCalculationRequestInput = ForecastQueryInput & {
@@ -118,6 +120,7 @@ export async function requestForecastCalculation(
   query: ForecastCalculationRequestInput,
   options: RequestForecastCalculationOptions = {},
 ): Promise<ForecastCalculationResult> {
+  throwIfAborted(options.signal);
   const cacheable = isFrontendForecastCacheable(query);
   const authCacheKey = currentAuthCacheScope();
   const queryKey = `${stableForecastQueryKey(query)}|auth:${authCacheKey}`;
@@ -132,19 +135,20 @@ export async function requestForecastCalculation(
   }
 
   const inFlight = forecastInFlightRequests.get(queryKey);
-  if (inFlight) {
-    return rejectWhenAborted(inFlight.promise, options.signal);
+  if (inFlight && !inFlight.controller.signal.aborted) {
+    return subscribeToForecastRequest(queryKey, inFlight, options.signal);
   }
 
+  const controller = new AbortController();
   const requestPromise = retryWithBackoff(
     async () => {
-      throwIfAborted(options.signal);
+      throwIfAborted(controller.signal);
       const result = await optionalAuthApiFetch<ForecastCalculationResult>(
         "/forecast/calculate",
         {
           method: "POST",
           body: JSON.stringify(query),
-          signal: options.signal,
+          signal: controller.signal,
         },
         {
           baseUrl: options.baseUrl ?? apiBaseUrl,
@@ -160,10 +164,11 @@ export async function requestForecastCalculation(
     {
       retryCount: options.retryCount ?? defaultRetryCount,
       retryDelayMs: options.retryDelayMs ?? defaultRetryDelayMs,
-      signal: options.signal,
+      signal: controller.signal,
       shouldRetry: isTransientForecastError,
     },
   ).catch((error) => {
+    if (isForecastRequestAbortError(error)) throw error;
     if (cacheable && isTransientForecastError(error)) {
       const stale = readCachedForecastResult(queryKey, {
         allowStale: true,
@@ -176,7 +181,8 @@ export async function requestForecastCalculation(
     throw normalizeForecastClientError(error);
   });
 
-  forecastInFlightRequests.set(queryKey, { promise: requestPromise });
+  const record: ForecastInFlightRecord = { promise: requestPromise, controller, consumers: 0 };
+  forecastInFlightRequests.set(queryKey, record);
   const cleanup = () => {
     const current = forecastInFlightRequests.get(queryKey);
     if (current?.promise === requestPromise) {
@@ -185,7 +191,24 @@ export async function requestForecastCalculation(
   };
   requestPromise.then(cleanup, cleanup);
 
-  return rejectWhenAborted(requestPromise, options.signal);
+  return subscribeToForecastRequest(queryKey, record, options.signal);
+}
+
+function subscribeToForecastRequest(
+  queryKey: string,
+  record: ForecastInFlightRecord,
+  signal?: AbortSignal,
+): Promise<ForecastCalculationResult> {
+  record.consumers += 1;
+  return rejectWhenAborted(record.promise, signal).finally(() => {
+    record.consumers -= 1;
+    if (record.consumers === 0) {
+      record.controller.abort();
+      if (forecastInFlightRequests.get(queryKey) === record) {
+        forecastInFlightRequests.delete(queryKey);
+      }
+    }
+  });
 }
 
 function markForecastResultStale(result: ForecastCalculationResult): ForecastCalculationResult {
@@ -193,8 +216,7 @@ function markForecastResultStale(result: ForecastCalculationResult): ForecastCal
     ...result,
     weatherDataFreshness: "stale",
     weatherEvidenceStatus: "stale",
-    weatherEvidenceReasonZh:
-      "实时天气请求失败，当前仅有旧缓存；旧缓存不能作为当前出发或拍摄结论。",
+    weatherEvidenceReasonZh: "实时天气请求失败，当前仅有旧缓存；旧缓存不能作为当前出发或拍摄结论。",
   };
 }
 
@@ -230,10 +252,10 @@ export async function normalizeForecastApiError(response: Response): Promise<For
     code === "upgrade_required"
       ? safeValidationMessage(payload)
       : status === 400
-      ? safeValidationMessage(payload)
-      : transient
-        ? forecastCalculationTransientFailureMessage
-        : forecastCalculationGenericFailureMessage;
+        ? safeValidationMessage(payload)
+        : transient
+          ? forecastCalculationTransientFailureMessage
+          : forecastCalculationGenericFailureMessage;
 
   return new ForecastRequestError(publicMessage, {
     status,

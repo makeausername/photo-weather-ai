@@ -87,6 +87,13 @@ export class WeatherDataService {
       hourly: hourlyWithAirQuality,
       daily,
       alerts,
+      alertsStatus:
+        alertsResult.status === "fulfilled" &&
+        (alerts.length > 0 ||
+          (this.provider.source.providerCode === "qweather" &&
+            this.provider.source.mode === "real"))
+          ? "available"
+          : "unavailable",
       airQuality,
       providerCode: this.provider.source.providerCode,
       providerLabelZh: this.provider.source.providerLabelZh,
@@ -188,6 +195,9 @@ export class WeatherIntelligenceService {
       hourly: fusion.fusedHourly,
       daily: fusion.fusedDaily,
       alerts: usableBundles.flatMap((bundle) => bundle.alerts),
+      alertsStatus: usableBundles.some((bundle) => bundle.alertsStatus === "available")
+        ? "available"
+        : "unavailable",
       airQuality: usableBundles.find((bundle) => bundle.airQuality)?.airQuality,
       providerCode: primary.providerCode,
       providerLabelZh: primary.providerLabelZh,
@@ -299,6 +309,7 @@ export class WeatherIntelligenceService {
       provider: `${provider.source.providerCode}:${provider.source.displayName}`,
       coordinates: input.coordinates,
       horizon: input.horizon ?? horizonFromHours(input.hours),
+      elevationMeters: input.elevationMeters,
       forecastStart: input.forecastStart ?? generatedAt(input),
       forecastWindowAnchorStart: input.forecastWindowAnchorStart,
       forecastWindowAnchorEnd: input.forecastWindowAnchorEnd,
@@ -592,9 +603,16 @@ function normalizeCurrentWeather(input: {
   const dewPointSpread =
     input.firstHour?.dewPointSpread ??
     (dewPoint === null ? null : Math.round((temperature - dewPoint) * 10) / 10);
-  const visibility = missingFields.has("visibility")
-    ? null
-    : input.firstHour?.visibility ?? input.current?.visibilityKilometers ?? null;
+  const observedVisibility = input.current?.visibilityKilometers;
+  const visibility =
+    observedVisibility !== null && observedVisibility !== undefined
+      ? observedVisibility
+      : missingFields.has("visibility")
+        ? null
+        : input.firstHour?.visibility ?? null;
+  if (observedVisibility !== null && observedVisibility !== undefined) {
+    missingFields.delete("visibility");
+  }
 
   if (input.firstHour?.pressure === null || input.firstHour?.pressure === undefined) {
     missingFields.add("pressure");

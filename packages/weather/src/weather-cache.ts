@@ -5,6 +5,7 @@ export type WeatherCachePurpose = "current" | "hourly" | "daily" | "alerts" | "f
 export type WeatherCacheKeyInput = {
   readonly provider: string;
   readonly coordinates: Coordinates;
+  readonly elevationMeters?: number;
   readonly horizon: ForecastHorizon;
   readonly forecastStart: string;
   readonly forecastWindowAnchorStart?: string;
@@ -50,6 +51,7 @@ export function buildWeatherCacheKey(input: WeatherCacheKeyInput): string {
     input.purpose,
     input.runtimeSignature ?? "runtime:any",
     coordinateKey,
+    `elevation:${input.elevationMeters ?? "default_dem"}`,
     input.horizon,
     input.timezone ?? "timezone:any",
     `generated:${startBucket}`,
