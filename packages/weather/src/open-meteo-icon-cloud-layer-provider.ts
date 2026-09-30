@@ -1,3 +1,4 @@
+import { normalizeOpenMeteoHourlyIntervals } from "./open-meteo-hourly-intervals.js";
 import type {
   Coordinates,
   NormalizedDailyWeather,
@@ -464,7 +465,7 @@ export function buildOpenMeteoIconCloudLayerUrl(
     hourlyFields(options.includeOptionalHourlyFields !== false).join(","),
   );
   url.searchParams.set("daily", openMeteoIconDailyFields.join(","));
-  url.searchParams.set("forecast_hours", String(forecastHours));
+  url.searchParams.set("forecast_hours", String(forecastHours + 1));
   url.searchParams.set("forecast_days", String(daysFromHours(forecastHours)));
   url.searchParams.set("temperature_unit", "celsius");
   url.searchParams.set("wind_speed_unit", "ms");
@@ -496,103 +497,109 @@ export function normalizeOpenMeteoIconCloudLayers(
   const offsetSeconds = toNumber(root.utc_offset_seconds) ?? 8 * 60 * 60;
   const providerElevationMeters = toNumber(root.elevation) ?? undefined;
 
-  return validateHourlyWeather(
-    timeValues.map((timeValue, index) => {
-      const temperature = requiredRounded(
-        at(hourly, "temperature_2m", index),
-        "hourly.temperature_2m",
-      );
-      const dewPoint = nullableRounded(at(hourly, "dew_point_2m", index));
-      const cloudLow = nullablePercent(at(hourly, "cloud_cover_low", index));
-      const cloudMid = nullablePercent(at(hourly, "cloud_cover_mid", index));
-      const cloudHigh = nullablePercent(at(hourly, "cloud_cover_high", index));
-      const precipitationProbability = nullablePercent(
-        at(hourly, "precipitation_probability", index),
-      );
-      const precipitation = nullableRounded(at(hourly, "precipitation", index));
-      const rainAmount = nullableRounded(at(hourly, "rain", index));
-      const snowAmount = snowfallCmToWaterEquivalentMm(at(hourly, "snowfall", index));
-      const windSpeed = nullableRounded(at(hourly, "wind_speed_10m", index));
-      if (windSpeed === null) {
-        throw new Error("Open-Meteo ICON hourly weather missing required field: wind_speed_10m");
-      }
-      const visibility = metersToKilometers(at(hourly, "visibility", index));
-      const pressureMsl = nullableRounded(at(hourly, "pressure_msl", index));
-      const pressureFallback = nullableRounded(at(hourly, "surface_pressure", index));
-      const weatherCode = toText(at(hourly, "weather_code", index));
-      const missingFields = missingHourlyFields({
-        cloudLow,
-        cloudMid,
-        cloudHigh,
-        precipitationProbability,
-        windSpeed,
-        visibility,
-        pressure: pressureMsl ?? pressureFallback,
-      });
-      const estimatedFields = pressureMsl === null && pressureFallback !== null ? ["pressure"] : [];
-      const cloudTotal = percent(at(hourly, "cloud_cover", index), "hourly.cloud_cover");
+  return normalizeOpenMeteoHourlyIntervals(
+    validateHourlyWeather(
+      timeValues.map((timeValue, index) => {
+        const temperature = requiredRounded(
+          at(hourly, "temperature_2m", index),
+          "hourly.temperature_2m",
+        );
+        const dewPoint = nullableRounded(at(hourly, "dew_point_2m", index));
+        const cloudLow = nullablePercent(at(hourly, "cloud_cover_low", index));
+        const cloudMid = nullablePercent(at(hourly, "cloud_cover_mid", index));
+        const cloudHigh = nullablePercent(at(hourly, "cloud_cover_high", index));
+        const precipitationProbability = nullablePercent(
+          at(hourly, "precipitation_probability", index),
+        );
+        const precipitation = nullableRounded(at(hourly, "precipitation", index));
+        const rainAmount = nullableRounded(at(hourly, "rain", index));
+        const snowAmount = snowfallCmToWaterEquivalentMm(at(hourly, "snowfall", index));
+        const windSpeed = nullableRounded(at(hourly, "wind_speed_10m", index));
+        if (windSpeed === null) {
+          throw new Error("Open-Meteo ICON hourly weather missing required field: wind_speed_10m");
+        }
+        const visibility = metersToKilometers(at(hourly, "visibility", index));
+        const pressureMsl = nullableRounded(at(hourly, "pressure_msl", index));
+        const pressureFallback = nullableRounded(at(hourly, "surface_pressure", index));
+        const weatherCode = toText(at(hourly, "weather_code", index));
+        const missingFields = missingHourlyFields({
+          cloudLow,
+          cloudMid,
+          cloudHigh,
+          precipitationProbability,
+          windSpeed,
+          visibility,
+          pressure: pressureMsl ?? pressureFallback,
+        });
+        const estimatedFields =
+          pressureMsl === null && pressureFallback !== null ? ["pressure"] : [];
+        const cloudTotal = percent(at(hourly, "cloud_cover", index), "hourly.cloud_cover");
 
-      return {
-        time: normalizeIsoTime(timeValue, offsetSeconds),
-        temperature,
-        feelsLike: nullableRounded(at(hourly, "apparent_temperature", index)),
-        humidity: percent(at(hourly, "relative_humidity_2m", index), "hourly.relative_humidity_2m"),
-        dewPointSpread: dewPoint === null ? null : roundTo(temperature - dewPoint),
-        pressure: pressureMsl ?? pressureFallback,
-        windSpeed,
-        windGust: nullableRounded(at(hourly, "wind_gusts_10m", index)),
-        windDirection: nullableRounded(at(hourly, "wind_direction_10m", index), 0),
-        precipitationProbability,
-        precipitationProbabilityPercent: precipitationProbability,
-        precipitation,
-        precipitationAmountMm: precipitation,
-        rainAmountMm: rainAmount,
-        snowAmountMm: snowAmount,
-        precipitationType: inferOpenMeteoPrecipitationType({
-          weatherCode,
-          weatherTextZh: describeOpenMeteoWeatherCode(weatherCode),
-          rainAmount,
-          snowAmount,
+        return {
+          time: normalizeIsoTime(timeValue, offsetSeconds),
+          temperature,
+          feelsLike: nullableRounded(at(hourly, "apparent_temperature", index)),
+          humidity: percent(
+            at(hourly, "relative_humidity_2m", index),
+            "hourly.relative_humidity_2m",
+          ),
+          dewPointSpread: dewPoint === null ? null : roundTo(temperature - dewPoint),
+          pressure: pressureMsl ?? pressureFallback,
+          windSpeed,
+          windGust: nullableRounded(at(hourly, "wind_gusts_10m", index)),
+          windDirection: nullableRounded(at(hourly, "wind_direction_10m", index), 0),
+          precipitationProbability,
+          precipitationProbabilityPercent: precipitationProbability,
           precipitation,
-        }),
-        visibility,
-        rawVisibilityKm: visibility,
-        dewPoint,
-        cloudTotal,
-        cloudLow,
-        cloudMid,
-        cloudHigh,
-        providerElevationMeters,
-        selectedSpotElevationMeters: options.elevationMeters,
-        elevationDifferenceMeters:
-          typeof providerElevationMeters === "number" &&
-          typeof options.elevationMeters === "number" &&
-          Number.isFinite(options.elevationMeters)
-            ? Math.round(options.elevationMeters - providerElevationMeters)
-            : undefined,
-        weatherCode,
-        weatherTextZh: describeOpenMeteoWeatherCode(weatherCode),
-        providerCode: source.providerCode,
-        providerLabelZh: source.providerLabelZh,
-        dataMode: source.mode,
-        sourceConfidence: missingFields.length > 0 ? 0.82 : 0.9,
-        missingFields: missingFields.length > 0 ? missingFields : undefined,
-        estimatedFields: estimatedFields.length > 0 ? estimatedFields : undefined,
-        sourceNotes: missingFields.some((field) =>
-          ["cloudLow", "cloudMid", "cloudHigh"].includes(field),
-        )
-          ? ["云层分层数据不完整，缺失值保持为空。"]
-          : undefined,
-        fieldMetadata: cloudLayerFieldMetadata({
+          precipitationAmountMm: precipitation,
+          rainAmountMm: rainAmount,
+          snowAmountMm: snowAmount,
+          precipitationType: inferOpenMeteoPrecipitationType({
+            weatherCode,
+            weatherTextZh: describeOpenMeteoWeatherCode(weatherCode),
+            rainAmount,
+            snowAmount,
+            precipitation,
+          }),
+          visibility,
+          rawVisibilityKm: visibility,
+          dewPoint,
           cloudTotal,
           cloudLow,
           cloudMid,
           cloudHigh,
           providerElevationMeters,
           selectedSpotElevationMeters: options.elevationMeters,
-        }),
-      };
-    }),
+          elevationDifferenceMeters:
+            typeof providerElevationMeters === "number" &&
+            typeof options.elevationMeters === "number" &&
+            Number.isFinite(options.elevationMeters)
+              ? Math.round(options.elevationMeters - providerElevationMeters)
+              : undefined,
+          weatherCode,
+          weatherTextZh: describeOpenMeteoWeatherCode(weatherCode),
+          providerCode: source.providerCode,
+          providerLabelZh: source.providerLabelZh,
+          dataMode: source.mode,
+          sourceConfidence: missingFields.length > 0 ? 0.82 : 0.9,
+          missingFields: missingFields.length > 0 ? missingFields : undefined,
+          estimatedFields: estimatedFields.length > 0 ? estimatedFields : undefined,
+          sourceNotes: missingFields.some((field) =>
+            ["cloudLow", "cloudMid", "cloudHigh"].includes(field),
+          )
+            ? ["云层分层数据不完整，缺失值保持为空。"]
+            : undefined,
+          fieldMetadata: cloudLayerFieldMetadata({
+            cloudTotal,
+            cloudLow,
+            cloudMid,
+            cloudHigh,
+            providerElevationMeters,
+            selectedSpotElevationMeters: options.elevationMeters,
+          }),
+        };
+      }),
+    ),
   ).slice(0, responseHours(options.forecastHours));
 }
 

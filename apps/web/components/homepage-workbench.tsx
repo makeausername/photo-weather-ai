@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   forecastHorizonLabels,
+  isExecutableForecastWindow,
+  prioritizeForecastRisks,
   type ForecastCalculationResult,
   type ForecastHorizon,
   type ForecastTarget,
@@ -325,8 +327,8 @@ function buildHomepageResultCards(
   result: ForecastCalculationResult,
 ): readonly HomepageInsightCard[] {
   const current = result.currentWeather;
-  const bestWindow = result.bestWindows[0];
-  const mainRisk = result.riskFlags[0];
+  const bestWindow = result.bestWindows.find(isExecutableForecastWindow);
+  const mainRisk = prioritizeForecastRisks(result.riskFlags, bestWindow)[0];
   const finalResultLabel = result.finalRecommendationLabel ?? result.recommendationLabel;
   const finalDecisionSummary =
     result.finalDecisionSummaryZh ?? decisionSummaryText(location, state);
@@ -350,9 +352,11 @@ function buildHomepageResultCards(
     {
       title: "最佳窗口",
       value: bestWindow
-        ? `${formatTime(bestWindow.startTime)} - ${formatTime(bestWindow.endTime)}`
+        ? `${formatTime(bestWindow.startTime, result.calendarBasis?.timezone)} - ${formatTime(bestWindow.endTime, result.calendarBasis?.timezone)}`
         : "暂无推荐窗口",
-      description: bestWindow?.label ?? "本轮预报没有找到明确的优先拍摄窗口。",
+      description: bestWindow
+        ? `${new Intl.DateTimeFormat("zh-CN", { timeZone: result.calendarBasis?.timezone ?? "Asia/Shanghai", month: "numeric", day: "numeric" }).format(new Date(bestWindow.startTime))} · ${bestWindow.label}`
+        : "本轮预报没有找到明确的优先拍摄窗口。",
       badge: bestWindow ? "窗口" : "待观察",
       tone: bestWindow ? undefined : "muted",
     },
@@ -482,14 +486,14 @@ function riskLevelLabel(level: ForecastCalculationResult["riskFlags"][number]["l
   return "风险";
 }
 
-function formatTime(value: string): string {
+function formatTime(value: string, timezone = "Asia/Shanghai"): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) {
     return value;
   }
 
   return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
+    timeZone: timezone,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,

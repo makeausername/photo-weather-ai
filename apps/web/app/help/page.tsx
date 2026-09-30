@@ -15,6 +15,8 @@ export default function HelpPage() {
         {
           title: "结果反馈",
           text: "反馈天气判断时，请说明地点、日期、预报范围、题材目标和实际观察到的云层、光线或风险情况。",
+          href: "mailto:info@ruilianke.com?subject=%E9%80%90%E5%85%89%E5%A4%A9%E6%B0%94%E5%8F%8D%E9%A6%88",
+          linkLabel: "发送反馈至 info@ruilianke.com",
         },
         {
           title: "定位与坐标",

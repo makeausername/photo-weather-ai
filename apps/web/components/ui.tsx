@@ -1,4 +1,5 @@
 import { forwardRef } from "react";
+import { DataScrollHint } from "./data-scroll-hint";
 import type {
   ButtonHTMLAttributes,
   HTMLAttributes,
@@ -173,8 +174,12 @@ export function ResponsiveDataScroller({
         className,
       )}
       data-responsive-data-scroller="true"
+      tabIndex={0}
+      role="region"
+      aria-label="可横向滚动的数据表格"
       {...props}
     >
+      <DataScrollHint />
       {children}
     </div>
   );
@@ -279,7 +284,9 @@ export function PageHeader({ eyebrow, title, description, action, className }: P
           {title}
         </h1>
         {description ? (
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground sm:text-[15px]">{description}</p>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground sm:text-[15px]">
+            {description}
+          </p>
         ) : null}
       </div>
       {action ? <div className="min-w-0 sm:shrink-0">{action}</div> : null}

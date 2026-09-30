@@ -1199,9 +1199,17 @@ function buildGeneralProfessionalHourlyIntervals(
         start: window.start,
         end: window.end,
         badge: {
-          label: "银河推荐",
+          label: result.astroAnalysis.dailyAstro.some(
+            (day) => day.astroShootable && day.date === window.date,
+          )
+            ? "银河推荐"
+            : "银河天文参考",
           detail: window.noteZh,
-          tone: "success",
+          tone: result.astroAnalysis.dailyAstro.some(
+            (day) => day.astroShootable && day.date === window.date,
+          )
+            ? "success"
+            : "info",
         },
       }),
     ),
@@ -1548,6 +1556,12 @@ function buildCloudSeaDisplayTemperatureContextForResult(
   const current = result.currentWeather;
   const dailyWeather = result.dailySummaries[0]?.weather;
   const firstProfessionalHour = firstRollingProfessionalHour(result);
+  const nearRows = (result.professionalHourlyData ?? []).filter(
+    (row) =>
+      firstProfessionalHour &&
+      Date.parse(row.time) >= Date.parse(firstProfessionalHour.time) &&
+      Date.parse(row.time) < Date.parse(firstProfessionalHour.time) + 6 * 3_600_000,
+  );
   const cameraElevationMeters = firstFiniteNumber([
     terrainContext.elevationMeters,
     result.cloudSeaAnalysis.terrainSupport.selectedSpotElevationMeters,
@@ -1558,6 +1572,7 @@ function buildCloudSeaDisplayTemperatureContextForResult(
     result.terrainAnalysis.terrainProfile.elevationMeters,
   ]);
   const modelElevationMeters = firstFiniteNumber([
+    firstProfessionalHour?.providerElevationMeters,
     current?.temperatureAdjustment?.providerElevationMeters,
     current?.providerElevationMeters,
     dailyWeather?.providerElevationMeters,
@@ -1579,16 +1594,21 @@ function buildCloudSeaDisplayTemperatureContextForResult(
     temperatureBasisContext,
     rawGridTemperatureC,
     terrainAdjustedTemperatureC,
-    providerTemperatureC: current?.temperature,
+    providerTemperatureC: firstProfessionalHour?.displayedTemperatureC ?? current?.temperature,
     displayedTemperatureC:
       firstProfessionalHour?.displayedTemperatureC ??
       temperatureBasisContext.displayTemperatureC ??
       current?.temperature,
-    displayTemperatureRangeC: [dailyWeather?.tempMin, dailyWeather?.tempMax],
-    bodyFeelTemperatureC: current?.mountainFeelsLikeC ?? current?.feelsLike,
+    displayTemperatureRangeC: [
+      minimumFinite(nearRows.map((row) => row.displayedTemperatureC)) ?? undefined,
+      maxNullable(nearRows.map((row) => row.displayedTemperatureC)) ?? undefined,
+    ],
+    bodyFeelTemperatureC: firstProfessionalHour
+      ? firstProfessionalHour.bodyFeelTemperatureC
+      : current?.mountainFeelsLikeC ?? current?.feelsLike,
     bodyFeelRangeC: [
-      dailyWeather?.mountainFeelsLikeMin ?? dailyWeather?.feelsLikeMin,
-      dailyWeather?.mountainFeelsLikeMax ?? dailyWeather?.feelsLikeMax,
+      minimumFinite(nearRows.map((row) => row.bodyFeelTemperatureC)) ?? undefined,
+      maxNullable(nearRows.map((row) => row.bodyFeelTemperatureC)) ?? undefined,
     ],
     cameraElevationMeters,
     modelElevationMeters,
@@ -1599,9 +1619,11 @@ function buildCloudSeaDisplayTemperatureContextForResult(
     terrainMode: result.cloudSeaAnalysis.terrainSupport.terrainMode,
     terrainClass: terrainContext.terrainClass,
     isClassicCloudSeaEligible: terrainContext.isClassicCloudSeaEligible,
-    windSpeedMs: current?.windSpeed ?? dailyWeather?.windSpeed,
-    windGustMs: current?.windGust ?? dailyWeather?.windGust,
-    humidityPercent: current?.humidity ?? dailyWeather?.humidity,
+    windSpeedMs:
+      firstProfessionalHour?.windSpeedMs ?? current?.windSpeed ?? dailyWeather?.windSpeed,
+    windGustMs: firstProfessionalHour?.windGustMs ?? current?.windGust ?? dailyWeather?.windGust,
+    humidityPercent:
+      firstProfessionalHour?.relativeHumidityPercent ?? current?.humidity ?? dailyWeather?.humidity,
     sourceTemperatureBasis:
       firstProfessionalHour?.temperatureBasis ?? temperatureBasisContext.temperatureBasis,
   });
@@ -2060,7 +2082,12 @@ export function buildGlowForecastViewModel(
     visibilityEvidence: mapGlowEvidence(analysis.visibilityEvidence),
     aerosolEvidence: mapGlowEvidence(analysis.aerosolEvidence),
     terrainObstructionEvidence: mapGlowEvidence(analysis.terrainObstructionEvidence),
-    travelRecommendations: analysis.travelRecommendations,
+    travelRecommendations: overallRecommendation.hasActionableWindow
+      ? analysis.travelRecommendations
+      : [
+          "当前窗口仅作天文参考，暂不安排专程出发和到达。",
+          "若已在附近，可观察云层纹理和通透地景，并预留安全撤离时间。",
+        ],
     riskReasons: analysis.riskReasons,
     backupPlans: analysis.backupPlans,
     missingDataNotes: analysis.missingDataNotes,
@@ -2133,15 +2160,18 @@ function buildGlowOverallRecommendation(
       ? formatGlowLifecycleWindowForPublic(result, selectedWindow, "暂无明确最佳时间")
       : "所选预报范围内暂无后续霞光窗口",
     recommendation,
-    hasActionableWindow: Boolean(selectedWindow),
+    hasActionableWindow: Boolean(
+      selectedWindow && selectedWindow.isRecommendationEligible && selectedWindow.score >= 50,
+    ),
     windowState: selectedWindow?.state,
     windowStartAt: selectedWindow?.startAt,
     windowEndAt: selectedWindow?.endAt,
     evaluatedAt: glowEvaluatedAt(result),
     timezone: result.calendarBasis.timezone,
-    arrivalAdvice: selectedWindow
-      ? glowArrivalHint(result, selectedWindow.phase, selectedWindow)
-      : "暂无可用到达建议",
+    arrivalAdvice:
+      selectedWindow && selectedWindow.isRecommendationEligible && selectedWindow.score >= 50
+        ? glowArrivalHint(result, selectedWindow.phase, selectedWindow)
+        : "当前窗口仅作天文参考，不建议按专程到达安排",
     conciseReason: compactGlowDisplayText(
       selectedWindow
         ? firstText(
@@ -3458,7 +3488,11 @@ function buildAstroNightDisplayModels(
         )
       : [];
     const expectedWeatherHours = bestWindow
-      ? Math.max(1, Math.ceil(durationMinutesBetween(bestWindow.start, bestWindow.end) / 60))
+      ? Math.max(
+          1,
+          Math.ceil(Date.parse(bestWindow.end) / 3_600_000) -
+            Math.floor(Date.parse(bestWindow.start) / 3_600_000),
+        )
       : 0;
     const weatherSummary = summarizeAstroNightWeather(
       weatherRows,
@@ -3507,7 +3541,7 @@ function buildAstroNightDisplayModels(
       terrainAssessmentForAstroWindow(result, candidateWindow ?? bestWindow, date),
     );
     const bestShootingWindowLabel = bestWindow
-      ? formatAstroWindowTimeValue(bestWindow, timezone)
+      ? `${formatAstroWindowTimeValue(bestWindow, timezone)}${day?.astroShootable ? "" : "（天文参考）"}`
       : "暂无可靠最佳拍摄窗口";
     const directionSummaryLabel = geometricMilkyWayWindow
       ? `${candidateWindow?.directionZh ?? astro?.milkyWayDirection ?? "方向待复核"} · 高度 ${formatAngle(
@@ -5715,17 +5749,8 @@ function professionalRowsBetween(
 
   return rows.filter((row) => {
     const rowMs = Date.parse(row.time);
-    return Number.isFinite(rowMs) && rowMs >= startMs && rowMs < endMs;
+    return Number.isFinite(rowMs) && rowMs < endMs && rowMs + 3_600_000 > startMs;
   });
-}
-
-function durationMinutesBetween(start: string, end: string): number {
-  const startMs = Date.parse(start);
-  const endMs = Date.parse(end);
-  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
-    return 0;
-  }
-  return Math.round((endMs - startMs) / 60_000);
 }
 
 function summarizeAstroNightWeather(
@@ -5751,22 +5776,25 @@ function summarizeAstroNightWeather(
     totalHourCount: expectedHours,
     coverageDisplay:
       expectedHours > 0 ? `${rows.length} / ${expectedHours} 小时` : "暂无窗口内小时数据",
-    cloudSummary: cloudBlocker
-      ? "云量阻挡"
-      : totalCloud === null
+    cloudSummary:
+      totalCloud === null
         ? "云量暂无数据"
         : `总云量约 ${Math.round(totalCloud)}%，低云 ${formatNullablePercent(lowCloud)}`,
-    lowCloudRisk: cloudBlocker ?? riskTextFromPercent(lowCloud, 30, 50, "低云"),
+    lowCloudRisk:
+      lowCloud === null
+        ? cloudBlocker ?? "低云暂无数据"
+        : riskTextFromPercent(lowCloud, 30, 50, "低云"),
     visibilitySummary:
       visibility === null ? "能见度暂无数据" : `能见度约 ${Math.round(visibility / 1000)} 公里`,
     humidityRisk: riskTextFromPercent(humidity, 80, 90, "湿度"),
     precipitationRisk:
-      precipitationBlocker ??
-      (precipitationProbability === null && precipitationAmount === null
-        ? "降水暂无数据"
+      precipitationProbability === null && precipitationAmount === null
+        ? precipitationBlocker
+          ? `整夜风险参考：${precipitationBlocker}`
+          : "降水暂无数据"
         : `降水概率 ${formatNullablePercent(precipitationProbability)}，降水量 ${
             precipitationAmount === null ? "暂无数据" : `${round1ForDisplay(precipitationAmount)}mm`
-          }`),
+          }`,
     windRisk: windSpeed === null ? "风速暂无数据" : `平均风速约 ${round1ForDisplay(windSpeed)} m/s`,
   };
 }
@@ -6278,7 +6306,7 @@ function buildAstroActionSummary(
     },
     {
       key: "best-window",
-      label: "最佳拍摄窗口",
+      label: bestWindowValue.includes("天文参考") ? "天文参考窗口" : "最佳拍摄窗口",
       value: bestWindowValue,
       detail:
         bestNight?.milkyWay.azimuthSummary && bestNight.milkyWay.available
@@ -6497,7 +6525,9 @@ function buildAstroPublicDisplay({
       {
         key: "best-window",
         semanticKey: "best-shooting-window",
-        label: "最佳拍摄窗口",
+        label: decisionSummary.bestWindowLabel.includes("天文参考")
+          ? "天文参考窗口"
+          : "最佳拍摄窗口",
         value: decisionSummary.bestWindowLabel,
         tone: bestWindow?.tone ?? decisionSummary.recommendationTone,
       },
@@ -6647,7 +6677,7 @@ function buildAstroHourlySummary(
     return [
       {
         key: "best-hours",
-        label: "最佳小时",
+        label: "参考小时",
         value: "暂无逐小时数据",
         detail: "展开专业数据后也不会展示空表，需等待天气源补齐小时预报。",
         tone: "muted",
@@ -6679,7 +6709,7 @@ function buildAstroHourlySummary(
   return [
     {
       key: "best-hours",
-      label: "最佳小时",
+        label: "参考小时",
       value: formatHourlySummaryTimes(bestRows, timezone),
       detail: data.focusWindows[0]?.label ?? "按银河/天文焦点窗口和云量、降水、能见度做展示摘要。",
       tone: bestRows.length > 0 ? "primary" : "muted",
@@ -6803,7 +6833,10 @@ function formatHourlySummaryTimes(
   }
 
   return rows
-    .map((row) => row.timeLabel || formatTime(row.time, timezone))
+    .map(
+      (row) =>
+        `${new Intl.DateTimeFormat("zh-CN", { timeZone: timezone, month: "numeric", day: "numeric" }).format(new Date(row.time))} ${row.timeLabel || formatTime(row.time, timezone)}`,
+    )
     .filter(Boolean)
     .join("、");
 }
@@ -7290,7 +7323,7 @@ function astroProfessionalFocusWindows(
     .map((night) => ({
       startTime: night.milkyWay.bestStartAt!,
       endTime: night.milkyWay.bestEndAt!,
-      label: `${night.localEveningDateLabel} 最佳银河窗口`,
+      label: `${night.localEveningDateLabel} ${night.recommendationLevel === "recommended" ? "最佳银河窗口" : "银河天文参考"}`,
     }));
 }
 
@@ -7318,7 +7351,7 @@ function astroProfessionalRowAnnotations(
     .filter((night) => night.milkyWay.bestStartAt)
     .map((night) => ({
       rowTime: night.milkyWay.bestStartAt!,
-      label: "最佳星空窗口",
+      label: night.recommendationLevel === "recommended" ? "最佳星空窗口" : "星空天文参考",
       detail: night.conciseReason,
       tone: night.recommendationLevel === "recommended" ? "success" : "info",
     }));
@@ -8414,7 +8447,13 @@ function buildGlowSunPhaseAnnotationIntervals(result: ForecastCalculationResult)
         });
       }
     }
-    return intervals;
+    const day = result.glowAnalysis.dailyGlow.find((item) => item.date === astro.date);
+    return intervals.map((interval) => {
+      const score = interval.label.startsWith("朝霞") ? day?.sunriseScore : day?.sunsetScore;
+      return interval.label.endsWith("最佳") && (score === undefined || score < 50)
+        ? { ...interval, label: interval.label.replace("最佳", "天文参考"), tone: "info" as const }
+        : interval;
+    });
   });
 }
 
@@ -9856,9 +9895,7 @@ function buildCloudSeaReasoningItems(
     {
       key: "whiteout",
       label: terrainContext.vocabulary.obstructionRiskLabel,
-      value: windowRiskContext
-        ? `${windowRiskContext.whiteoutReviewLabelZh}（${analysis.whiteoutRiskScore} 分）`
-        : `${whiteoutRiskLabel(analysis.whiteoutRiskScore)}（${analysis.whiteoutRiskScore} 分）`,
+      value: `${whiteoutRiskLabel(analysis.whiteoutRiskScore)}（${analysis.whiteoutRiskScore} 分，整体风险）`,
       detail: cloudSeaTerrainAwareText(
         windowRiskContext?.whiteoutWindowSummaryZh ??
           whiteoutConsistencyDetail(

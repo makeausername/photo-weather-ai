@@ -1725,13 +1725,14 @@ describe("forecast query validation route", () => {
         return false;
       }
       const params = new URL(url).searchParams;
-      return params.get("forecast_hours") === "54" && params.get("forecast_days") === "3";
+      return params.get("forecast_hours") === "55" && params.get("forecast_days") === "3";
     });
 
     expect(response.statusCode).toBe(200);
     expect(openMeteoUrl).toBeDefined();
     const openMeteoParams = new URL(openMeteoUrl!).searchParams;
-    expect(openMeteoParams.get("forecast_hours")).toBe("54");
+    // One extra source hour closes the final preceding-hour rain/gust interval.
+    expect(openMeteoParams.get("forecast_hours")).toBe("55");
     expect(openMeteoParams.get("forecast_days")).toBe("3");
     expect(requestedUrls).toEqual(
       expect.arrayContaining([

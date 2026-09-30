@@ -151,6 +151,8 @@ const homepageLayerResult = {
       endTime: "2026-05-25T06:20:00+08:00",
       label: "日出/朝霞窗口",
       score: 82,
+      windowLevel: "best",
+      executableForDedicatedTrip: true,
     },
     {
       startTime: "2026-05-25T17:40:00+08:00",
@@ -365,6 +367,40 @@ describe("homepage forecast flow", () => {
     expect(html).not.toContain("meteoblue");
     expect(html).not.toContain("本地天文服务");
     expect(html).not.toContain('data-homepage-layer-visual="true"');
+  });
+  it("skips blocked astronomical references and prioritizes a severe risk", () => {
+    const result = {
+      ...homepageLayerResult,
+      bestWindows: [
+        {
+          ...homepageLayerResult.bestWindows[0]!,
+          label: "银河参考",
+          windowLevel: "blocked",
+          executableForDedicatedTrip: false,
+        },
+        {
+          ...homepageLayerResult.bestWindows[1]!,
+          label: "可拍晚霞",
+          windowLevel: "shootable",
+          executableForDedicatedTrip: true,
+        },
+      ],
+      riskFlags: [
+        { key: "whiteout", label: "白墙", level: "medium", description: "中风险" },
+        { key: "precipitation", label: "暴雨干扰", level: "high", description: "高风险" },
+      ],
+    } as unknown as ForecastCalculationResult;
+    const html = renderToStaticMarkup(
+      React.createElement(HomepageGuidancePanel, {
+        location: selectedLocationFromSearchResult(laojunshanPlace),
+        state: { status: "ready", result },
+        horizon: homepageDefaultHorizon,
+      }),
+    );
+    expect(html).toContain("可拍晚霞");
+    expect(html).not.toContain("银河参考");
+    expect(html).toContain("暴雨干扰");
+    expect(html).not.toContain(">白墙<");
   });
 
   it("keeps selected location visible when homepage card data is unavailable", () => {

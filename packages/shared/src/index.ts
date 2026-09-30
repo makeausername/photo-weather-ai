@@ -1,4 +1,6 @@
 export * from "./labels.js";
+export * from "./forecast-display-policy.js";
+export * from "./weather-thermodynamics.js";
 export * from "./aerosol-transparency.js";
 export * from "./light-pollution-display.js";
 export * from "./national-sky-darkness-model.js";

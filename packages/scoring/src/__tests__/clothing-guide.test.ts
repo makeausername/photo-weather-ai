@@ -3,6 +3,27 @@ import { buildClothingGuide } from "../index.js";
 import type { NormalizedHourlyWeather } from "@photo-weather/shared";
 
 describe("buildClothingGuide", () => {
+  it("keeps low probability and missing rain data distinct from actual rain", () => {
+    const input = {
+      elevationMeters: 0,
+      target: "general" as const,
+      timezone: "Asia/Shanghai",
+      forecastStart: "2026-05-20T06:00:00+08:00",
+    };
+    const low = buildClothingGuide({
+      ...input,
+      hourlyWeather: [hour({ precipitationProbability: 22, precipitation: 0, humidity: 61 })],
+    });
+    expect(low.riskNotes.join("")).toContain("弱降水概率信号");
+    expect(low.riskNotes.join("")).not.toContain("存在降水干扰");
+    expect(low.accessories).not.toContain("备用干衣");
+    const unknown = buildClothingGuide({
+      ...input,
+      hourlyWeather: [hour({ precipitationProbability: null, precipitation: null, humidity: 61 })],
+    });
+    expect(unknown.riskNotes.join("")).toContain("降水数据不足");
+    expect(unknown.accessories).not.toContain("防水外套");
+  });
   it("recommends warm layers for mountain astro nights", () => {
     const guide = buildClothingGuide({
       hourlyWeather: [

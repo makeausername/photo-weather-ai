@@ -20,22 +20,22 @@ function openBody(elevation = 100) {
     elevation,
     utc_offset_seconds: 28800,
     hourly: {
-      time: [time],
-      temperature_2m: [elevation / 100],
-      relative_humidity_2m: [80],
-      dew_point_2m: [0],
-      cloud_cover: [80],
-      cloud_cover_low: [50],
-      cloud_cover_mid: [20],
-      cloud_cover_high: [10],
-      wind_speed_10m: [2],
-      wind_gusts_10m: [3],
-      visibility: [20000],
-      precipitation: [10],
-      precipitation_probability: [80],
-      rain: [0],
-      snowfall: [7],
-      weather_code: [73],
+      time: [time, "2026-09-30T11:00:00+08:00"],
+      temperature_2m: [elevation / 100, elevation / 100],
+      relative_humidity_2m: [80, 80],
+      dew_point_2m: [0, 0],
+      cloud_cover: [80, 80],
+      cloud_cover_low: [50, 50],
+      cloud_cover_mid: [20, 20],
+      cloud_cover_high: [10, 10],
+      wind_speed_10m: [2, 2],
+      wind_gusts_10m: [3, 3],
+      visibility: [20000, 20000],
+      precipitation: [10, 10],
+      precipitation_probability: [80, 80],
+      rain: [0, 0],
+      snowfall: [7, 7],
+      weather_code: [73, 73],
     },
     daily: {
       time: ["2026-09-30"],
@@ -74,6 +74,29 @@ const validNow = {
 };
 
 describe("data pipeline boundary regressions", () => {
+  it("aligns preceding-hour accumulations without moving instantaneous weather", () => {
+    const body = openBody();
+    body.hourly.precipitation = [9, 0.5];
+    body.hourly.precipitation_probability = [90, 20];
+    body.hourly.temperature_2m = [12, 19];
+    for (const rows of [
+      normalizeOpenMeteoIconCloudLayers(body),
+      new OpenMeteoProvider().normalizeHourlyWeather(body),
+    ]) {
+      expect(rows[0]).toMatchObject({
+        time,
+        temperature: 12,
+        precipitationAmountMm: 0.5,
+        precipitationProbabilityPercent: 20,
+      });
+      expect(rows[0]?.fieldMetadata?.precipitationAmountMm).toMatchObject({
+        sourceValidTime: "2026-09-30T11:00:00+08:00",
+        intervalStart: time,
+      });
+      expect(rows[1]?.precipitationAmountMm).toBeNull();
+      expect(rows[1]?.missingFields).toContain("precipitationAmountMm");
+    }
+  });
   it("does not reuse weather for a different elevation", async () => {
     const fetcher = vi.fn(
       async (url: string | URL | Request) =>

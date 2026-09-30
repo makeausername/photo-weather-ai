@@ -471,15 +471,18 @@ export function buildTargetDirectionLightPollution(
     Number.isFinite(lightPollution.targetDirectionRisk)
       ? lightPollution.targetDirectionRisk
       : null;
-  const targetSector = targetAzimuth === null ? undefined : nearestDirectionalRiskSector(lightPollution);
+  const targetSector =
+    targetAzimuth === null ? undefined : nearestDirectionalRiskSector(lightPollution);
   const avoidDirectionLabelsZh = lightPollution.directionalRisk
     .filter(
-      (direction) => representativeLightPollutionRiskIndex(direction.riskLevel, direction.riskIndex) >= 60,
+      (direction) =>
+        representativeLightPollutionRiskIndex(direction.riskLevel, direction.riskIndex) >= 60,
     )
     .map((direction) => direction.directionLabelZh);
   const cleanerDirectionLabelsZh = lightPollution.directionalRisk
     .filter(
-      (direction) => representativeLightPollutionRiskIndex(direction.riskLevel, direction.riskIndex) < 40,
+      (direction) =>
+        representativeLightPollutionRiskIndex(direction.riskLevel, direction.riskIndex) < 40,
     )
     .map((direction) => direction.directionLabelZh);
 
@@ -504,8 +507,11 @@ export function buildTargetDirectionLightPollution(
     lightPollution.targetDirectionLevel && lightPollution.targetDirectionLevel !== "insufficient"
       ? lightPollution.targetDirectionLevel
       : lightPollutionRiskLevelFromIndex(targetRisk).level;
-  const levelLabel = lightPollution.targetDirectionLevelLabelZh ?? lightPollutionRiskLevelFromIndex(targetRisk).labelZh;
-  const directionLabel = targetSector?.directionLabelZh ?? directionLabelZhFromAzimuth(targetAzimuth);
+  const levelLabel =
+    lightPollution.targetDirectionLevelLabelZh ??
+    lightPollutionRiskLevelFromIndex(targetRisk).labelZh;
+  const directionLabel =
+    targetSector?.directionLabelZh ?? directionLabelZhFromAzimuth(targetAzimuth);
 
   return {
     available: true,
@@ -550,9 +556,16 @@ function buildFinalPhotographyDecision(input: {
   const precipitationScore = input.weatherBlockers.some((reason) => reason.includes("降水"))
     ? 25
     : 90;
-  const windScore = input.assessment.tripodWindRisk === "high" ? 35 : input.assessment.tripodWindRisk === "medium" ? 65 : 90;
+  const windScore =
+    input.assessment.tripodWindRisk === "high"
+      ? 35
+      : input.assessment.tripodWindRisk === "medium"
+        ? 65
+        : 90;
   const moonScore = clampScore(100 - input.assessment.moonlightImpactScore);
-  const astronomicalNightScore = input.astroWindowAvailable ? input.assessment.astronomicalWindowScore : 0;
+  const astronomicalNightScore = input.astroWindowAvailable
+    ? input.assessment.astronomicalWindowScore
+    : 0;
   const milkyWayWindowScore = input.assessment.milkyWayGeometryScore;
   const terrainScore = input.assessment.terrainHorizonAssessment
     ? clampScore(100 - terrainPenalty * 3)
@@ -587,8 +600,7 @@ function buildFinalPhotographyDecision(input: {
   );
   const shootable = input.astroShootable && !targetDirectionMajorBlocker;
   const overallModerate =
-    typeof input.overallSkyDarkness.maxClass === "number" &&
-    input.overallSkyDarkness.maxClass >= 4;
+    typeof input.overallSkyDarkness.maxClass === "number" && input.overallSkyDarkness.maxClass >= 4;
   const summaryZh =
     overallModerate && targetClean && shootable
       ? "整体环境受周边光害影响，但银河方向较干净；天气、月光和地形允许时仍可拍摄。"
@@ -673,7 +685,9 @@ function targetDirectionWarningZh(
 ): string {
   if (level === "very_low" || level === "low") {
     const avoidText =
-      avoidDirectionLabelsZh.length > 0 ? `；建议避开 ${avoidDirectionLabelsZh.join(" / ")} 等高光害方向` : "";
+      avoidDirectionLabelsZh.length > 0
+        ? `；建议避开 ${avoidDirectionLabelsZh.join(" / ")} 等高光害方向`
+        : "";
     return `${directionLabelZh}银河方向较干净${avoidText}。`;
   }
   if (level === "medium") {
@@ -704,7 +718,7 @@ export function calculateAstroAnalysis(
   const milkyWayCandidateWindows =
     input.astroWindowBundle?.milkyWayCandidateWindows ??
     (forecastRange ? buildMilkyWayCandidateWindows(input, forecastRange) : []);
-  const recommendedMilkyWayWindows =
+  const geometricRecommendedMilkyWayWindows =
     input.astroWindowBundle?.recommendedMilkyWayWindows ??
     buildRecommendedMilkyWayWindows(input, milkyWayCandidateWindows, moonlessNightWindows);
   const baseLightPollution = normalizeLightPollutionInfo(input.lightPollution);
@@ -713,11 +727,14 @@ export function calculateAstroAnalysis(
     astronomicalNightWindows,
     moonlessNightWindows,
     milkyWayCandidateWindows,
-    recommendedMilkyWayWindows,
+    geometricRecommendedMilkyWayWindows,
     scores,
     baseLightPollution,
   );
   const topDailyAstro = selectTopDailyAstro(dailyAstro);
+  const recommendedMilkyWayWindows = geometricRecommendedMilkyWayWindows.filter((window) =>
+    dailyAstro.some((day) => day.date === window.date && day.astroShootable),
+  );
   const lightPollution = topDailyAstro?.lightPollution ?? baseLightPollution;
   const adjustedScores = applyLightPollutionToAstroScores(scores, lightPollution);
   const assessment =
@@ -729,7 +746,9 @@ export function calculateAstroAnalysis(
       scores,
       lightPollution,
     });
-  const weatherBlockers = buildAstroWeatherBlockers(input, astronomicalNightWindows);
+  const weatherBlockers = topDailyAstro
+    ? assessment.astroWeatherBlockers
+    : buildAstroWeatherBlockers(input, astronomicalNightWindows);
   const moonImpactScore = assessment.moonlightImpactScore;
   const astroConditionScore = assessment.astronomicalWindowScore;
   const astroPracticalScore = assessment.practicalAstroScore;

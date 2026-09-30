@@ -25,6 +25,36 @@ const coordinates: Coordinates = {
 };
 
 describe("WeatherIntelligenceService", () => {
+  it("reports merged availability instead of retaining a primary source's missing layers", async () => {
+    const service = new WeatherIntelligenceService({
+      providers: [
+        new StaticProvider(
+          "qweather",
+          "QWeather",
+          "real",
+          hour({
+            providerCode: "qweather",
+            cloudLow: null,
+            cloudMid: null,
+            cloudHigh: null,
+            missingFields: ["cloudLow", "cloudMid", "cloudHigh"],
+          }),
+        ),
+        new StaticProvider(
+          "open_meteo",
+          "Open-Meteo",
+          "real",
+          hour({ cloudLow: 90, cloudMid: 60, cloudHigh: 20 }),
+        ),
+      ],
+    });
+    const result = await service.getWeatherDataBundle(requestInput());
+    expect(result.hourly[0]).toMatchObject({ cloudLow: 90, cloudMid: 60, cloudHigh: 20 });
+    expect(result.missingFields).not.toEqual(expect.arrayContaining(["cloudLow"]));
+    expect(
+      result.sourceSummaries?.find((source) => source.providerCode === "qweather")?.missingFields,
+    ).toContain("cloudLow");
+  });
   it("uses the cached provider bundle for an identical warm request", async () => {
     const provider = new StaticProvider("qweather", "QWeather", "real", hour());
     const currentSpy = vi.spyOn(provider, "getCurrentWeather");

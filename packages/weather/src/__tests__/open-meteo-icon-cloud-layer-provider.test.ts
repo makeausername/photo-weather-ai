@@ -42,7 +42,7 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
     expect(url.origin).toBe("https://api.open-meteo.com");
     expect(url.pathname).toBe("/v1/forecast");
     expect(url.searchParams.get("apikey")).toBeNull();
-    expect(url.searchParams.get("forecast_hours")).toBe("72");
+    expect(url.searchParams.get("forecast_hours")).toBe("73");
     expect(url.searchParams.get("forecast_days")).toBe("3");
     expect(url.searchParams.get("timezone")).toBe("Asia/Shanghai");
     expect(url.searchParams.get("elevation")).toBe("1860");
@@ -86,7 +86,7 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
     );
 
     expect(url.searchParams.get("elevation")).toBeNull();
-    expect(url.searchParams.get("forecast_hours")).toBe("72");
+    expect(url.searchParams.get("forecast_hours")).toBe("73");
   });
 
   it("builds a standard Open-Meteo Forecast fallback URL with explicit rolling hours", () => {
@@ -112,7 +112,7 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
     expect(url.origin).toBe("https://api.open-meteo.com");
     expect(url.pathname).toBe("/v1/forecast");
     expect(url.searchParams.get("models")).toBe("gfs_seamless");
-    expect(url.searchParams.get("forecast_hours")).toBe("54");
+    expect(url.searchParams.get("forecast_hours")).toBe("55");
     expect(url.searchParams.get("forecast_days")).toBe("3");
     expect(url.searchParams.get("timezone")).toBe("Asia/Shanghai");
     expect(url.searchParams.get("elevation")).toBe("1860");
@@ -150,7 +150,7 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
     );
 
     expect(url.searchParams.get("models")).toBe("gfs_global");
-    expect(url.searchParams.get("forecast_hours")).toBe("72");
+    expect(url.searchParams.get("forecast_hours")).toBe("73");
   });
 
   it("defaults the standard Open-Meteo Forecast provider to best_match", async () => {
@@ -187,10 +187,10 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
       dewPoint: 10,
       humidity: 84,
       precipitationAmountMm: 0,
-      precipitationProbabilityPercent: 12,
+      precipitationProbabilityPercent: 16,
       visibility: 22,
       windSpeed: 4.5,
-      windGust: 8.1,
+      windGust: 8.8,
       weatherCode: "2",
     });
     expect(complete?.fieldMetadata?.cloudLow).toMatchObject({

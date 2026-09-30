@@ -129,6 +129,9 @@ export type TransparencyGrade = "excellent" | "good" | "fair" | "poor";
 export type CloudFogObstructionRisk = "low" | "medium" | "high";
 
 export type NormalizedWeatherFieldMetadata = {
+  readonly sourceValidTime?: string;
+  readonly intervalStart?: string;
+  readonly intervalEnd?: string;
   readonly value?: string | number | boolean | null;
   readonly providerCode: string;
   readonly sourceId?: string;
@@ -326,6 +329,9 @@ export type ProfessionalHourlyCloudSeaSignalLevel =
   | "neutral";
 
 export type ProfessionalHourlyDataPoint = {
+  readonly bodyFeelTemperatureC?: number | null;
+  readonly providerElevationMeters?: number;
+  readonly windGustMs?: number | null;
   readonly time: string;
   readonly dateLabel: string;
   readonly timeLabel: string;

@@ -161,7 +161,10 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
       astroAnalysis.lightPollution.milkyWayPenalty,
     ),
   };
-  const riskFlags = buildRiskFlags(calculationInput, whiteoutRisk, cloudSeaAnalysis);
+  const riskFlags = clipRiskFlagsToForecast(
+    buildRiskFlags(calculationInput, whiteoutRisk, cloudSeaAnalysis),
+    calculationInput,
+  );
   const bestWindows = buildBestWindows(
     calculationInput,
     cloudSeaAnalysis,
@@ -444,6 +447,9 @@ function buildProfessionalHourlyData(
       rawTemperatureC: temperature.rawTemperatureC,
       terrainAdjustedTemperatureC: temperature.terrainAdjustedTemperatureC,
       displayedTemperatureC: temperature.displayedTemperatureC,
+      bodyFeelTemperatureC: finiteOrNull(hour.mountainFeelsLikeC ?? hour.feelsLike),
+      providerElevationMeters: hour.providerElevationMeters,
+      windGustMs: finiteOrNull(hour.windGust),
       temperatureBasis: temperature.temperatureBasis,
       temperatureAdjustmentC: temperature.temperatureAdjustmentC,
       temperatureBasisNoteZh: temperature.temperatureBasisNoteZh,
@@ -4516,7 +4522,7 @@ function buildDailyRiskFlags(
     });
   }
 
-  return flags;
+  return clipRiskFlagsToForecast(flags, input);
 }
 
 function pickDailyScore(
@@ -5255,6 +5261,36 @@ function buildRiskFlags(
   }
 
   return flags;
+}
+
+function clipRiskFlagsToForecast(
+  flags: readonly ForecastRiskFlag[],
+  input: ForecastCalculationInput,
+): readonly ForecastRiskFlag[] {
+  return flags.flatMap((risk) => {
+    if (!risk.startTime || !risk.endTime) return [risk];
+    const startMs = Math.max(
+      Date.parse(risk.startTime),
+      Date.parse(input.calendarBasis.forecastStart),
+    );
+    const endMs = Math.min(Date.parse(risk.endTime), Date.parse(input.calendarBasis.forecastEnd));
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return [risk];
+    if (endMs <= startMs) return [];
+    const startTime = new Date(startMs).toISOString();
+    const endTime = new Date(endMs).toISOString();
+    return [
+      {
+        ...risk,
+        startTime,
+        endTime,
+        timeWindowLabelZh: formatChineseDateTimeRange(
+          startTime,
+          endTime,
+          input.calendarBasis.timezone,
+        ),
+      },
+    ];
+  });
 }
 
 function riskTimingFields(

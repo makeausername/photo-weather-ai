@@ -24,7 +24,7 @@ describe("OpenMeteoClient", () => {
     expect(url.pathname).toBe("/v1/forecast");
     expect(url.searchParams.get("apikey")).toBeNull();
     expect(url.searchParams.get("timezone")).toBe("Asia/Shanghai");
-    expect(url.searchParams.get("forecast_hours")).toBe("24");
+    expect(url.searchParams.get("forecast_hours")).toBe("25");
     expect(url.searchParams.get("forecast_days")).toBe("1");
     expect(url.searchParams.get("hourly")).toContain("cloud_cover_low");
     expect(url.searchParams.get("hourly")).not.toContain("apparent_temperature");
@@ -51,7 +51,7 @@ describe("OpenMeteoClient", () => {
     expect(url.pathname).toBe("/v1/forecast");
     expect(url.searchParams.get("apikey")).toBe("open-meteo-secret");
     expect(url.searchParams.get("models")).toBe("best_match");
-    expect(url.searchParams.get("forecast_hours")).toBe("48");
+    expect(url.searchParams.get("forecast_hours")).toBe("49");
     expect(url.searchParams.get("forecast_days")).toBe("2");
   });
 
@@ -67,7 +67,7 @@ describe("OpenMeteoClient", () => {
       ),
     );
 
-    expect(url.searchParams.get("forecast_hours")).toBe("54");
+    expect(url.searchParams.get("forecast_hours")).toBe("55");
     expect(url.searchParams.get("forecast_days")).toBe("3");
   });
 

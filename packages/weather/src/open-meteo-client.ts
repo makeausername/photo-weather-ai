@@ -102,7 +102,7 @@ export function buildOpenMeteoForecastUrl(
     String(clampDays(request.days ?? daysFromHours(request.hours))),
   );
   if (request.hours !== undefined) {
-    url.searchParams.set("forecast_hours", String(clampHours(request.hours)));
+    url.searchParams.set("forecast_hours", String(clampHours(request.hours + 1)));
   }
 
   if (options.modelPreference) {

@@ -16,6 +16,7 @@ import {
   validateHourlyWeather,
   weatherConditionFromCode,
 } from "./normalization.js";
+import { normalizeOpenMeteoHourlyIntervals } from "./open-meteo-hourly-intervals.js";
 import type {
   AirQuality,
   CurrentWeather,
@@ -101,88 +102,90 @@ export class OpenMeteoProvider implements WeatherProvider {
     const offsetSeconds = toNumber(root.utc_offset_seconds) ?? 8 * 60 * 60;
     const providerElevationMeters = toNumber(root.elevation) ?? undefined;
 
-    return validateHourlyWeather(
-      timeValues.map((timeValue, index) => {
-        const weatherCode = toText(at(hourly, "weather_code", index));
-        const cloudLow = nullablePercent(at(hourly, "cloud_cover_low", index));
-        const cloudMid = nullablePercent(at(hourly, "cloud_cover_mid", index));
-        const cloudHigh = nullablePercent(at(hourly, "cloud_cover_high", index));
-        const pressureMsl = nullableRounded(at(hourly, "pressure_msl", index));
-        const pressureFallback = nullableRounded(at(hourly, "surface_pressure", index));
-        const missingFields = missingCloudLayerFields({ cloudLow, cloudMid, cloudHigh });
-        const estimatedFields =
-          pressureMsl === null && pressureFallback !== null ? ["pressure"] : [];
-        const precipitationProbability = nullablePercent(
-          at(hourly, "precipitation_probability", index),
-        );
-        const precipitation = nullableRounded(at(hourly, "precipitation", index));
-        const windSpeed = kmhToMetersPerSecond(at(hourly, "wind_speed_10m", index));
-        if (windSpeed === null) {
-          throw new Error("Open-Meteo hourly weather missing required field: wind_speed_10m");
-        }
-        const rainAmount = nullableRounded(at(hourly, "rain", index));
-        const snowAmount = snowfallCmToWaterEquivalentMm(at(hourly, "snowfall", index));
-        if (precipitationProbability === null) {
-          missingFields.push("precipitationProbability");
-        }
-        const sourceNotes =
-          missingFields.length > 0
-            ? ["Open-Meteo 未返回完整云量分层，缺失的 cloudLow/cloudMid/cloudHigh 字段置为空。"]
-            : undefined;
+    return normalizeOpenMeteoHourlyIntervals(
+      validateHourlyWeather(
+        timeValues.map((timeValue, index) => {
+          const weatherCode = toText(at(hourly, "weather_code", index));
+          const cloudLow = nullablePercent(at(hourly, "cloud_cover_low", index));
+          const cloudMid = nullablePercent(at(hourly, "cloud_cover_mid", index));
+          const cloudHigh = nullablePercent(at(hourly, "cloud_cover_high", index));
+          const pressureMsl = nullableRounded(at(hourly, "pressure_msl", index));
+          const pressureFallback = nullableRounded(at(hourly, "surface_pressure", index));
+          const missingFields = missingCloudLayerFields({ cloudLow, cloudMid, cloudHigh });
+          const estimatedFields =
+            pressureMsl === null && pressureFallback !== null ? ["pressure"] : [];
+          const precipitationProbability = nullablePercent(
+            at(hourly, "precipitation_probability", index),
+          );
+          const precipitation = nullableRounded(at(hourly, "precipitation", index));
+          const windSpeed = kmhToMetersPerSecond(at(hourly, "wind_speed_10m", index));
+          if (windSpeed === null) {
+            throw new Error("Open-Meteo hourly weather missing required field: wind_speed_10m");
+          }
+          const rainAmount = nullableRounded(at(hourly, "rain", index));
+          const snowAmount = snowfallCmToWaterEquivalentMm(at(hourly, "snowfall", index));
+          if (precipitationProbability === null) {
+            missingFields.push("precipitationProbability");
+          }
+          const sourceNotes =
+            missingFields.length > 0
+              ? ["Open-Meteo 未返回完整云量分层，缺失的 cloudLow/cloudMid/cloudHigh 字段置为空。"]
+              : undefined;
 
-        return {
-          time: normalizeIsoTime(timeValue, offsetSeconds),
-          temperature: requiredRounded(
-            at(hourly, "temperature_2m", index),
-            "hourly.temperature_2m",
-          ),
-          feelsLike: nullableRounded(at(hourly, "apparent_temperature", index)),
-          humidity: percent(
-            at(hourly, "relative_humidity_2m", index),
-            "hourly.relative_humidity_2m",
-          ),
-          dewPointSpread:
-            nullableRounded(at(hourly, "dew_point_2m", index)) === null
-              ? null
-              : roundTo(
-                  requiredRounded(at(hourly, "temperature_2m", index), "hourly.temperature_2m") -
-                    nullableRounded(at(hourly, "dew_point_2m", index))!,
-                ),
-          pressure: pressureMsl ?? pressureFallback,
-          windSpeed,
-          windGust: kmhToMetersPerSecond(at(hourly, "wind_gusts_10m", index)),
-          windDirection: nullableRounded(at(hourly, "wind_direction_10m", index), 0),
-          precipitationProbability,
-          precipitationProbabilityPercent: precipitationProbability,
-          precipitation,
-          precipitationAmountMm: precipitation,
-          rainAmountMm: rainAmount,
-          snowAmountMm: snowAmount,
-          precipitationType: inferPrecipitationType({
+          return {
+            time: normalizeIsoTime(timeValue, offsetSeconds),
+            temperature: requiredRounded(
+              at(hourly, "temperature_2m", index),
+              "hourly.temperature_2m",
+            ),
+            feelsLike: nullableRounded(at(hourly, "apparent_temperature", index)),
+            humidity: percent(
+              at(hourly, "relative_humidity_2m", index),
+              "hourly.relative_humidity_2m",
+            ),
+            dewPointSpread:
+              nullableRounded(at(hourly, "dew_point_2m", index)) === null
+                ? null
+                : roundTo(
+                    requiredRounded(at(hourly, "temperature_2m", index), "hourly.temperature_2m") -
+                      nullableRounded(at(hourly, "dew_point_2m", index))!,
+                  ),
+            pressure: pressureMsl ?? pressureFallback,
+            windSpeed,
+            windGust: kmhToMetersPerSecond(at(hourly, "wind_gusts_10m", index)),
+            windDirection: nullableRounded(at(hourly, "wind_direction_10m", index), 0),
+            precipitationProbability,
+            precipitationProbabilityPercent: precipitationProbability,
+            precipitation,
+            precipitationAmountMm: precipitation,
+            rainAmountMm: rainAmount,
+            snowAmountMm: snowAmount,
+            precipitationType: inferPrecipitationType({
+              weatherCode,
+              weatherTextZh: describeOpenMeteoCode(weatherCode),
+              rainAmount,
+              snowAmount,
+              precipitation,
+            }),
+            visibility: metersToKilometers(at(hourly, "visibility", index)),
+            dewPoint: nullableRounded(at(hourly, "dew_point_2m", index)),
+            cloudTotal: percent(at(hourly, "cloud_cover", index), "hourly.cloud_cover"),
+            cloudLow,
+            cloudMid,
+            cloudHigh,
+            providerElevationMeters,
             weatherCode,
             weatherTextZh: describeOpenMeteoCode(weatherCode),
-            rainAmount,
-            snowAmount,
-            precipitation,
-          }),
-          visibility: metersToKilometers(at(hourly, "visibility", index)),
-          dewPoint: nullableRounded(at(hourly, "dew_point_2m", index)),
-          cloudTotal: percent(at(hourly, "cloud_cover", index), "hourly.cloud_cover"),
-          cloudLow,
-          cloudMid,
-          cloudHigh,
-          providerElevationMeters,
-          weatherCode,
-          weatherTextZh: describeOpenMeteoCode(weatherCode),
-          providerCode: source.providerCode,
-          providerLabelZh: source.providerLabelZh,
-          dataMode: source.mode,
-          sourceConfidence: sourceNotes ? 0.78 : 0.86,
-          missingFields: missingFields.length > 0 ? missingFields : undefined,
-          estimatedFields: estimatedFields.length > 0 ? estimatedFields : undefined,
-          sourceNotes,
-        };
-      }),
+            providerCode: source.providerCode,
+            providerLabelZh: source.providerLabelZh,
+            dataMode: source.mode,
+            sourceConfidence: sourceNotes ? 0.78 : 0.86,
+            missingFields: missingFields.length > 0 ? missingFields : undefined,
+            estimatedFields: estimatedFields.length > 0 ? estimatedFields : undefined,
+            sourceNotes,
+          };
+        }),
+      ),
     );
   }
 

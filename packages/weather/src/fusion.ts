@@ -14,7 +14,11 @@ import type {
   WeatherFusionSummary,
   WeatherMultiModelConsensusDiagnostics,
 } from "@photo-weather/shared";
-import { aerosolImpactRank, assessAerosolTransparency } from "@photo-weather/shared";
+import {
+  aerosolImpactRank,
+  assessAerosolTransparency,
+  dewPointFromTemperatureHumidity,
+} from "@photo-weather/shared";
 import type {
   WeatherConfidenceByField,
   WeatherConfidenceByTarget,
@@ -209,9 +213,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
   const confidenceLevel = confidenceLevelFromScore(confidenceByTarget[input.target]);
   const dataStatusZh = buildDataStatus(providerFamilyBundles, confidenceLevel);
   const conflictStatusZh =
-    conflictFlags.length === 0
-      ? "当前参与融合的数据源未识别到明显冲突"
-      : "存在差异，请谨慎参考";
+    conflictFlags.length === 0 ? "当前参与融合的数据源未识别到明显冲突" : "存在差异，请谨慎参考";
   const meteoblueBundle = usableBundles.find(
     (bundle) => bundle.providerCode === "meteoblue" && bundle.dataMode === "real",
   );
@@ -483,6 +485,11 @@ function fuseCurrent(
     }
     return value;
   };
+  const thermodynamics = coherentThermodynamics({
+    temperature: requireCurrentNumber("temperature", primary?.temperature, hour?.temperature),
+    humidity: requireCurrentNumber("humidity", primary?.humidity, hour?.humidity),
+    dewPoint: (primary ? primary.dewPoint : hour?.dewPoint) ?? null,
+  });
 
   return {
     providerCode: primaryBundle.providerCode,
@@ -492,8 +499,8 @@ function fuseCurrent(
     temperature: requireCurrentNumber("temperature", primary?.temperature, hour?.temperature),
     feelsLike: primary?.feelsLike ?? hour?.feelsLike ?? null,
     humidity: requireCurrentNumber("humidity", primary?.humidity, hour?.humidity),
-    dewPoint: primary?.dewPoint ?? hour?.dewPoint ?? null,
-    dewPointSpread: primary?.dewPointSpread ?? hour?.dewPointSpread ?? null,
+    dewPoint: thermodynamics.values.dewPoint,
+    dewPointSpread: thermodynamics.values.dewPointSpread,
     windSpeed: requireCurrentNumber("windSpeed", primary?.windSpeed, hour?.windSpeed),
     windDirection: primary?.windDirection ?? hour?.windDirection ?? null,
     windGust: primary?.windGust ?? hour?.windGust ?? null,
@@ -578,9 +585,10 @@ function fuseCurrent(
     airQuality: primary?.airQuality ?? currentAirQualityFromHour(hour),
     missingFields: [
       ...new Set([...(primary?.missingFields ?? []), ...(hour?.missingFields ?? [])]),
-    ],
+    ].filter((field) => field !== "dewPoint" && field !== "dewPointSpread"),
     estimatedFields: [
       ...new Set([...(primary?.estimatedFields ?? []), ...(hour?.estimatedFields ?? [])]),
+      ...(thermodynamics.derived ? ["dewPoint", "dewPointSpread"] : []),
     ],
   };
 }
@@ -707,6 +715,7 @@ function fuseHourlyAt(
   const preferredCloudGroup = selectPreferredCloudLayerGroup(candidates, target);
 
   for (const field of numericFields) {
+    if (field === "humidity" || field === "dewPoint") continue;
     const selected =
       selectConsensusFieldValue(field, candidates, primaryHour, target) ??
       (isCloudLayerGroupField(field) && preferredCloudGroup
@@ -740,6 +749,8 @@ function fuseHourlyAt(
     };
     if (selected.estimated) {
       estimatedFields.add(field);
+    } else {
+      estimatedFields.delete(field);
     }
     if (selected.value === null || selected.value === undefined) {
       missingFields.add(field);
@@ -748,16 +759,28 @@ function fuseHourlyAt(
     }
   }
 
-  if (next.dewPointSpread === undefined || next.dewPointSpread === null) {
-    const temperature = asNumber(next.temperature);
-    const dewPoint = asNumber(next.dewPoint);
-    if (temperature !== null && dewPoint !== null) {
-      next.dewPointSpread = Math.round((temperature - dewPoint) * 10) / 10;
-      estimatedFields.add("dewPointSpread");
-    }
+  // Temperature, humidity and dew point describe one air mass at one elevation.
+  // Never combine a point temperature with another model's grid dew point.
+  const thermodynamics = coherentThermodynamics(primaryHour);
+  Object.assign(next, thermodynamics.values);
+  for (const field of ["temperature", "humidity", "dewPoint", "dewPointSpread"] as const) {
+    missingFields.delete(field);
+    const estimated = field.startsWith("dewPoint") && thermodynamics.derived;
+    if (estimated) estimatedFields.add(field);
+    else if (!primaryHour.estimatedFields?.includes(field)) estimatedFields.delete(field);
+    fieldMetadata[field] = {
+      ...primaryHour.fieldMetadata?.[field],
+      value: thermodynamics.values[field],
+      providerCode: primaryHour.providerCode,
+      providerLabelZh: primaryHour.providerLabelZh,
+      providerElevationMeters: primaryHour.providerElevationMeters,
+      estimated: estimated || Boolean(primaryHour.estimatedFields?.includes(field)),
+    };
   }
 
   const aerosolFields = selectAerosolFields(candidates, primaryHour);
+  next.precipitationProbabilityPercent = next.precipitationProbability;
+  next.precipitationAmountMm = next.precipitation;
   if (aerosolFields) {
     for (const key of aerosolFieldKeys) {
       if (aerosolFields[key] !== undefined) {
@@ -776,6 +799,24 @@ function fuseHourlyAt(
     missingFields: [...missingFields],
     estimatedFields: estimatedFields.size > 0 ? [...estimatedFields] : undefined,
     fieldMetadata,
+  };
+}
+
+function coherentThermodynamics(
+  hour: Pick<NormalizedHourlyWeather, "temperature" | "humidity" | "dewPoint">,
+) {
+  const humidity = Math.min(100, Math.max(0, hour.humidity));
+  const derivedDewPoint = dewPointFromTemperatureHumidity(hour.temperature, humidity);
+  const derived = !Number.isFinite(hour.dewPoint) || Math.abs(hour.dewPoint! - derivedDewPoint) > 2;
+  const dewPoint = Math.round((derived ? derivedDewPoint : hour.dewPoint!) * 10) / 10;
+  return {
+    derived,
+    values: {
+      temperature: hour.temperature,
+      humidity,
+      dewPoint,
+      dewPointSpread: Math.round((hour.temperature - dewPoint) * 10) / 10,
+    },
   };
 }
 
@@ -884,9 +925,10 @@ function selectPreferredCloudLayerGroup(
     return completeOpenMeteo;
   }
 
-  const partialOpenMeteo = openMeteoCandidates.find((candidate) =>
-    !isNormalizedFieldMissing(candidate.hour, "cloudTotal") &&
-    hasUsableNumber(candidate.hour.cloudTotal),
+  const partialOpenMeteo = openMeteoCandidates.find(
+    (candidate) =>
+      !isNormalizedFieldMissing(candidate.hour, "cloudTotal") &&
+      hasUsableNumber(candidate.hour.cloudTotal),
   );
   if (partialOpenMeteo) {
     return partialOpenMeteo;
@@ -987,22 +1029,22 @@ function selectConsensusFieldValue(
       reference.bundle.terrainMetadata?.elevationDifferenceMeters,
     modelCount: withinOpenMeteoFamily
       ? sourceKeys.size
-      : (openMeteoInternalMetadata?.modelCount ??
-        (values.some((entry) => entry.providerCode === "open_meteo") ? 1 : 0)),
+      : openMeteoInternalMetadata?.modelCount ??
+        (values.some((entry) => entry.providerCode === "open_meteo") ? 1 : 0),
     providerCount: providerCodes.size,
     minValue: withinOpenMeteoFamily
       ? stats.min
-      : (openMeteoInternalMetadata?.minValue ??
-        values.find((entry) => entry.providerCode === "open_meteo")?.value),
+      : openMeteoInternalMetadata?.minValue ??
+        values.find((entry) => entry.providerCode === "open_meteo")?.value,
     maxValue: withinOpenMeteoFamily
       ? stats.max
-      : (openMeteoInternalMetadata?.maxValue ??
-        values.find((entry) => entry.providerCode === "open_meteo")?.value),
+      : openMeteoInternalMetadata?.maxValue ??
+        values.find((entry) => entry.providerCode === "open_meteo")?.value,
     medianValue: withinOpenMeteoFamily
       ? stats.median
-      : (openMeteoInternalMetadata?.medianValue ??
-        values.find((entry) => entry.providerCode === "open_meteo")?.value),
-    spread: withinOpenMeteoFamily ? stats.spread : (openMeteoInternalMetadata?.spread ?? 0),
+      : openMeteoInternalMetadata?.medianValue ??
+        values.find((entry) => entry.providerCode === "open_meteo")?.value,
+    spread: withinOpenMeteoFamily ? stats.spread : openMeteoInternalMetadata?.spread ?? 0,
     consensusStrategy: strategy,
   };
 }
@@ -1347,7 +1389,10 @@ function detectConflicts(bundles: readonly WeatherDataBundle[]): readonly Weathe
       const values = bundles
         .map((bundle) => ({
           providerCode: bundle.providerCode,
-          value: valueForConflict(bundle.hourly.find((hour) => hour.time === time), field),
+          value: valueForConflict(
+            bundle.hourly.find((hour) => hour.time === time),
+            field,
+          ),
         }))
         .filter(
           (entry): entry is { providerCode: WeatherProviderCode; value: number } =>

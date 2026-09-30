@@ -1823,7 +1823,7 @@ function buildCanonicalGlowWindow(
     providerAgreement: candidate?.providerAgreement,
     scoreBreakdown: candidate?.scoreBreakdown,
     modelResults: candidate?.modelResults,
-    confidence: candidate ? (candidate.confidence ?? scores.confidence) : undefined,
+    confidence: candidate ? candidate.confidence ?? scores.confidence : undefined,
     windowDerivationMethod:
       candidate?.windowDerivationMethod ??
       astro.glowWindowDerivationMethod ??
@@ -2346,7 +2346,7 @@ function buildTerrainObstructionAssessment(
   const horizonAngle = horizonAngleForPhase(input, phase);
   const solarAzimuthDegrees =
     directionSample?.azimuthDegrees ??
-    (phase === "sunrise" ? (astro.sunriseAzimuth ?? null) : (astro.sunsetAzimuth ?? null));
+    (phase === "sunrise" ? astro.sunriseAzimuth ?? null : astro.sunsetAzimuth ?? null);
   const hasProfile = hasDirectionalTerrainProfile(input);
   const dataAvailable =
     hasProfile &&
@@ -2376,12 +2376,12 @@ function buildTerrainObstructionAssessment(
   const blocked = hasBlockedDirection(input, phase);
   const obstructionStatus = !dataAvailable
     ? "unavailable"
-    : (sampleStatus ??
+    : sampleStatus ??
       (blocked || (solarClearanceDegrees ?? 0) < -4
         ? "blocked"
         : (solarClearanceDegrees ?? 0) < 1
           ? "marginal"
-          : "clear"));
+          : "clear");
 
   return {
     phase,
@@ -2620,8 +2620,12 @@ function buildGlowTravelRecommendations(
 ): readonly string[] {
   const best = Math.max(sunriseGlowScore, sunsetGlowScore);
   return [
-    "朝霞：建议日出前 40-60 分钟到达机位，先完成构图、测光和安全检查。",
-    "晚霞：建议日落前 60 分钟观察云层移动；方向性光路数据不足时，需现场复核地平线云缝。",
+    sunriseGlowScore >= 50
+      ? "朝霞：建议日出前 40-60 分钟到达机位，先完成构图、测光和安全检查。"
+      : "朝霞条件不足，窗口仅作天文参考，暂不安排专程到达。",
+    sunsetGlowScore >= 50
+      ? "晚霞：建议日落前 60 分钟观察云层移动；方向性光路数据不足时，需现场复核地平线云缝。"
+      : "晚霞条件不足，窗口仅作天文参考，暂不安排专程到达。",
     "如果低云/雾墙风险偏高，优先寻找更高机位或转拍层峦、雾气层次和局部暖色。",
     "如果云层载体较好但压制风险存在，适合附近蹲守并同步准备长焦山脊、远山层次和城市远景。",
     best >= 65

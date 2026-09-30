@@ -210,10 +210,16 @@ export class WeatherIntelligenceService {
       forecastEnd: input.forecastEnd,
       noticeZh: fusion.dataStatusZh,
       missingFields: [
-        ...new Set(fusion.sourceSummaries.flatMap((summary) => summary.missingFields)),
-      ],
+        ...new Set(fusion.fusedHourly.flatMap((hour) => hour.missingFields ?? [])),
+      ].filter(
+        (field) =>
+          !fusion.fusedHourly.some((hour) => {
+            const value = hour[field as keyof typeof hour];
+            return typeof value === "number" && Number.isFinite(value);
+          }),
+      ),
       estimatedFields: [
-        ...new Set(usableBundles.flatMap((bundle) => bundle.estimatedFields ?? [])),
+        ...new Set(fusion.fusedHourly.flatMap((hour) => hour.estimatedFields ?? [])),
       ],
       sourceSummaries: [...fusion.sourceSummaries, ...failedSourceSummaries],
       conflictFlags: fusion.conflictFlags,

@@ -25,13 +25,10 @@ import {
   openMeteoIconCloudLayerMinimumForecastHours,
 } from "./open-meteo-icon-cloud-layer-provider.js";
 
-export const openMeteoForecastCloudLayerProviderName =
-  "openMeteoForecastCloudLayerProvider";
-export const openMeteoForecastCloudLayerDefaultEndpoint =
-  "https://api.open-meteo.com/v1/forecast";
+export const openMeteoForecastCloudLayerProviderName = "openMeteoForecastCloudLayerProvider";
+export const openMeteoForecastCloudLayerDefaultEndpoint = "https://api.open-meteo.com/v1/forecast";
 export const openMeteoForecastCloudLayerDefaultModel = "best_match";
-export const openMeteoForecastCloudLayerParserVersion =
-  "open-meteo-forecast-cloud-layer-v1";
+export const openMeteoForecastCloudLayerParserVersion = "open-meteo-forecast-cloud-layer-v1";
 
 export function openMeteoForecastCloudLayerProviderId(modelName: string): string {
   return `${openMeteoForecastCloudLayerProviderName}:${normalizeOpenMeteoForecastModelName(
@@ -160,7 +157,10 @@ export class OpenMeteoForecastCloudLayerClient {
   async fetchCloudLayers(
     request: OpenMeteoForecastCloudLayerRequest,
   ): Promise<OpenMeteoForecastCloudLayerFetchResult<Record<string, unknown>>> {
-    const modelName = normalizeOpenMeteoForecastModelName(request.modelName, this.options.modelName);
+    const modelName = normalizeOpenMeteoForecastModelName(
+      request.modelName,
+      this.options.modelName,
+    );
     return this.fetchJson(
       buildOpenMeteoForecastCloudLayerUrl({ ...this.options, modelName }, request),
       { ...request, modelName },
@@ -188,26 +188,34 @@ export class OpenMeteoForecastCloudLayerClient {
         const body = parseJsonBody(text, latencyMs, request.modelName);
 
         if (response.status >= 500 && attempt < attempts) {
-          lastError = openMeteoForecastError({
-            errorCategory: "provider_error",
-            messageZh: "云层分层补全源暂不可用。",
-            statusCode: response.status,
-            latencyMs,
-          }, request.modelName);
+          lastError = openMeteoForecastError(
+            {
+              errorCategory: "provider_error",
+              messageZh: "云层分层补全源暂不可用。",
+              statusCode: response.status,
+              latencyMs,
+            },
+            request.modelName,
+          );
           continue;
         }
 
         if (response.status < 200 || response.status >= 300) {
-          throw openMeteoForecastError({
-            errorCategory:
-              response.status === 401 || response.status === 403 ? "invalid_key" : "provider_error",
-            messageZh:
-              response.status === 401 || response.status === 403
-                ? "云层分层补全源配置或权限未通过。"
-                : "云层分层补全源暂不可用。",
-            statusCode: response.status,
-            latencyMs,
-          }, request.modelName);
+          throw openMeteoForecastError(
+            {
+              errorCategory:
+                response.status === 401 || response.status === 403
+                  ? "invalid_key"
+                  : "provider_error",
+              messageZh:
+                response.status === 401 || response.status === 403
+                  ? "云层分层补全源配置或权限未通过。"
+                  : "云层分层补全源暂不可用。",
+              statusCode: response.status,
+              latencyMs,
+            },
+            request.modelName,
+          );
         }
 
         return {
@@ -478,7 +486,7 @@ export function buildOpenMeteoForecastCloudLayerUrl(
   url.searchParams.set("timezone", request.timezone ?? options.timezone);
   url.searchParams.set("hourly", openMeteoForecastHourlyFields.join(","));
   url.searchParams.set("daily", openMeteoForecastDailyFields.join(","));
-  url.searchParams.set("forecast_hours", String(forecastHours));
+  url.searchParams.set("forecast_hours", String(forecastHours + 1));
   url.searchParams.set("forecast_days", String(daysFromHours(forecastHours)));
   url.searchParams.set("temperature_unit", "celsius");
   url.searchParams.set("wind_speed_unit", "ms");
