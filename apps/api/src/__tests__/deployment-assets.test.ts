@@ -30,6 +30,7 @@ const productionScripts = [
 const bashScripts = [
   ...productionScripts,
   "scripts/install-cn.sh",
+  "scripts/configure-debian-mirrors.sh",
   "scripts/check-env-production.sh",
   "scripts/check-login.sh",
   "scripts/lib/installer-input.sh",
@@ -163,7 +164,9 @@ describe("production deployment assets", () => {
     const updater = readRepoFile("scripts/update.sh");
     expect(updater).toContain('CADDY_TEMPLATE="${PROJECT_ROOT}/deploy/Caddyfile.template"');
     expect(updater).toContain('CADDY_FILE="${PROJECT_ROOT}/deploy/Caddyfile"');
-    expect(updater).toContain('sed "s/DOMAIN_PLACEHOLDER/${DOMAIN}/g" "${CADDY_TEMPLATE}" > "${CADDY_FILE}"');
+    expect(updater).toContain(
+      'sed "s/DOMAIN_PLACEHOLDER/${DOMAIN}/g" "${CADDY_TEMPLATE}" > "${CADDY_FILE}"',
+    );
     expect(updater.lastIndexOf("render_caddyfile")).toBeLessThan(
       updater.indexOf('echo "Rebuilding production images..."'),
     );
@@ -286,6 +289,19 @@ describe("production deployment assets", () => {
     expect(readRepoFile("apps/astro-service/Dockerfile")).toContain('ARG PIP_INDEX_URL=""');
     expect(readRepoFile("apps/astro-service/Dockerfile")).toContain("pip install --no-cache-dir");
     expect(readRepoFile("docker-compose.prod.yml")).toContain("PIP_INDEX_URL: ${PIP_INDEX_URL:-}");
+    for (const key of ["DEBIAN_APT_MIRROR", "DEBIAN_SECURITY_MIRROR"]) {
+      expect(readRepoFile("apps/astro-service/Dockerfile")).toContain(`ARG ${key}=""`);
+      expect(readRepoFile("docker-compose.prod.yml")).toContain(`${key}: \${${key}:-}`);
+      expect(readRepoFile("deploy/env.production.template")).toContain(`${key}=`);
+      expect(readRepoFile("scripts/install.sh")).toContain(
+        `${key}) write_env_var "\${key}" "\${${key}}"`,
+      );
+    }
+    const astroDockerfile = readRepoFile("apps/astro-service/Dockerfile");
+    expect(astroDockerfile).toContain("COPY scripts/configure-debian-mirrors.sh");
+    expect(
+      astroDockerfile.indexOf("RUN sh /usr/local/bin/configure-debian-mirrors.sh"),
+    ).toBeLessThan(astroDockerfile.indexOf("apt-get -o APT::Update::Error-Mode=any update"));
     expect(readRepoFile("apps/astro-service/Dockerfile")).toContain(
       "ENV EPHEMERIS_PATH=/app/data/de421.bsp",
     );
@@ -901,6 +917,102 @@ describe("production deployment assets", () => {
 
   const bashCommand = resolveBashCommand();
   const bashIt = bashCommand ? it : it.skip;
+
+  bashIt(
+    "changes only official Debian repository URLs and preserves signed source metadata",
+    () => {
+      const tempDir = mkdtempSync(path.join(os.tmpdir(), "photo-weather-apt-"));
+      const source =
+        "Types: deb\nURIs: http://deb.debian.org/debian\nSuites: trixie trixie-updates\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n\nTypes: deb\nURIs: https://security.debian.org/debian-security/\nSuites: trixie-security\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n";
+      try {
+        mkdirSync(path.join(tempDir, "sources.list.d"));
+        const sourcePath = path.join(tempDir, "sources.list.d/debian.sources");
+        writeFileSync(sourcePath, source);
+        const legacyPath = path.join(tempDir, "sources.list");
+        const legacy =
+          "deb https://deb.debian.org/debian bookworm main\ndeb http://deb.debian.org/debian-security bookworm-security main\ndeb https://third-party.test/debian stable main\n";
+        writeFileSync(legacyPath, legacy);
+        const run = (apt = "", security = "") =>
+          execFileSync(
+            bashCommand!,
+            [bashPath("scripts/configure-debian-mirrors.sh"), bashAbsolutePath(tempDir)],
+            {
+              encoding: "utf8",
+              env: { ...process.env, DEBIAN_APT_MIRROR: apt, DEBIAN_SECURITY_MIRROR: security },
+            },
+          );
+        run();
+        expect(readFileSync(sourcePath, "utf8")).toBe(source);
+        expect(readFileSync(legacyPath, "utf8")).toBe(legacy);
+        run("https://mirror.test/debian/");
+        expect(readFileSync(sourcePath, "utf8")).toBe(
+          source.replace("http://deb.debian.org/debian", "https://mirror.test/debian"),
+        );
+        run("https://mirror.test/debian/", "https://mirror.test/debian-security/");
+        const rewritten = readFileSync(sourcePath, "utf8");
+        expect(rewritten).toBe(
+          source
+            .replace("http://deb.debian.org/debian", "https://mirror.test/debian")
+            .replace(
+              "https://security.debian.org/debian-security/",
+              "https://mirror.test/debian-security/",
+            ),
+        );
+        expect(readFileSync(legacyPath, "utf8")).toBe(
+          legacy
+            .replace("https://deb.debian.org/debian", "https://mirror.test/debian")
+            .replace(
+              "http://deb.debian.org/debian-security",
+              "https://mirror.test/debian-security",
+            ),
+        );
+        run("https://mirror.test/debian", "https://mirror.test/debian-security");
+        expect(readFileSync(sourcePath, "utf8")).toBe(rewritten);
+        expect(
+          readFileSync(path.join(tempDir, "apt.conf.d/80photo-weather-downloads"), "utf8"),
+        ).toContain('Acquire::https::Timeout "30";');
+        expect(() => run("https://mirror.test/debian?unsafe=1")).toThrow();
+        expect(() => run("https://mirror.test/debian\nhttps://other.test/debian")).toThrow();
+        expect(readFileSync(sourcePath, "utf8")).toBe(rewritten);
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  bashIt(
+    "passes China container mirror defaults to the installer and respects custom mirrors",
+    () => {
+      const tempDir = mkdtempSync(path.join(os.tmpdir(), "photo-weather-cn-mirrors-"));
+      try {
+        writeFileSync(path.join(tempDir, "install-cn.sh"), readRepoFile("scripts/install-cn.sh"));
+        writeFileSync(
+          path.join(tempDir, "install.sh"),
+          'printf "%s\\n" "$APT_MIRROR" "$DEBIAN_APT_MIRROR" "$DEBIAN_SECURITY_MIRROR"\n',
+        );
+        const run = (apt = "", security = "") =>
+          execFileSync(bashCommand!, [bashAbsolutePath(path.join(tempDir, "install-cn.sh"))], {
+            encoding: "utf8",
+            env: {
+              ...process.env,
+              APT_MIRROR: "",
+              DEBIAN_APT_MIRROR: apt,
+              DEBIAN_SECURITY_MIRROR: security,
+            },
+          });
+        expect(run().trim().split(/\r?\n/)).toEqual([
+          "https://mirrors.tuna.tsinghua.edu.cn/ubuntu",
+          "https://mirrors.tuna.tsinghua.edu.cn/debian",
+          "https://mirrors.tuna.tsinghua.edu.cn/debian-security",
+        ]);
+        expect(run("https://internal.test/debian", "https://internal.test/security")).toContain(
+          "https://internal.test/debian\nhttps://internal.test/security",
+        );
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    },
+  );
 
   bashIt("passes bash syntax checks for deployment scripts", () => {
     if (!bashCommand) {

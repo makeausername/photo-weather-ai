@@ -14,8 +14,13 @@ ENV TERRAIN_DEM_METADATA_PATH=/app/data/terrain-dem/current/metadata.json
 
 WORKDIR /app/apps/astro-service
 ARG PIP_INDEX_URL=""
+ARG DEBIAN_APT_MIRROR=""
+ARG DEBIAN_SECURITY_MIRROR=""
 
-RUN apt-get update \
+COPY scripts/configure-debian-mirrors.sh /usr/local/bin/configure-debian-mirrors.sh
+
+RUN sh /usr/local/bin/configure-debian-mirrors.sh \
+  && apt-get -o APT::Update::Error-Mode=any update \
   && apt-get install -y --no-install-recommends ca-certificates libexpat1 libsqlite3-0 libtiff6 libcurl4 \
   && mkdir -p /app/data/light-pollution/current /app/data/light-pollution/incoming \
     /app/data/sky-brightness/current /app/data/sky-brightness/incoming \

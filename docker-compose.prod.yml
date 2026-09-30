@@ -134,6 +134,8 @@ services:
       dockerfile: apps/astro-service/Dockerfile
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+        DEBIAN_APT_MIRROR: ${DEBIAN_APT_MIRROR:-}
+        DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-}
     restart: unless-stopped
     environment:
       EPHEMERIS_PATH: /app/data/de421.bsp

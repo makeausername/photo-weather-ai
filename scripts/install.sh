@@ -13,6 +13,8 @@ INSTALLER_INPUT_LIB="${SCRIPT_DIR}/lib/installer-input.sh"
 COMPOSE_PROJECT_NAME_DEFAULT="photo-weather-ai"
 INSTALL_REGION="${INSTALL_REGION:-${PHOTO_WEATHER_INSTALL_MODE:-global}}"
 APT_MIRROR="${APT_MIRROR:-}"
+DEBIAN_APT_MIRROR="${DEBIAN_APT_MIRROR:-}"
+DEBIAN_SECURITY_MIRROR="${DEBIAN_SECURITY_MIRROR:-}"
 PIP_INDEX_URL="${PIP_INDEX_URL:-}"
 EPHEMERIS_LOCAL_FILE="${EPHEMERIS_LOCAL_FILE:-}"
 EPHEMERIS_URLS="${EPHEMERIS_URLS:-}"
@@ -276,6 +278,8 @@ normalize_install_settings() {
 
   APT_MIRROR="$(trim "${APT_MIRROR}")"
   APT_MIRROR="${APT_MIRROR%/}"
+  DEBIAN_APT_MIRROR="$(trim "${DEBIAN_APT_MIRROR}")"
+  DEBIAN_SECURITY_MIRROR="$(trim "${DEBIAN_SECURITY_MIRROR}")"
   PIP_INDEX_URL="$(trim "${PIP_INDEX_URL}")"
   DOCKER_REGISTRY_MIRRORS="$(trim "${DOCKER_REGISTRY_MIRRORS}")"
   APT_LOCK_TIMEOUT_SECONDS="$(trim "${APT_LOCK_TIMEOUT_SECONDS}")"
@@ -298,6 +302,8 @@ log_install_settings() {
   print_install_setting "INSTALL_REGION" "${INSTALL_REGION}" >> "${INSTALL_LOG}"
   print_install_setting "DOCKER_INSTALL_METHOD" "${DOCKER_INSTALL_METHOD}" >> "${INSTALL_LOG}"
   print_install_setting "APT_MIRROR" "${APT_MIRROR}" >> "${INSTALL_LOG}"
+  print_install_setting "DEBIAN_APT_MIRROR" "${DEBIAN_APT_MIRROR}" >> "${INSTALL_LOG}"
+  print_install_setting "DEBIAN_SECURITY_MIRROR" "${DEBIAN_SECURITY_MIRROR}" >> "${INSTALL_LOG}"
   print_install_setting "PIP_INDEX_URL" "${PIP_INDEX_URL}" >> "${INSTALL_LOG}"
   print_install_setting "DOCKER_REGISTRY_MIRRORS" "${DOCKER_REGISTRY_MIRRORS}" >> "${INSTALL_LOG}"
   print_install_setting "APT_LOCK_TIMEOUT_SECONDS" "${APT_LOCK_TIMEOUT_SECONDS}" >> "${INSTALL_LOG}"
@@ -652,6 +658,8 @@ render_env_file() {
         ADMIN_INITIAL_PASSWORD_B64) write_env_var "${key}" "${ADMIN_INITIAL_PASSWORD_B64}" >> "${tmp_file}" ;;
         ADMIN_DISPLAY_NAME) write_env_var "${key}" "${ADMIN_DISPLAY_NAME}" >> "${tmp_file}" ;;
         PIP_INDEX_URL) write_env_var "${key}" "${PIP_INDEX_URL}" >> "${tmp_file}" ;;
+        DEBIAN_APT_MIRROR) write_env_var "${key}" "${DEBIAN_APT_MIRROR}" >> "${tmp_file}" ;;
+        DEBIAN_SECURITY_MIRROR) write_env_var "${key}" "${DEBIAN_SECURITY_MIRROR}" >> "${tmp_file}" ;;
         EPHEMERIS_LOCAL_FILE) write_env_var "${key}" "${EPHEMERIS_LOCAL_FILE}" >> "${tmp_file}" ;;
         EPHEMERIS_URLS) write_env_var "${key}" "${EPHEMERIS_URLS}" >> "${tmp_file}" ;;
         QWEATHER_API_KEY) write_env_var "${key}" "${QWEATHER_API_KEY}" >> "${tmp_file}" ;;
@@ -1587,6 +1595,8 @@ print_deployment_summary() {
   printf 'Install region: %s\n' "${INSTALL_REGION}"
   printf 'Requested Docker install method: %s\n' "${DOCKER_INSTALL_METHOD}"
   printf 'APT mirror: %s\n' "${APT_MIRROR:-none}"
+  printf 'Container Debian APT mirror: %s\n' "${DEBIAN_APT_MIRROR:-upstream}"
+  printf 'Container Debian security mirror: %s\n' "${DEBIAN_SECURITY_MIRROR:-upstream}"
   printf 'PIP index URL: %s\n' "${PIP_INDEX_URL:-none}"
   printf 'Docker registry mirrors: %s\n' "${DOCKER_REGISTRY_MIRRORS:-none}"
   echo "密码与 API Key 均已隐藏。"
