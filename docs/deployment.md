@@ -51,6 +51,8 @@ Docker installation behavior is controlled by environment variables:
 - `INSTALL_REGION=global|cn`
 - `DOCKER_INSTALL_METHOD=auto|official|ubuntu`
 - `APT_MIRROR=https://...`
+- `DEBIAN_APT_MIRROR=https://...` (astro-service container Debian repository)
+- `DEBIAN_SECURITY_MIRROR=https://...` (container Debian security repository)
 - `PIP_INDEX_URL=https://...`
 - `DOCKER_REGISTRY_MIRRORS=https://mirror-a,https://mirror-b`
 - `EPHEMERIS_LOCAL_FILE=/path/to/de421.bsp`
@@ -59,6 +61,8 @@ Docker installation behavior is controlled by environment variables:
 `DOCKER_INSTALL_METHOD=official` uses the official Docker repository. `ubuntu` installs `docker.io` plus a Compose v2 package from Ubuntu/Debian packages. `auto` tries the official repository first and, if the official Docker repository or GPG download fails, logs `official Docker repository failed` and falls back to `docker.io` plus Compose v2 packages. After any path, the installer verifies `docker --version` and `docker compose version` before continuing.
 
 When `DOCKER_REGISTRY_MIRRORS` is set, the installer backs up `/etc/docker/daemon.json`, merges `registry-mirrors` without removing unrelated daemon settings, restarts Docker, and verifies with `docker info`.
+
+`APT_MIRROR` configures the host's Ubuntu/Debian installation only. The astro-service image has its own Debian repositories. `install-cn.sh` now writes `DEBIAN_APT_MIRROR`, `DEBIAN_SECURITY_MIRROR` and `PIP_INDEX_URL` into `.env.production`, and production Compose passes them into the image build. Existing installations must add these settings once; subsequent update/resume runs reuse them. Empty Debian mirror values retain the upstream repository, and normal/security mirrors can be selected independently. The image preserves its distribution suites, components and archive signing key, and configures three download retries with a 30-second connection timeout. Repository-index failures stop the build. The source configuration follows the [TUNA Debian instructions](https://mirrors.tuna.tsinghua.edu.cn/help/debian/) and [Debian Security instructions](https://mirrors.tuna.tsinghua.edu.cn/help/debian-security/).
 
 During database configuration the installer uses one source of truth:
 
@@ -442,6 +446,43 @@ bash scripts/test-real-weather.sh
 Set `PHOTO_WEATHER_API_BASE_URL=https://your-domain/api` if `.env.production` does not contain `NEXT_PUBLIC_API_BASE_URL`.
 
 Forecast data pipeline updates require rebuilding both API and web, which `update.sh` already does. The QWeather weather-alert endpoint uses the existing API host and credential; if the account cannot access it, forecast results explicitly show alerts as unavailable. After updating, verify one ordinary forecast and the cloud-sea, glow and astronomy results, including the warning banner and validity times when a local warning is active. An empty successful warning response is distinct from an unavailable endpoint. No additional environment variable or database migration is required for the forecast data pipeline fixes.
+
+### Existing China server: astro-service build stalls at apt-get update
+
+If an update is still at the image-build stage, press Ctrl+C to stop that build before proceeding. From the existing checkout (for example `/opt/photo-weather-ai`), back up and fast-forward the source:
+
+```bash
+cd /opt/photo-weather-ai
+git status --short
+bash scripts/backup.sh
+git switch main
+git pull --ff-only origin main
+cp -p .env.production ".env.production.bak.$(date +%Y%m%d-%H%M%S)"
+```
+
+Resolve any tracked modifications before pulling; preserve local files instead of using `git reset --hard`. Add/update only the following public mirror settings in the private `.env.production` file:
+
+```bash
+sed -i -E '/^[[:space:]]*(export[[:space:]]+)?(DEBIAN_APT_MIRROR|DEBIAN_SECURITY_MIRROR|PIP_INDEX_URL)[[:space:]]*=/d' .env.production
+cat >> .env.production <<'EOF'
+
+DEBIAN_APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
+DEBIAN_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security
+PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+EOF
+```
+
+Show full progress for the first astro-service rebuild, then run the normal update:
+
+```bash
+docker compose --progress plain --env-file .env.production -f docker-compose.prod.yml build astro-service
+DEPLOY_BRANCH=main bash scripts/update.sh
+bash scripts/status.sh
+bash scripts/test-real-weather.sh
+git log -1 --oneline
+```
+
+The first build should print `Debian APT mirror: https://mirrors.tuna.tsinghua.edu.cn/debian` and fetch indexes from the selected mirrors. The update can reuse this image's cached build steps. Do not use `--no-cache`, delete volumes, or rerun the initial installer for this fix. If a selected mirror fails, the build reports a download error; choose a mirror reachable from that server and change the corresponding setting, then repeat the build/update. APT, pip and Docker image registries are separate download paths.
 
 ## Backup
 
