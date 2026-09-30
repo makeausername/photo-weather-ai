@@ -7,6 +7,7 @@ import type {
   ForecastTarget,
 } from "@photo-weather/shared";
 import { formatShootingWindowZh } from "@photo-weather/shared";
+import { addHoursInTimezone } from "@photo-weather/calendar";
 
 export type SubjectDetailTarget = Extract<ForecastTarget, "cloud_sea" | "glow" | "astro">;
 
@@ -40,6 +41,8 @@ export type SubjectDetailDeepLinkContext = {
   readonly date: string;
   readonly windowStart?: string;
   readonly windowEnd?: string;
+  readonly forecastStart?: string;
+  readonly forecastEnd?: string;
   readonly source: "general";
   readonly timezone?: string;
   readonly horizon?: ForecastHorizon;
@@ -68,6 +71,14 @@ export type SubjectDetailRequestOptions = {
   readonly startDateTime?: string;
 };
 
+export function buildSubjectDetailFallbackRequest(
+  parsed: Extract<SubjectDetailDeepLinkParseResult, { kind: "ready" }>,
+): (ForecastQueryInput & SubjectDetailRequestOptions) | null {
+  return parsed.fallbackQuery
+    ? { ...parsed.fallbackQuery, ...parsed.requestOptions, target: "general" }
+    : null;
+}
+
 export type StoredForecastResultContext = {
   readonly version: 2;
   readonly resultId: string;
@@ -84,6 +95,7 @@ export type GeneralDailySubjectLink = {
 
 const resultContextStoragePrefix = "photo_weather_forecast_result_context:v1:";
 const resultContextTtlMs = 1000 * 60 * 60;
+const maxStoredResultContexts = 8;
 
 const forecastHorizons = new Set<ForecastHorizon>(["24h", "48h", "72h", "7d"]);
 const subjectTargets = new Set<SubjectDetailTarget>(["cloud_sea", "glow", "astro"]);
@@ -104,6 +116,8 @@ const deepLinkParamKeys = [
   "date",
   "windowStart",
   "windowEnd",
+  "forecastStart",
+  "forecastEnd",
   "locationName",
   "lat",
   "lng",
@@ -220,6 +234,8 @@ export function buildSubjectDetailDeepLink({
     date,
     windowStart: window?.startTime ?? windowStart,
     windowEnd: window?.endTime ?? windowEnd,
+    forecastStart: result?.forecastStart,
+    forecastEnd: result?.forecastEnd,
     source: "general",
     timezone: result?.calendarBasis.timezone ?? "Asia/Shanghai",
     horizon: query.horizon,
@@ -244,6 +260,8 @@ export function buildSubjectDetailDeepLinkFromContext(
   setOptionalParam(params, "subject", context.subject);
   setOptionalParam(params, "windowStart", context.windowStart);
   setOptionalParam(params, "windowEnd", context.windowEnd);
+  setOptionalParam(params, "forecastStart", context.forecastStart);
+  setOptionalParam(params, "forecastEnd", context.forecastEnd);
   setOptionalParam(params, "timezone", context.timezone);
   setOptionalParam(params, "horizon", context.horizon);
   setOptionalParam(params, "returnUrl", context.returnUrl);
@@ -304,6 +322,8 @@ export function parseSubjectDetailSearchParams(
     date,
     windowStart: cleanString(firstParam(searchParams?.windowStart)),
     windowEnd: cleanString(firstParam(searchParams?.windowEnd)),
+    forecastStart: cleanString(firstParam(searchParams?.forecastStart)),
+    forecastEnd: cleanString(firstParam(searchParams?.forecastEnd)),
     source: "general",
     timezone: cleanString(firstParam(searchParams?.timezone)),
     horizon,
@@ -349,13 +369,13 @@ export function createForecastResultContextId(
   return `fr_${stableHash(value)}`;
 }
 
-export function writeForecastResultContext({
+export async function writeForecastResultContext({
   query,
   result,
 }: {
   readonly query: ForecastQueryInput;
   readonly result: ForecastCalculationResult;
-}): string | null {
+}): Promise<string | null> {
   const storage = browserSessionStorage();
   if (!storage) {
     return null;
@@ -371,16 +391,68 @@ export function writeForecastResultContext({
   };
 
   try {
-    storage.setItem(`${resultContextStoragePrefix}${resultId}`, JSON.stringify(record));
+    const json = JSON.stringify(record);
+    let stored = json;
+    if (typeof CompressionStream !== "undefined") {
+      const compressed = await new Response(
+        new Blob([json]).stream().pipeThrough(new CompressionStream("gzip")),
+      ).arrayBuffer();
+      const bytes = new Uint8Array(compressed);
+      let binary = "";
+      for (let offset = 0; offset < bytes.length; offset += 32768) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+      }
+      stored = JSON.stringify({
+        version: 3,
+        createdAt: record.createdAt,
+        encoding: "gzip",
+        payload: btoa(binary),
+      });
+    }
+    const previous: { key: string; createdAt: number }[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (!key?.startsWith(resultContextStoragePrefix)) continue;
+      try {
+        const item = JSON.parse(storage.getItem(key) ?? "null");
+        previous.push({ key, createdAt: Number(item?.createdAt) || 0 });
+      } catch {
+        previous.push({ key, createdAt: 0 });
+      }
+    }
+    previous.sort((a, b) => a.createdAt - b.createdAt);
+    const key = `${resultContextStoragePrefix}${resultId}`;
+    for (const item of previous.filter((item) => item.key !== key)) {
+      if (
+        Date.now() - item.createdAt > resultContextTtlMs ||
+        previous.length >= maxStoredResultContexts
+      ) {
+        storage.removeItem(item.key);
+        previous.splice(
+          previous.findIndex((entry) => entry.key === item.key),
+          1,
+        );
+      }
+    }
+    for (;;) {
+      try {
+        storage.setItem(key, stored);
+        break;
+      } catch {
+        const oldest = previous.shift();
+        if (!oldest) return null;
+        storage.removeItem(oldest.key);
+      }
+    }
     return resultId;
   } catch {
     return null;
   }
 }
 
-export function readForecastResultContext(
+export async function readForecastResultContext(
   resultId: string | undefined,
-): StoredForecastResultContext | null {
+): Promise<StoredForecastResultContext | null> {
   if (!resultId) {
     return null;
   }
@@ -395,7 +467,19 @@ export function readForecastResultContext(
     if (!raw) {
       return null;
     }
-    const parsed = JSON.parse(raw) as Partial<StoredForecastResultContext>;
+    let parsed = JSON.parse(raw);
+    if (parsed.version === 3 && parsed.encoding === "gzip") {
+      if (Date.now() - parsed.createdAt > resultContextTtlMs) {
+        storage.removeItem(`${resultContextStoragePrefix}${resultId}`);
+        return null;
+      }
+      const bytes = Uint8Array.from(atob(parsed.payload), (char) => char.charCodeAt(0));
+      parsed = JSON.parse(
+        await new Response(
+          new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip")),
+        ).text(),
+      );
+    }
     if (
       parsed.version !== 2 ||
       parsed.resultId !== resultId ||
@@ -620,6 +704,15 @@ function hasSubjectDataForDate(
   date: string,
   target: SubjectDetailTarget,
 ): boolean {
+  if (target === "astro") {
+    const start = addHoursInTimezone(date, 18, result.calendarBasis.timezone);
+    const end = addHoursInTimezone(start, 18, result.calendarBasis.timezone);
+    if (
+      Date.parse(start) >= Date.parse(result.forecastEnd) ||
+      Date.parse(end) <= Date.parse(result.forecastStart)
+    )
+      return false;
+  }
   if (
     result.bestWindows.some(
       (window) => window.target === target && windowBelongsToDate(window, date),
@@ -660,11 +753,8 @@ function windowBelongsToDate(
   window: ForecastCalculationResult["bestWindows"][number],
   date: string,
 ): boolean {
-  return (
-    window.date === date ||
-    window.startTime.startsWith(`${date}T`) ||
-    window.endTime.startsWith(`${date}T`)
-  );
+  if (window.date) return window.date === date;
+  return window.startTime.startsWith(`${date}T`);
 }
 
 function windowUsefulnessRank(window: ForecastCalculationResult["bestWindows"][number]): number {
@@ -699,16 +789,9 @@ function isMorningWindow(window: ForecastCalculationResult["bestWindows"][number
 }
 
 function startDateTimeForSubjectContext(context: SubjectDetailDeepLinkContext): string | undefined {
-  const offset = offsetFromIsoDateTime(context.windowStart) ?? "+08:00";
-  return isValidDateString(context.date) ? `${context.date}T00:00:00${offset}` : undefined;
-}
-
-function offsetFromIsoDateTime(value: string | undefined): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const match = /(Z|[+-]\d{2}:\d{2})$/.exec(value);
-  return match?.[1];
+  return context.forecastStart && Number.isFinite(Date.parse(context.forecastStart))
+    ? context.forecastStart
+    : undefined;
 }
 
 function normalizeSubjectTarget(value: string | undefined): SubjectDetailTarget | undefined {

@@ -551,6 +551,7 @@ export class MeteoblueRealProvider implements WeatherProvider {
 
     return {
       provider: realSource.providerCode,
+      dataKind: "forecast",
       observedAt: firstHour.time,
       coordinates: input.coordinates,
       condition: weatherConditionFromCode(firstHour.weatherCode),
@@ -620,8 +621,7 @@ export class MeteoblueRealProvider implements WeatherProvider {
       const visibilitySourceUnit = findMeteoblueFieldUnit(root, fieldAliases("visibility"));
       const temperatureSourceUnit =
         findMeteoblueFieldUnit(root, fieldAliases("temperature")) ?? "C";
-      const pressureSourceUnit =
-        findMeteoblueFieldUnit(root, fieldAliases("pressure")) ?? "hPa";
+      const pressureSourceUnit = findMeteoblueFieldUnit(root, fieldAliases("pressure")) ?? "hPa";
       const precipitationSourceUnit =
         findMeteoblueFieldUnit(root, fieldAliases("precipitation")) ?? "mm";
       const windSpeedSourceUnit = findMeteoblueFieldUnit(root, fieldAliases("windSpeed"));
@@ -651,8 +651,9 @@ export class MeteoblueRealProvider implements WeatherProvider {
           );
           const derivedCloudTotal = [cloudLow, cloudMid, cloudHigh]
             .filter((value): value is number => value !== null)
-            .reduce<number | null>((maximum, value) =>
-              maximum === null ? value : Math.max(maximum, value), null);
+            .reduce<
+              number | null
+            >((maximum, value) => (maximum === null ? value : Math.max(maximum, value)), null);
           const cloudTotal = explicitCloudTotal ?? derivedCloudTotal;
           if (cloudTotal === null) {
             throw meteoblueParseError("meteoblue 小时预报缺少必需字段 cloudTotal");
@@ -825,9 +826,7 @@ export class MeteoblueRealProvider implements WeatherProvider {
             ].filter((field): field is string => field !== null);
 
             if (missingFields.length > 0) {
-              throw meteoblueParseError(
-                `meteoblue 日预报缺少必需字段 ${missingFields.join(", ")}`,
-              );
+              throw meteoblueParseError(`meteoblue 日预报缺少必需字段 ${missingFields.join(", ")}`);
             }
             const requiredTempMin = tempMin as number;
             const requiredTempMax = tempMax as number;
@@ -1334,7 +1333,8 @@ function meteoblueUtcOffset(root: Record<string, unknown>): string {
 
 function meteoblueMetadataHeightMeters(root: Record<string, unknown>): number | undefined {
   const metadata = asRecord(root.metadata);
-  const height = toNumber(metadata.height) ?? toNumber(metadata.elevation) ?? toNumber(metadata.asl);
+  const height =
+    toNumber(metadata.height) ?? toNumber(metadata.elevation) ?? toNumber(metadata.asl);
   return height === null ? undefined : Math.round(height);
 }
 
@@ -1401,14 +1401,13 @@ function normalizeNullableWindSpeed(value: unknown, unit: unknown): number | nul
     return null;
   }
   const normalizedUnit = typeof unit === "string" ? unit.trim().toLowerCase() : "";
-  const metersPerSecond =
-    ["m/s", "mps", "ms-1"].includes(normalizedUnit)
-      ? parsed
-      : ["km/h", "kmh", "kph"].includes(normalizedUnit)
-        ? parsed / 3.6
-        : ["mph", "mi/h"].includes(normalizedUnit)
-          ? parsed * 0.44704
-          : null;
+  const metersPerSecond = ["m/s", "mps", "ms-1"].includes(normalizedUnit)
+    ? parsed
+    : ["km/h", "kmh", "kph"].includes(normalizedUnit)
+      ? parsed / 3.6
+      : ["mph", "mi/h"].includes(normalizedUnit)
+        ? parsed * 0.44704
+        : null;
   return metersPerSecond === null || metersPerSecond < 0 ? null : roundTo(metersPerSecond);
 }
 
@@ -1418,12 +1417,11 @@ function normalizeMeteoblueTemperatureC(value: unknown, unit: unknown): number |
     return null;
   }
   const normalizedUnit = typeof unit === "string" ? unit.trim().toLowerCase() : "";
-  const celsius =
-    ["c", "°c", "celsius"].includes(normalizedUnit)
-      ? parsed
-      : ["f", "°f", "fahrenheit"].includes(normalizedUnit)
-        ? ((parsed - 32) * 5) / 9
-        : null;
+  const celsius = ["c", "°c", "celsius"].includes(normalizedUnit)
+    ? parsed
+    : ["f", "°f", "fahrenheit"].includes(normalizedUnit)
+      ? ((parsed - 32) * 5) / 9
+      : null;
   return celsius === null ? null : roundTo(celsius);
 }
 
@@ -1433,16 +1431,15 @@ function normalizeMeteobluePressureHpa(value: unknown, unit: unknown): number | 
     return null;
   }
   const normalizedUnit = typeof unit === "string" ? unit.trim().toLowerCase() : "";
-  const hpa =
-    ["hpa", "mbar", "mb"].includes(normalizedUnit)
-      ? parsed
-      : normalizedUnit === "pa"
-        ? parsed / 100
-        : normalizedUnit === "kpa"
-          ? parsed * 10
-          : ["inhg", "in hg"].includes(normalizedUnit)
-            ? parsed * 33.8639
-            : null;
+  const hpa = ["hpa", "mbar", "mb"].includes(normalizedUnit)
+    ? parsed
+    : normalizedUnit === "pa"
+      ? parsed / 100
+      : normalizedUnit === "kpa"
+        ? parsed * 10
+        : ["inhg", "in hg"].includes(normalizedUnit)
+          ? parsed * 33.8639
+          : null;
   return hpa === null ? null : roundTo(hpa);
 }
 
@@ -1452,12 +1449,13 @@ function normalizeMeteobluePrecipitationMm(value: unknown, unit: unknown): numbe
     return null;
   }
   const normalizedUnit = typeof unit === "string" ? unit.trim().toLowerCase() : "";
-  const millimeters =
-    ["mm", "millimeter", "millimeters", "millimetre", "millimetres"].includes(normalizedUnit)
-      ? parsed
-      : ["in", "inch", "inches"].includes(normalizedUnit)
-        ? parsed * 25.4
-        : null;
+  const millimeters = ["mm", "millimeter", "millimeters", "millimetre", "millimetres"].includes(
+    normalizedUnit,
+  )
+    ? parsed
+    : ["in", "inch", "inches"].includes(normalizedUnit)
+      ? parsed * 25.4
+      : null;
   return millimeters === null ? null : roundTo(millimeters);
 }
 
@@ -1544,7 +1542,10 @@ function findMeteoblueFieldUnit(
   return undefined;
 }
 
-function collectMeteoblueUnitRecords(input: unknown, depth = 0): readonly Record<string, unknown>[] {
+function collectMeteoblueUnitRecords(
+  input: unknown,
+  depth = 0,
+): readonly Record<string, unknown>[] {
   if (depth > 3 || !isRecordValue(input)) {
     return [];
   }

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import dynamic from "next/dynamic";
 import {
+  applyForecastDecisionToWindows,
   buildCloudLayerCompletenessContext,
   buildCloudSeaCloudBasisConsistencyContext,
   classifyGlowWindowLifecycle,
@@ -252,7 +253,8 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
           return;
         }
 
-        writeForecastResultContext({ query: requestQuery, result: data });
+        await writeForecastResultContext({ query: requestQuery, result: data });
+        if (requestSequenceRef.current !== requestSequence || controller.signal.aborted) return;
         resultQueryKeyRef.current = activeQueryKey;
         resultRef.current = data;
         setResult(data);
@@ -731,13 +733,15 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
         <CompactInfoCard
           title="气温与体感"
           timeBasis={timeContext.currentBasisLabel}
-          badge={comfortLevelLabel(clothing.comfortLevel)}
+          badge={
+            current ? current.weatherTextZh ?? undefined : comfortLevelLabel(clothing.comfortLevel)
+          }
           value={mountainTemperatureValue(current, firstDay, result)}
           detail={`当日全天参考：${dailyTemperatureRangeText(firstDay, result)}。${temperatureActionText(
             current,
             firstDay,
             result,
-          )} ${terrainCorrectionUserNote(result, current, firstDay)}`}
+          )} ${current ? `当前温度口径：${terrainCorrectionUserNote(result, current, undefined)}` : ""}`}
         />
         <CompactInfoCard
           title="云层与能见度"
@@ -747,40 +751,47 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
               ? `通透度 ${transparencyGradeLabel(current.transparencyGrade, current.photographyTransparencyScore)}`
               : "当前能见度"
           }
-          value={`云量 ${formatPercentNumber(current?.cloudTotal ?? firstDay?.cloudTotal)}`}
+          value={`云量 ${formatPercentNumber(current ? current.cloudTotal : firstDay?.cloudTotal)}`}
           detail={`能见度 ${formatKilometers(
-            current?.rawVisibilityKm ??
-              current?.visibility ??
-              firstDay?.rawVisibilityKm ??
-              firstDay?.visibility,
+            current
+              ? current.rawVisibilityKm ?? current.visibility
+              : firstDay?.rawVisibilityKm ?? firstDay?.visibility,
           )}，低云 ${formatPercentNumber(
-            current?.cloudLow ?? firstDay?.cloudLow,
+            current ? current.cloudLow : firstDay?.cloudLow,
           )}。${cloudVisibilityActionText(result, current ? current.photographyTransparencyScore : firstDay?.photographyTransparencyScore)}`}
         />
         <CompactInfoCard
           title="风与降水"
           timeBasis={timeContext.currentBasisLabel}
           badge={formatWindWithGust(
-            current?.windSpeed ?? firstDay?.windSpeed,
-            current?.windDirection ?? firstDay?.windDirection,
-            current?.windGust ?? firstDay?.windGust,
+            current ? current.windSpeed : firstDay?.windSpeed,
+            current ? current.windDirection : firstDay?.windDirection,
+            current ? current.windGust : firstDay?.windGust,
           )}
-          value={precipitationDisplayValue(current ?? firstDay)}
+          value={
+            current?.dataKind === "observation"
+              ? `观测小时降水 ${formatPrecipitationAmount(current.precipitationAmountMm)}`
+              : precipitationDisplayValue(current ?? firstDay)
+          }
           detail={joinChineseSentences(
-            precipitationDisplayDetail(current ?? firstDay),
-            windPrecipitationActionText(result, current ?? firstDay),
+            current?.dataKind === "observation"
+              ? "降水概率、预计雨量及阵风请查看逐小时预报；缺测实况未使用预报补齐。"
+              : precipitationDisplayDetail(current ?? firstDay),
+            current?.dataKind === "observation"
+              ? ""
+              : windPrecipitationActionText(result, current ?? firstDay),
           )}
         />
         <CompactInfoCard
           title="湿度与露点"
           timeBasis={timeContext.currentBasisLabel}
-          badge={`湿度 ${formatPercentNumber(current?.humidity ?? firstDay?.humidity)}`}
-          value={`露点差 ${formatTemperatureDelta(current?.dewPointSpread ?? firstDay?.dewPointSpread)}`}
-          detail={`${dewPointActionText(current?.dewPointSpread ?? firstDay?.dewPointSpread)} ${auxiliaryNotice}`}
+          badge={`湿度 ${formatPercentNumber(current ? current.humidity : firstDay?.humidity)}`}
+          value={`露点差 ${formatTemperatureDelta(current ? current.dewPointSpread : firstDay?.dewPointSpread)}`}
+          detail={`${dewPointActionText(current ? current.dewPointSpread : firstDay?.dewPointSpread)} ${current?.estimatedFields.includes("dewPoint") ? "露点按同一时点温湿度估算。" : auxiliaryNotice}`}
         />
         <CompactInfoCard
           title="穿衣与装备"
-          timeBasis={timeContext.currentBasisLabel}
+          timeBasis="出行装备参考：综合预报"
           badge={clothing.titleZh}
           value={packingMainValue(clothing)}
           detail={packingDetail(clothing)}
@@ -810,7 +821,7 @@ function buildNearTermWeatherTimeContext(
       ? formatWindow(basisStart, basisEnd, result.calendarBasis.timezone)
       : result.calendarBasis.forecastRangeLabel;
   const currentBasisLabel = result.currentWeather?.observedAt
-    ? `当前实况：${formatFullDateTime(result.currentWeather.observedAt)}`
+    ? `${result.currentWeather.dataKind === "forecast" ? "当前预报参考" : "当前实况"}：${formatFullDateTime(result.currentWeather.observedAt)}`
     : `当前参考：${dateLabelForResultClient(result, result.targetDates[0] ?? "")}`;
   const nearTermBasisLabel = `近时段参考：${sectionWindowLabel}`;
   const tripBasisLabel = `装备参考：${sectionWindowLabel}`;
@@ -820,7 +831,7 @@ function buildNearTermWeatherTimeContext(
     currentBasisLabel,
     nearTermBasisLabel,
     tripBasisLabel,
-    description: `${currentBasisLabel}。实况卡片使用观测时点数据；全天温度范围单独标注，预报时段请查看逐小时数据。`,
+    description: `${currentBasisLabel}。${result.currentWeather?.dataKind === "forecast" ? "当前缺少实况，卡片使用对应小时预报。" : "实况卡片使用观测时点数据，缺测值不使用预报补齐。"}全天温度范围单独标注，预报时段请查看逐小时数据。`,
   };
 }
 
@@ -2365,10 +2376,12 @@ export function AstroResultPage({
   query,
   result,
   viewModel,
+  initialNightDate,
 }: {
   readonly query: ForecastQueryInput;
   readonly result: ForecastCalculationResult;
   readonly viewModel: AstroForecastViewModel;
+  readonly initialNightDate?: string;
 }) {
   return (
     <section
@@ -2392,6 +2405,7 @@ export function AstroResultPage({
                 <AstroNightOpportunitySection
                   nights={viewModel.nightlyCards}
                   horizon={result.horizon}
+                  initialNightDate={initialNightDate}
                 />
               ),
             },
@@ -2590,16 +2604,19 @@ function AstroDecisionChip({
 function AstroNightOpportunitySection({
   nights,
   horizon,
+  initialNightDate,
 }: {
   readonly nights: AstroForecastViewModel["nightlyCards"];
   readonly horizon: ForecastCalculationResult["horizon"];
+  readonly initialNightDate?: string;
 }) {
-  const preferredNight =
-    nights.find((night) => night.recommendationLevel === "recommended") ??
-    nights.find((night) => night.recommendationLevel === "watch") ??
-    nights.find((night) => night.recommendationLevel === "backup") ??
-    nights.find((night) => Boolean(night.milkyWay.bestStartAt)) ??
-    nights[0];
+  const preferredNight = initialNightDate
+    ? nights.find((night) => night.localEveningDate === initialNightDate)
+    : nights.find((night) => night.recommendationLevel === "recommended") ??
+      nights.find((night) => night.recommendationLevel === "watch") ??
+      nights.find((night) => night.recommendationLevel === "backup") ??
+      nights.find((night) => Boolean(night.milkyWay.bestStartAt)) ??
+      nights[0];
   const [selectedNightKey, setSelectedNightKey] = useState(preferredNight?.nightKey ?? "");
   const selectedNight =
     nights.find((night) => night.nightKey === selectedNightKey) ?? preferredNight;
@@ -4538,9 +4555,12 @@ function cloudSeaWindowMainIssue(
   item: CloudSeaWindowItem,
   terrainContext: CloudSeaTerrainContext,
 ): string {
+  const rainInterference = item.rainInterference
+    .replace(/^降水[：:]\s*/, "")
+    .replace(/[。；\s]+$/, "");
   const basis = terrainContext.shouldDowngradeCloudSeaWording
-    ? `低云遮挡：${item.whiteoutRisk}；降水：${item.rainInterference}。`
-    : `白墙风险：${item.whiteoutRisk}；降水：${item.rainInterference}。`;
+    ? `低云遮挡：${item.whiteoutRisk}；降水：${rainInterference}。`
+    : `白墙风险：${item.whiteoutRisk}；降水：${rainInterference}。`;
   if (cloudSeaWindowHasLayerRoleRedirect(item)) {
     return item.layerCompletenessNote ?? basis;
   }
@@ -6931,13 +6951,20 @@ function dateFromIsoLike(value: string | undefined): string | undefined {
 
 export function ComprehensiveForecastView({
   query,
-  result,
+  result: suppliedResult,
   viewModel,
 }: {
   readonly query: ForecastQueryInput;
   readonly result: ForecastCalculationResult;
   readonly viewModel: ForecastResultViewModel;
 }) {
+  const result = useMemo(
+    () => ({
+      ...suppliedResult,
+      bestWindows: applyForecastDecisionToWindows(suppliedResult.bestWindows, suppliedResult),
+    }),
+    [suppliedResult],
+  );
   const subjectCards = buildSubjectBreakdownCards(result);
   const bestSubject = pickBestSubject(subjectCards);
   const mainRisk = pickMainRisk(result);
@@ -8017,7 +8044,7 @@ function ComprehensiveMultiDaySummary({
         badge={forecastHorizonLabels[result.horizon]}
       />
       <div
-        className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]"
+        className="grid min-w-0 gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))]"
         data-testid="daily-cards-adaptive-grid"
       >
         {result.dailySummaries.map((summary) => {
@@ -9695,24 +9722,7 @@ function isEveningForecastWindow(
 function isExecutableClientWindow(
   window: ForecastCalculationResult["bestWindows"][number],
 ): boolean {
-  const hasHierarchy =
-    window.windowLevel !== undefined || window.executableForDedicatedTrip !== undefined;
-  if (window.executableForDedicatedTrip !== undefined) {
-    return window.executableForDedicatedTrip;
-  }
-  if (!hasHierarchy) {
-    return (
-      window.practicalKind !== "formation_signal" &&
-      window.recommendationLevel === "recommended" &&
-      (window.practicalScore ?? window.score) >= 72
-    );
-  }
-  return (
-    window.practicalKind !== "formation_signal" &&
-    (window.windowLevel === "best" || window.windowLevel === "shootable") &&
-    window.recommendationLevel === "recommended" &&
-    (window.practicalScore ?? window.score) >= 72
-  );
+  return isExecutableForecastWindow(window);
 }
 
 function isUsableClientWindow(window: ForecastCalculationResult["bestWindows"][number]): boolean {
@@ -9733,25 +9743,7 @@ function isUsableClientWindow(window: ForecastCalculationResult["bestWindows"][n
 }
 
 function isExecutableDisplayWindow(window: ForecastResultWindow): boolean {
-  const hasHierarchy =
-    window.windowLevel !== undefined || window.executableForDedicatedTrip !== undefined;
-  if (window.executableForDedicatedTrip !== undefined) {
-    return window.executableForDedicatedTrip;
-  }
-  if (!hasHierarchy) {
-    return (
-      window.practicalKind !== "formation_signal" &&
-      window.recommendationLevel === "recommended" &&
-      (window.practicalScore ?? window.score) >= 72
-    );
-  }
-
-  return (
-    window.practicalKind !== "formation_signal" &&
-    (window.windowLevel === "best" || window.windowLevel === "shootable") &&
-    window.recommendationLevel === "recommended" &&
-    (window.practicalScore ?? window.score) >= 72
-  );
+  return isExecutableForecastWindow(window);
 }
 
 function windowUsefulnessRank(window: ForecastCalculationResult["bestWindows"][number]): number {

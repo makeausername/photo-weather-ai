@@ -76,11 +76,35 @@ function buildContext(rows: readonly CloudSeaWindowRiskHourlyRow[]) {
 }
 
 describe("buildCloudSeaWindowCenteredRiskContext", () => {
+  it("distinguishes a probability signal with zero rain from measurable rainfall", () => {
+    const context = buildContext([
+      row({ precipitationAmountMm: 0, precipitationProbabilityPercent: 80 }),
+      row({
+        time: "2026-06-05T06:00:00+08:00",
+        precipitationAmountMm: 0,
+        precipitationProbabilityPercent: 70,
+      }),
+    ]);
+    expect(context.precipitationWindowSummaryZh).toContain("概率信号");
+    expect(context.precipitationWindowSummaryZh).not.toContain("内有可计量降水");
+  });
   it("genericPreWindowRainGoodOpeningCase classifies rain before the window without excessive downgrade", () => {
     const context = buildContext([
-      row({ time: "2026-06-05T03:00:00+08:00", precipitationAmountMm: 0.2, precipitationProbabilityPercent: 25 }),
-      row({ time: "2026-06-05T05:00:00+08:00", precipitationAmountMm: 0, precipitationProbabilityPercent: 15 }),
-      row({ time: "2026-06-05T06:00:00+08:00", precipitationAmountMm: 0, precipitationProbabilityPercent: 10 }),
+      row({
+        time: "2026-06-05T03:00:00+08:00",
+        precipitationAmountMm: 0.2,
+        precipitationProbabilityPercent: 25,
+      }),
+      row({
+        time: "2026-06-05T05:00:00+08:00",
+        precipitationAmountMm: 0,
+        precipitationProbabilityPercent: 15,
+      }),
+      row({
+        time: "2026-06-05T06:00:00+08:00",
+        precipitationAmountMm: 0,
+        precipitationProbabilityPercent: 10,
+      }),
     ]);
 
     expect(context.preWindowRainImpact.timing).toBe("pre_window");
@@ -93,9 +117,21 @@ describe("buildCloudSeaWindowCenteredRiskContext", () => {
 
   it("genericRainDuringWindowCase caps and warns when meaningful rain overlaps the window", () => {
     const context = buildContext([
-      row({ time: "2026-06-05T05:00:00+08:00", precipitationAmountMm: 0.8, precipitationProbabilityPercent: 75 }),
-      row({ time: "2026-06-05T06:00:00+08:00", precipitationAmountMm: 0.6, precipitationProbabilityPercent: 70 }),
-      row({ time: "2026-06-05T08:00:00+08:00", precipitationAmountMm: 0, precipitationProbabilityPercent: 15 }),
+      row({
+        time: "2026-06-05T05:00:00+08:00",
+        precipitationAmountMm: 0.8,
+        precipitationProbabilityPercent: 75,
+      }),
+      row({
+        time: "2026-06-05T06:00:00+08:00",
+        precipitationAmountMm: 0.6,
+        precipitationProbabilityPercent: 70,
+      }),
+      row({
+        time: "2026-06-05T08:00:00+08:00",
+        precipitationAmountMm: 0,
+        precipitationProbabilityPercent: 15,
+      }),
     ]);
 
     expect(context.duringWindowRainImpact.timing).toBe("during_window");
@@ -107,9 +143,21 @@ describe("buildCloudSeaWindowCenteredRiskContext", () => {
 
   it("genericPostWindowRainCase keeps post-window rain from over-downgrading the main window", () => {
     const context = buildContext([
-      row({ time: "2026-06-05T05:00:00+08:00", precipitationAmountMm: 0, precipitationProbabilityPercent: 10 }),
-      row({ time: "2026-06-05T06:00:00+08:00", precipitationAmountMm: 0, precipitationProbabilityPercent: 10 }),
-      row({ time: "2026-06-05T08:00:00+08:00", precipitationAmountMm: 1.8, precipitationProbabilityPercent: 78 }),
+      row({
+        time: "2026-06-05T05:00:00+08:00",
+        precipitationAmountMm: 0,
+        precipitationProbabilityPercent: 10,
+      }),
+      row({
+        time: "2026-06-05T06:00:00+08:00",
+        precipitationAmountMm: 0,
+        precipitationProbabilityPercent: 10,
+      }),
+      row({
+        time: "2026-06-05T08:00:00+08:00",
+        precipitationAmountMm: 1.8,
+        precipitationProbabilityPercent: 78,
+      }),
     ]);
 
     expect(context.postWindowRainImpact.timing).toBe("post_window");
@@ -120,8 +168,20 @@ describe("buildCloudSeaWindowCenteredRiskContext", () => {
 
   it("genericThickCloudMediumOpeningCase separates formation support from capped shootability", () => {
     const context = buildContext([
-      row({ time: "2026-06-05T05:00:00+08:00", cloudTotalPercent: 96, cloudHighPercent: 88, cloudMidPercent: 84, cloudLowPercent: 78 }),
-      row({ time: "2026-06-05T06:00:00+08:00", cloudTotalPercent: 95, cloudHighPercent: 86, cloudMidPercent: 82, cloudLowPercent: 76 }),
+      row({
+        time: "2026-06-05T05:00:00+08:00",
+        cloudTotalPercent: 96,
+        cloudHighPercent: 88,
+        cloudMidPercent: 84,
+        cloudLowPercent: 78,
+      }),
+      row({
+        time: "2026-06-05T06:00:00+08:00",
+        cloudTotalPercent: 95,
+        cloudHighPercent: 86,
+        cloudMidPercent: 82,
+        cloudLowPercent: 76,
+      }),
     ]);
 
     expect(context.windowOpeningConfidence).toBe("medium");

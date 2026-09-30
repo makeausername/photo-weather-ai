@@ -286,6 +286,7 @@ export class OpenMeteoForecastCloudLayerProvider implements WeatherProvider {
     }
 
     return {
+      dataKind: "forecast",
       provider: source.providerCode,
       observedAt: firstHour.time,
       coordinates: input.coordinates,

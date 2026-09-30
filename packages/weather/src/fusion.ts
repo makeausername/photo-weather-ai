@@ -232,7 +232,11 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
   });
 
   return {
-    current: fuseCurrent(primaryBundle, fusedHourly[0]),
+    current: fuseCurrent(
+      usableBundles.find((bundle) => bundle.currentWeather?.dataKind === "observation") ??
+        primaryBundle,
+      fusedHourly[0],
+    ),
     fusedHourly,
     fusedDaily,
     sourceSummaries,
@@ -468,6 +472,9 @@ function fuseCurrent(
   primaryBundle: WeatherDataBundle,
   firstFusedHour: NormalizedHourlyWeather | undefined,
 ): NormalizedCurrentWeather | undefined {
+  if (primaryBundle.currentWeather?.dataKind === "observation") {
+    return primaryBundle.currentWeather;
+  }
   if (primaryBundle.currentWeather && !firstFusedHour) {
     return primaryBundle.currentWeather;
   }
@@ -492,6 +499,7 @@ function fuseCurrent(
   });
 
   return {
+    dataKind: "forecast",
     providerCode: primaryBundle.providerCode,
     providerLabelZh: primaryBundle.providerLabelZh,
     dataMode: primaryBundle.dataMode,

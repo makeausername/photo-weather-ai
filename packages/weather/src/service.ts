@@ -47,14 +47,7 @@ export class WeatherDataService {
       alertsResult.status === "rejected" ? "weatherAlerts" : undefined,
       airQualityResult.status === "rejected" ? "airQuality" : undefined,
     ].filter((field): field is string => Boolean(field));
-    const generated =
-      input.forecastStart ??
-      current?.observedAt ??
-      hourly[0]?.time ??
-      formatZonedIso(
-        getNowInTimezone(input.timezone ?? defaultTimezone),
-        input.timezone ?? defaultTimezone,
-      );
+    const generated = generatedAt(input);
     const hourlyWithAirQuality = attachAirQualityToHourly(hourly, airQuality);
     const missingFields = [
       ...new Set([
@@ -190,7 +183,9 @@ export class WeatherIntelligenceService {
     );
 
     return {
-      current: primary.current,
+      current:
+        usableBundles.find((bundle) => bundle.currentWeather?.dataKind === "observation")
+          ?.current ?? primary.current,
       currentWeather: fusion.current ?? primary.currentWeather,
       hourly: fusion.fusedHourly,
       daily: fusion.fusedDaily,
@@ -598,6 +593,87 @@ function normalizeCurrentWeather(input: {
   if (!input.current && !input.firstHour) {
     throw new Error("Cannot normalize current weather without current or hourly evidence.");
   }
+  if (input.current && input.current.dataKind !== "forecast") {
+    const current = input.current;
+    const temperature = current.temperatureCelsius;
+    const humidity = current.humidityPercent;
+    const gamma =
+      humidity > 0
+        ? Math.log(humidity / 100) + (17.625 * temperature) / (243.04 + temperature)
+        : null;
+    const dewPoint =
+      gamma === null ? null : Math.round(((243.04 * gamma) / (17.625 - gamma)) * 10) / 10;
+    const spread = dewPoint === null ? null : Math.round((temperature - dewPoint) * 10) / 10;
+    const missingFields = [
+      "cloudLow",
+      "cloudMid",
+      "cloudHigh",
+      "windGust",
+      "precipitationProbability",
+      "rainAmountMm",
+      "snowAmountMm",
+    ];
+    if (current.windDirectionDegrees == null) missingFields.push("windDirection");
+    if (current.pressureHpa == null) missingFields.push("pressure");
+    if (current.precipitationAmountMm == null) missingFields.push("precipitationAmountMm");
+    if (current.visibilityKilometers == null) missingFields.push("visibility");
+    if (dewPoint === null) missingFields.push("dewPoint", "dewPointSpread");
+    return {
+      dataKind: "observation",
+      providerCode: input.providerCode,
+      providerLabelZh: input.providerLabelZh,
+      dataMode: input.dataMode,
+      observedAt: current.observedAt,
+      temperature,
+      rawTemperature: temperature,
+      feelsLike: current.feelsLikeCelsius,
+      humidity,
+      dewPoint,
+      dewPointSpread: spread,
+      windSpeed: current.windSpeedMetersPerSecond,
+      windDirection: current.windDirectionDegrees ?? null,
+      windGust: null,
+      pressure: current.pressureHpa ?? null,
+      visibility: current.visibilityKilometers,
+      rawVisibilityKm: current.visibilityKilometers,
+      cloudTotal: current.cloudCoverPercent,
+      cloudLow: null,
+      cloudMid: null,
+      cloudHigh: null,
+      precipitation: current.precipitationAmountMm ?? null,
+      precipitationAmountMm: current.precipitationAmountMm ?? null,
+      precipitationProbability: null,
+      precipitationProbabilityPercent: null,
+      providerElevationMeters: input.firstHour?.providerElevationMeters,
+      selectedSpotElevationMeters: input.firstHour?.selectedSpotElevationMeters,
+      weatherTextZh: current.summary,
+      weatherCode: current.weatherCode ?? null,
+      airQuality: normalizeCurrentAirQuality(input.airQuality, undefined),
+      missingFields,
+      estimatedFields: dewPoint === null ? [] : ["dewPoint", "dewPointSpread"],
+      fieldMetadata: Object.fromEntries(
+        (
+          [
+            ["temperature", temperature, false],
+            ["humidity", humidity, false],
+            ["dewPoint", dewPoint, true],
+            ["dewPointSpread", spread, true],
+          ] as const
+        ).map(([field, value, estimated]) => [
+          field,
+          {
+            providerCode: input.providerCode,
+            value,
+            sourceValidTime: current.observedAt,
+            estimated,
+            consensusStrategy: estimated
+              ? "derived_from_observed_temperature_and_humidity"
+              : "current_observation",
+          },
+        ]),
+      ),
+    };
+  }
   const missingFields = new Set(input.firstHour?.missingFields ?? []);
   const estimatedFields = new Set(input.firstHour?.estimatedFields ?? []);
   if (!input.current) {
@@ -628,6 +704,7 @@ function normalizeCurrentWeather(input: {
   }
 
   return {
+    dataKind: "forecast",
     providerCode: input.providerCode,
     providerLabelZh: input.providerLabelZh,
     dataMode: input.dataMode,
@@ -1053,7 +1130,6 @@ function firstFinite(values: readonly (number | undefined | null)[]): number | u
 
 function generatedAt(input: WeatherRequestInput, fallback?: string): string {
   return (
-    input.forecastStart ??
     fallback ??
     formatZonedIso(
       getNowInTimezone(input.timezone ?? defaultTimezone),

@@ -19,11 +19,11 @@ import { requestForecastCalculation } from "../app/forecast/forecast-request-cli
 import { buildForecastResultViewModel } from "../app/forecast/forecast-result-view-model";
 import {
   formatSubjectDetailWindowLabel,
+  buildSubjectDetailFallbackRequest,
   incompleteContextMessage,
   readForecastResultContext,
   type SubjectDetailDeepLinkContext,
   type SubjectDetailDeepLinkParseResult,
-  type SubjectDetailRequestOptions,
   type SubjectDetailTarget,
 } from "../app/forecast/subject-detail-links";
 import { PublicShell } from "./public-shell";
@@ -46,13 +46,12 @@ type LoadState =
       readonly status: "ready";
       readonly query: ForecastQueryInput;
       readonly result: ForecastCalculationResult;
+      readonly refreshed?: boolean;
     }
   | {
       readonly status: "error";
       readonly message: string;
     };
-
-type ForecastCalculateRequest = ForecastQueryInput & SubjectDetailRequestOptions;
 
 export function SubjectDetailDeepLinkClient({ target, parsed }: SubjectDetailDeepLinkClientProps) {
   const initialState = useMemo<LoadState>(() => {
@@ -84,7 +83,10 @@ export function SubjectDetailDeepLinkClient({ target, parsed }: SubjectDetailDee
         return;
       }
 
-      const cached = readForecastResultContext(parsed.context.resultId ?? parsed.context.reportId);
+      const cached = await readForecastResultContext(
+        parsed.context.resultId ?? parsed.context.reportId,
+      );
+      if (cancelled) return;
       if (cached) {
         setState({
           status: "ready",
@@ -107,16 +109,14 @@ export function SubjectDetailDeepLinkClient({ target, parsed }: SubjectDetailDee
 
       setState({ status: "loading" });
       try {
-        const requestBody: ForecastCalculateRequest = {
-          ...parsed.fallbackQuery,
-          ...parsed.requestOptions,
-        };
+        const requestBody = buildSubjectDetailFallbackRequest(parsed)!;
         const result = await requestForecastCalculation(requestBody);
         if (!cancelled) {
           setState({
             status: "ready",
             query: parsed.fallbackQuery,
             result,
+            refreshed: true,
           });
         }
       } catch (error) {
@@ -141,7 +141,11 @@ export function SubjectDetailDeepLinkClient({ target, parsed }: SubjectDetailDee
   return (
     <PublicShell contentClassName="grid gap-5 pb-14">
       {context ? (
-        <GeneralSourceContextBar context={context} query={queryForContext(state)} />
+        <GeneralSourceContextBar
+          context={context}
+          query={queryForContext(state)}
+          refreshed={state.status === "ready" && state.refreshed}
+        />
       ) : null}
 
       {state.status === "loading" ? (
@@ -157,7 +161,7 @@ export function SubjectDetailDeepLinkClient({ target, parsed }: SubjectDetailDee
               正在读取综合判断上下文...
             </div>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              页面会优先复用综合判断结果；如果本地上下文不可用，将使用链接中的地点和日期重新生成专项判断。
+              页面会优先复用综合判断结果；如果本地上下文不可用，将按原报告的地点与预报范围刷新数据。
             </p>
           </Card>
         )
@@ -237,7 +241,26 @@ function SubjectResultContent({
   }
 
   if (target === "astro" && viewModel.astro) {
-    return <AstroResultPage query={subjectQuery} result={result} viewModel={viewModel.astro} />;
+    if (
+      context?.date &&
+      !viewModel.astro.nightlyCards.some((night) => night.localEveningDate === context.date)
+    ) {
+      return (
+        <SubjectContextFallbackCard
+          target={target}
+          message={`${context.date} 的观测夜不在这份报告的预报范围内，请扩大预报范围后重新查询。`}
+        />
+      );
+    }
+    return (
+      <AstroResultPage
+        key={context?.date}
+        query={subjectQuery}
+        result={result}
+        viewModel={viewModel.astro}
+        initialNightDate={context?.date}
+      />
+    );
   }
 
   return (
@@ -251,9 +274,11 @@ function SubjectResultContent({
 function GeneralSourceContextBar({
   context,
   query,
+  refreshed,
 }: {
   readonly context: Partial<SubjectDetailDeepLinkContext>;
   readonly query?: ForecastQueryInput;
+  readonly refreshed?: boolean;
 }) {
   const locationName = context.location?.locationName ?? query?.name ?? "地点待确认";
   const date = context.date ?? "日期待确认";
@@ -284,6 +309,13 @@ function GeneralSourceContextBar({
           返回综合判断
         </a>
       </div>
+      {refreshed ? (
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">
+          {context.forecastStart
+            ? "原报告的本地缓存已失效，已按原地点与预报范围刷新；天气数据更新后，结果可能与原报告不同。"
+            : "原报告的本地缓存已失效，旧链接未记录预报起点，已按当前时间刷新；请返回综合判断查看最新报告。"}
+        </p>
+      ) : null}
     </Card>
   );
 }

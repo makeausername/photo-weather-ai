@@ -16,6 +16,42 @@ const query = {
 const now = "2026-09-30T18:00:00+08:00";
 
 describe("forecast data range and official warnings", () => {
+  it.each(["general", "glow", "astro", "cloud_sea"] as ForecastTarget[])(
+    "timestamps %s generation separately while preserving a future requested forecast start",
+    (target) => {
+      const rangeInput = buildMockForecastInput(
+        { ...query, target },
+        { now: "2026-10-05T06:00:00+08:00" },
+      );
+      const input = buildMockForecastInput(
+        { ...query, target },
+        {
+          now,
+          forecastRange: {
+            forecastStart: rangeInput.calendarBasis.forecastStart,
+            forecastEnd: rangeInput.calendarBasis.forecastEnd,
+            targetDates: rangeInput.calendarBasis.targetDates,
+            timezone: "Asia/Shanghai",
+            horizonHours: 24,
+          },
+        },
+      );
+      expect(Date.parse(input.generatedAt)).toBe(Date.parse(now));
+      expect(input.calendarBasis.forecastStart).toBe(rangeInput.calendarBasis.forecastStart);
+      expect(Date.parse(input.generatedAt)).toBeLessThan(
+        Date.parse(input.calendarBasis.forecastStart),
+      );
+      const report = calculateForecast(input);
+      expect(Date.parse(report.generatedAt)).toBe(Date.parse(now));
+      expect(Date.parse(report.forecastStart)).toBe(
+        Date.parse(rangeInput.calendarBasis.forecastStart),
+      );
+      expect(report.professionalHourlyData?.length).toBe(24);
+      expect(Date.parse(report.professionalHourlyDataTimeBasis!.anchorStartLocal!)).toBe(
+        Date.parse(report.forecastStart),
+      );
+    },
+  );
   it("clips both report and daily risks to a partial final forecast hour", () => {
     const input = buildMockForecastInput({ ...query, target: "general" }, { now });
     const end = "2026-10-01T18:10:00+08:00";

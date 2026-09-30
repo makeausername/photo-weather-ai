@@ -31,6 +31,7 @@ export type ForecastWindowAnchor = {
 
 export type ForecastWindowAnchorInput = {
   readonly generatedAt?: Date | string | number;
+  readonly forecastStart?: Date | string | number;
   readonly now?: Date | string | number;
   readonly timezone?: string;
   readonly horizon: ForecastWindowHorizon;
@@ -83,7 +84,11 @@ export function resolveRollingForecastHorizon(
   const requestedHours = normalizedRequestedHours(
     input.requestedForecastHours ?? forecastWindowHoursForHorizon(input.horizon),
   );
-  const anchorStartResolution = resolveAnchorStart(generatedAt, timezone, input);
+  const anchorStartResolution = resolveAnchorStart(
+    toValidDate(input.forecastStart ?? generatedAt),
+    timezone,
+    input,
+  );
   const anchorStart = anchorStartResolution.anchorStart;
   const anchorEnd = addHours(anchorStart, Math.max(0, requestedHours - 1));
   const anchorEndExclusive = addHours(anchorStart, requestedHours);
@@ -126,6 +131,7 @@ export function filterRowsToForecastWindow<TRow>(
   selectTime: (row: TRow) => string | null | undefined,
 ): readonly TRow[] {
   const startMs = Date.parse(range.anchorStartLocal);
+  const endMs = Date.parse(range.anchorEndExclusiveLocal);
   if (!Number.isFinite(startMs)) {
     return [];
   }
@@ -134,7 +140,7 @@ export function filterRowsToForecastWindow<TRow>(
     .map((row) => ({ row, timestamp: Date.parse(selectTime(row) ?? "") }))
     .filter(
       (entry): entry is { readonly row: TRow; readonly timestamp: number } =>
-        Number.isFinite(entry.timestamp) && entry.timestamp >= startMs,
+        Number.isFinite(entry.timestamp) && entry.timestamp >= startMs && entry.timestamp < endMs,
     )
     .sort((left, right) => left.timestamp - right.timestamp)
     .slice(0, range.expectedRowCount)

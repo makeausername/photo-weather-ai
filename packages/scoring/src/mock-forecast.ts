@@ -202,6 +202,7 @@ export function buildMockForecastInput(
     },
     {
       forecastRange,
+      now: options.now,
       terrainAnalysis: options.terrainAnalysis,
     },
   );
@@ -327,7 +328,7 @@ export function buildForecastInputFromNormalizedWeather(
         elevationMeters:
           terrainAnalysis.terrainProfile.elevationMeters ?? query.elevationMeters ?? null,
       }),
-    generatedAt: forecastRange.forecastStart,
+    generatedAt: new Date(options.now ?? Date.now()).toISOString(),
     currentWeather: adjustedWeather.currentWeather,
     isMock: weather.isMock,
     dataSourceLabel: weather.dataSourceLabel,

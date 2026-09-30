@@ -10,6 +10,29 @@ type HourRow = {
 };
 
 describe("forecast window anchor", () => {
+  it("preserves a future forecast start while recording the actual generation time", () => {
+    const range = resolveForecastWindowRange({
+      generatedAt: "2026-09-30T18:20:00+08:00",
+      forecastStart: "2026-10-05T06:00:00+08:00",
+      timezone: "Asia/Shanghai",
+      horizon: "24h",
+    });
+    expect(range.generatedAtLocal).toBe("2026-09-30T18:20:00+08:00");
+    expect(range.anchorStartLocal).toBe("2026-10-05T06:00:00+08:00");
+    expect(range.anchorEndExclusiveLocal).toBe("2026-10-06T06:00:00+08:00");
+  });
+  it("does not fill gaps with provider buffer rows outside the declared window", () => {
+    const range = resolveForecastWindowRange({
+      generatedAt: "2026-06-02T00:00:00+08:00",
+      horizon: "24h",
+    });
+    const rows = hourlyRows("2026-06-02T00:00:00+08:00", 48).filter((_, index) => index !== 5);
+    const filtered = filterRowsToForecastWindow(rows, range, (row) => row.time);
+    expect(filtered).toHaveLength(23);
+    expect(
+      filtered.every((row) => Date.parse(row.time) < Date.parse(range.anchorEndExclusiveLocal)),
+    ).toBe(true);
+  });
   it("resolves future24 as 24 rolling hours across midnight", () => {
     const range = resolveRollingForecastHorizon({
       generatedAt: "2026-06-02T16:20:00+08:00",

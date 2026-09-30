@@ -1,4 +1,6 @@
 import {
+  applyForecastDecisionToWindows,
+  isExecutableForecastWindow,
   buildCloudLayerCompletenessContext,
   buildCloudSeaCloudBasisConsistencyContext,
   buildCloudSeaPrecipitationSignalContext,
@@ -637,7 +639,11 @@ export type AstroEvidenceViewItem = {
   readonly tone: ForecastResultCardTone;
 };
 
-export type AstroNightHorizonCoverageState = "covered" | "partial" | "outside_horizon";
+export type AstroNightHorizonCoverageState =
+  | "covered"
+  | "partial"
+  | "outside_horizon"
+  | "weather_missing";
 
 export type AstroNightRecommendationLevel =
   | "recommended"
@@ -2034,7 +2040,9 @@ export function buildGlowForecastViewModel(
         "最佳霞光窗口",
         overallRecommendation.hasActionableWindow
           ? overallRecommendation.preferredTarget
-          : "暂无后续霞光窗口",
+          : overallRecommendation.windowStartAt
+            ? "天文参考窗口，暂不推荐"
+            : "暂无后续霞光窗口",
         overallRecommendation.hasActionableWindow
           ? `${overallRecommendation.preferredWindow}，${overallRecommendation.conciseReason}`
           : overallRecommendation.conciseReason,
@@ -3511,12 +3519,12 @@ function buildAstroNightDisplayModels(
     const starProbability = starPhotographyProbabilityForNight(
       day,
       weatherSummary,
-      isPartiallyCovered,
+      horizonCoverageState !== "covered",
     );
     const milkyWayProbability = milkyWayPhotographyProbabilityForNight(
       day,
       weatherSummary,
-      isPartiallyCovered,
+      horizonCoverageState !== "covered",
     );
     const recommendation = astroNightRecommendation({
       day,
@@ -3560,6 +3568,7 @@ function buildAstroNightDisplayModels(
       : lightPollutionDisplay.compactLabel;
     const terrainSummaryLabel = `${terrainHorizonDisplay.statusLabelZh} · ${terrainHorizonDisplay.compactLabel}`;
     const factorChips = buildAstroNightFactorChips({
+      hasWeatherEvidence: weatherSummary.validHourCount > 0,
       day,
       recommendationLevel: recommendation.level,
       moonInterference,
@@ -3729,7 +3738,9 @@ function buildAstroNightSemanticFields(input: {
         ? `${basisText}；预报只覆盖部分夜间窗口，需等临近资料补齐。`
         : basisText;
   const dailyRecommended = Boolean(
-    input.day?.astroShootable &&
+    input.horizonCoverageState === "covered" &&
+      input.weatherSummary.validHourCount > 0 &&
+      input.day?.astroShootable &&
       input.day.recommendedMilkyWayWindow &&
       input.day.weatherBlockers.length === 0,
   );
@@ -3980,6 +3991,7 @@ function selectedMilkyWayTerrainAssessment(
 }
 
 function buildAstroNightFactorChips({
+  hasWeatherEvidence,
   day,
   recommendationLevel,
   moonInterference,
@@ -3988,6 +4000,7 @@ function buildAstroNightFactorChips({
   lightPollution,
   terrainHorizon,
 }: {
+  readonly hasWeatherEvidence: boolean;
   readonly day: DailyAstro | undefined;
   readonly recommendationLevel: AstroNightRecommendationLevel;
   readonly moonInterference: string;
@@ -4005,9 +4018,11 @@ function buildAstroNightFactorChips({
   }
 
   chips.push(
-    /总云|云量|云层|厚云|低云/.test(blockerText)
-      ? { key: "cloud", label: "云量高", tone: "danger" }
-      : { key: "cloud", label: "云量可控", tone: "primary" },
+    !hasWeatherEvidence
+      ? { key: "cloud", label: "云量待复核", tone: "muted" }
+      : /总云|云量|云层|厚云|低云/.test(blockerText)
+        ? { key: "cloud", label: "云量高", tone: "danger" }
+        : { key: "cloud", label: "云量可控", tone: "primary" },
   );
 
   if (/降水|雨|雪/.test(blockerText)) {
@@ -5675,13 +5690,25 @@ function astroNightCoverageState(
   const endMs = Date.parse(window.end);
   const rangeStartMs = Date.parse(forecast.start);
   const rangeEndMs = Date.parse(forecast.end);
+  const weatherRows = professionalRowsBetween(
+    result.professionalHourlyData ?? [],
+    window.start,
+    window.end,
+  ).filter(hasAstroWeatherEvidence);
+  if (weatherRows.length === 0) {
+    return "weather_missing";
+  }
+  const hourStarts = new Set(
+    weatherRows.map((row) => Math.floor(Date.parse(row.time) / 3_600_000)),
+  );
+  const expectedHours = Math.ceil(endMs / 3_600_000) - Math.floor(startMs / 3_600_000);
 
   if (
     Number.isFinite(startMs) &&
     Number.isFinite(endMs) &&
     Number.isFinite(rangeStartMs) &&
     Number.isFinite(rangeEndMs) &&
-    (startMs < rangeStartMs || endMs > rangeEndMs)
+    (startMs < rangeStartMs || endMs > rangeEndMs || hourStarts.size < expectedHours)
   ) {
     return "partial";
   }
@@ -5695,6 +5722,9 @@ function horizonCoverageLabel(state: AstroNightHorizonCoverageState): string {
   }
   if (state === "partial") {
     return "本次预报部分覆盖";
+  }
+  if (state === "weather_missing") {
+    return "缺少窗口内天气数据";
   }
   return "超出本次预报范围";
 }
@@ -5758,6 +5788,7 @@ function summarizeAstroNightWeather(
   expectedHours: number,
   weatherBlockers: readonly string[] = [],
 ): AstroNightDisplayModel["weather"] {
+  rows = [...new Map(rows.filter(hasAstroWeatherEvidence).map((row) => [row.time, row])).values()];
   const totalCloud = averageNullable(rows.map((row) => row.cloudTotalPercent));
   const lowCloud = averageNullable(rows.map((row) => row.cloudLowPercent));
   const visibility = averageNullable(rows.map((row) => row.visibilityMeters));
@@ -5797,6 +5828,17 @@ function summarizeAstroNightWeather(
           }`,
     windRisk: windSpeed === null ? "风速暂无数据" : `平均风速约 ${round1ForDisplay(windSpeed)} m/s`,
   };
+}
+
+function hasAstroWeatherEvidence(
+  row: NonNullable<ForecastCalculationResult["professionalHourlyData"]>[number],
+): boolean {
+  return [
+    row.cloudTotalPercent,
+    row.visibilityMeters,
+    row.precipitationAmountMm,
+    row.windSpeedMs,
+  ].every((value) => typeof value === "number" && Number.isFinite(value));
 }
 
 function averageNullable(values: readonly (number | null | undefined)[]): number | null {
@@ -6053,7 +6095,7 @@ function astroNightRecommendation(input: {
     };
   }
 
-  const partial = horizonCoverageState === "partial";
+  const partial = horizonCoverageState !== "covered";
   const milky = milkyWayProbability ?? 0;
   const lightPollutionContext = astroNightLightPollutionContext(day.lightPollution);
 
@@ -6709,7 +6751,7 @@ function buildAstroHourlySummary(
   return [
     {
       key: "best-hours",
-        label: "参考小时",
+      label: "参考小时",
       value: formatHourlySummaryTimes(bestRows, timezone),
       detail: data.focusWindows[0]?.label ?? "按银河/天文焦点窗口和云量、降水、能见度做展示摘要。",
       tone: bestRows.length > 0 ? "primary" : "muted",
@@ -8871,7 +8913,10 @@ function buildGeneralResultWindows(
 ): readonly ForecastResultWindow[] {
   const nonGlowWindows = result.bestWindows.filter((window) => window.target !== "glow");
   const glowWindows = buildGlowForecastWindows(result, false);
-  return mapResultWindows([...nonGlowWindows, ...glowWindows], result.calendarBasis.timezone);
+  return mapResultWindows(
+    applyForecastDecisionToWindows([...nonGlowWindows, ...glowWindows], result),
+    result.calendarBasis.timezone,
+  );
 }
 
 function buildGlowForecastWindows(
@@ -9667,6 +9712,21 @@ function cloudSeaWindowItem(
     cloudSeaPrecipitationSignalContextForWindow(result, window),
     precipitationSignalContext,
   );
+  if (!window.windowRiskContext && (result.professionalHourlyData?.length ?? 0) > 0) {
+    windowRiskContext = buildCloudSeaWindowCenteredRiskContext({
+      normalizedHourlyRows: result.professionalHourlyData,
+      mainWindow: window,
+      bestWindow: window,
+      forecastWindowRange: { startTime: result.forecastStart, endTime: result.forecastEnd },
+      precipitationSignalContext: windowPrecipitationSignal,
+      cloudLayerCoverageContext: layerContext,
+      cloudBasisConsistencyContext: cloudBasisContext,
+      whiteoutRiskContext: {
+        whiteoutRiskScore: window.whiteoutRiskScore ?? result.cloudSeaAnalysis.whiteoutRiskScore,
+      },
+      timezone: result.calendarBasis.timezone,
+    });
+  }
   const scoreCalibration = window.scoreCalibration;
   const resolvedCloudSeaScore =
     scoreCalibration?.finalCloudSeaScore ?? window.shootableScore ?? window.score;
@@ -11889,25 +11949,6 @@ function practicalSubjectScore(
   }
 
   return 0;
-}
-
-function isExecutableForecastWindow(window: ForecastTimeWindow): boolean {
-  const hasHierarchy =
-    window.windowLevel !== undefined || window.executableForDedicatedTrip !== undefined;
-  if (!hasHierarchy) {
-    return (
-      window.practicalKind !== "formation_signal" &&
-      window.recommendationLevel !== "backup" &&
-      window.recommendationLevel !== "not_recommended"
-    );
-  }
-  return (
-    window.executableForDedicatedTrip === true ||
-    (window.practicalKind !== "formation_signal" &&
-      (window.windowLevel === "best" || window.windowLevel === "shootable") &&
-      window.recommendationLevel !== "backup" &&
-      window.recommendationLevel !== "not_recommended")
-  );
 }
 
 function forecastWindowMatchesSubject(window: ForecastTimeWindow, labelHint: string): boolean {

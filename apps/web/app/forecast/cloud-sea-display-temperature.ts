@@ -40,7 +40,9 @@ export type CloudSeaDisplayTemperatureContextInput = {
   readonly terrainAdjustedTemperatureC?: number | null;
   readonly providerTemperatureC?: number | null;
   readonly displayedTemperatureC?: number | null;
-  readonly displayTemperatureRangeC?: readonly [number | null | undefined, number | null | undefined] | null;
+  readonly displayTemperatureRangeC?:
+    | readonly [number | null | undefined, number | null | undefined]
+    | null;
   readonly bodyFeelTemperatureC?: number | null;
   readonly bodyFeelRangeC?: readonly [number | null | undefined, number | null | undefined] | null;
   readonly cameraElevationMeters?: number | null;
@@ -64,7 +66,9 @@ export function buildCloudSeaDisplayTemperatureContext(
   input: CloudSeaDisplayTemperatureContextInput,
 ): CloudSeaDisplayTemperatureContext {
   const source = input.temperatureBasisContext;
-  const rawGridTemperatureC = finiteNumber(input.rawGridTemperatureC ?? source?.rawGridTemperatureC);
+  const rawGridTemperatureC = finiteNumber(
+    input.rawGridTemperatureC ?? source?.rawGridTemperatureC,
+  );
   const sourceBasis = input.sourceTemperatureBasis ?? source?.temperatureBasis;
   const sourceTerrainAdjustedTemperatureC = finiteNumber(
     input.terrainAdjustedTemperatureC ?? source?.terrainAdjustedTemperatureC,
@@ -75,7 +79,9 @@ export function buildCloudSeaDisplayTemperatureContext(
       ? sourceTerrainAdjustedTemperatureC
       : undefined;
   const providerTemperatureC = finiteNumber(input.providerTemperatureC);
-  const displayedTemperatureC = finiteNumber(input.displayedTemperatureC ?? source?.displayTemperatureC);
+  const displayedTemperatureC = finiteNumber(
+    input.displayedTemperatureC ?? source?.displayTemperatureC,
+  );
   const cameraElevationMeters = finiteNumber(input.cameraElevationMeters);
   const modelElevationMeters = finiteNumber(input.modelElevationMeters);
   const lapseRateCPerKm =
@@ -125,13 +131,19 @@ export function buildCloudSeaDisplayTemperatureContext(
     displayedTemperatureC,
   });
   const inputDisplayTemperatureRangeC = normalizedRange(input.displayTemperatureRangeC);
+  const rangeReference = finiteNumber(input.displayedTemperatureC);
+  const rangeOffset =
+    displayTemperatureC !== null && rangeReference !== undefined
+      ? displayTemperatureC - rangeReference
+      : 0;
   const displayTemperatureRangeC =
-    basis === "terrain_adjusted" || basis === "terrain_adjusted_lapse_estimate"
-      ? displayTemperatureC === null
-        ? null
-        : ([displayTemperatureC, displayTemperatureC] as const)
-      : inputDisplayTemperatureRangeC ??
-        (displayTemperatureC === null ? null : ([displayTemperatureC, displayTemperatureC] as const));
+    (inputDisplayTemperatureRangeC
+      ? ([
+          round1(inputDisplayTemperatureRangeC[0] + rangeOffset),
+          round1(inputDisplayTemperatureRangeC[1] + rangeOffset),
+        ] as const)
+      : null) ??
+    (displayTemperatureC === null ? null : ([displayTemperatureC, displayTemperatureC] as const));
   const bodyFeelTemperatureC = selectBodyFeelTemperature({
     inputBodyFeelTemperatureC: input.bodyFeelTemperatureC,
     sourceBodyFeelTemperatureC: source?.bodyFeelTemperatureC,
@@ -143,13 +155,21 @@ export function buildCloudSeaDisplayTemperatureContext(
     forecastHour: input.forecastHour,
   });
   const inputBodyFeelRangeC = normalizedRange(input.bodyFeelRangeC);
+  const feelReference = finiteNumber(input.bodyFeelTemperatureC);
+  const feelOffset =
+    bodyFeelTemperatureC !== null && feelReference !== undefined
+      ? bodyFeelTemperatureC - feelReference
+      : 0;
   const bodyFeelRangeC =
-    basis === "terrain_adjusted" || basis === "terrain_adjusted_lapse_estimate"
-      ? bodyFeelTemperatureC === null
-        ? null
-        : ([bodyFeelTemperatureC, bodyFeelTemperatureC] as const)
-      : inputBodyFeelRangeC ??
-        (bodyFeelTemperatureC === null ? null : ([bodyFeelTemperatureC, bodyFeelTemperatureC] as const));
+    (inputBodyFeelRangeC
+      ? ([
+          round1(inputBodyFeelRangeC[0] + feelOffset),
+          round1(inputBodyFeelRangeC[1] + feelOffset),
+        ] as const)
+      : null) ??
+    (bodyFeelTemperatureC === null
+      ? null
+      : ([bodyFeelTemperatureC, bodyFeelTemperatureC] as const));
   const warningZh = warningText({
     basis,
     isHighMountainTemperatureSensitive,
@@ -246,7 +266,9 @@ function selectDisplayTemperature(input: {
   if (input.basis === "raw_grid_with_warning") {
     return input.rawGridTemperatureC ?? null;
   }
-  return input.displayedTemperatureC ?? input.providerTemperatureC ?? input.rawGridTemperatureC ?? null;
+  return (
+    input.displayedTemperatureC ?? input.providerTemperatureC ?? input.rawGridTemperatureC ?? null
+  );
 }
 
 function selectBodyFeelTemperature(input: {
@@ -259,16 +281,15 @@ function selectBodyFeelTemperature(input: {
   readonly humidityPercent?: number | null;
   readonly forecastHour?: number | null;
 }): number | null {
+  const hourlyFeel = finiteNumber(input.inputBodyFeelTemperatureC);
+  if (hourlyFeel !== undefined && input.basis !== "raw_grid_with_warning") return hourlyFeel;
   if (input.basis === "provider_point") {
     const providerFeel = finiteNumber(input.inputBodyFeelTemperatureC);
     if (providerFeel !== undefined) {
       return providerFeel;
     }
   }
-  if (
-    input.basis === "terrain_adjusted" ||
-    input.basis === "terrain_adjusted_lapse_estimate"
-  ) {
+  if (input.basis === "terrain_adjusted" || input.basis === "terrain_adjusted_lapse_estimate") {
     const sourceFeel = finiteNumber(input.sourceBodyFeelTemperatureC);
     if (sourceFeel !== undefined) {
       return sourceFeel;
@@ -288,7 +309,9 @@ function selectBodyFeelTemperature(input: {
   const gustCooling = windGust >= 12 ? 1.5 : windGust >= 9 ? 0.8 : 0;
   const humidityCooling = humidity >= 85 ? 0.6 : 0;
   const waitingCooling = hour !== undefined && (hour <= 7 || hour >= 18) ? 0.8 : 0;
-  return round1(input.displayTemperatureC - windCooling - gustCooling - humidityCooling - waitingCooling);
+  return round1(
+    input.displayTemperatureC - windCooling - gustCooling - humidityCooling - waitingCooling,
+  );
 }
 
 function basisLabel(basis: CloudSeaDisplayTemperatureBasis): string {
@@ -316,7 +339,9 @@ function userTemperatureSummary(input: {
     input.bodyFeelTemperatureC === null
       ? "高山体感需复核"
       : `${input.bodyFeelLabelZh} ${formatTemperature(input.bodyFeelTemperatureC)}`;
-  return input.warningZh ? `${temperature} / ${feel}。${input.warningZh}` : `${temperature} / ${feel}`;
+  return input.warningZh
+    ? `${temperature} / ${feel}。${input.warningZh}`
+    : `${temperature} / ${feel}`;
 }
 
 function professionalSummary(input: {
