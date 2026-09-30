@@ -396,7 +396,12 @@ describe("forecast score calculators", () => {
     });
     expect(row?.terrainAdjustedTemperatureC).toBeLessThan(24);
     expect(row?.displayedTemperatureC).toBe(row?.terrainAdjustedTemperatureC);
-    expect(row?.dewPointSpreadC).toBeCloseTo((row?.displayedTemperatureC ?? 0) - 12, 5);
+    expect(row?.dewPointSpreadC).toBeCloseTo(
+      (row?.displayedTemperatureC ?? 0) - (row?.dewPointC ?? 0),
+      5,
+    );
+    expect(adjusted.hourlyWeather[0]?.estimatedFields).toContain("dewPoint");
+    expect(row?.dewPointC).not.toBe(12);
     expect(result.professionalHourlyDataTimeBasis?.temperatureBasis).toBe("terrain_adjusted");
   });
 

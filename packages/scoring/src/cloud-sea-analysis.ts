@@ -918,16 +918,33 @@ function buildWindowStats(
   input: ForecastCalculationInput,
   weatherWindow: readonly NormalizedHourlyWeather[],
 ): WindowStats {
-  const missingFields = uniqueStrings([
-    ...input.weatherMissingFields,
-    ...weatherWindow.flatMap((hour) => hour.missingFields ?? []),
-  ]);
-  const estimatedFields = uniqueStrings([
-    ...input.weatherEstimatedFields,
-    ...weatherWindow.flatMap((hour) => hour.estimatedFields ?? []),
-  ]);
+  const missingFields = uniqueStrings(
+    weatherWindow.length === 0
+      ? input.weatherMissingFields
+      : weatherWindow.flatMap((hour) => hour.missingFields ?? []),
+  ).filter(
+    (field) =>
+      weatherWindow.length === 0 ||
+      weatherWindow.filter((hour) => {
+        const value = hour[field as keyof NormalizedHourlyWeather];
+        return typeof value === "number" && Number.isFinite(value);
+      }).length /
+        weatherWindow.length <
+        0.8,
+  );
+  const estimatedFields = uniqueStrings(
+    weatherWindow.flatMap((hour) => hour.estimatedFields ?? []),
+  );
   const hasLowCloud = weatherWindow.some((hour) => isFiniteNumber(hour.cloudLow));
-  const lowCloudEstimated = estimatedFields.includes("cloudLow");
+  const lowCloudEstimated =
+    weatherWindow.filter(
+      (hour) =>
+        isFiniteNumber(hour.cloudLow) &&
+        !hour.estimatedFields?.includes("cloudLow") &&
+        hour.fieldMetadata?.cloudLow?.estimated !== true,
+    ).length /
+      Math.max(1, weatherWindow.length) <
+    0.8;
   const cloudBasisContext = buildCloudSeaCloudBasisConsistencyContext({
     hourlyRows: weatherWindow.map(cloudBasisRowFromHourlyWeather),
   });

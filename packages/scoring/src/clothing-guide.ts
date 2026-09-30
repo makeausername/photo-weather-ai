@@ -259,7 +259,7 @@ function buildAccessories(input: {
     accessories.add("手套");
   }
   if (
-    input.precipitationRisk !== "none" ||
+    ["medium", "high", "severe"].includes(input.precipitationRisk) ||
     (input.precipitationProbability !== null && input.precipitationProbability >= 40) ||
     input.comfortLevel === "rainy"
   ) {
@@ -267,6 +267,8 @@ function buildAccessories(input: {
     accessories.add("防滑鞋");
     accessories.add("备用干衣");
     accessories.add("干燥袋");
+  } else if (input.precipitationRisk === "low") {
+    accessories.add("轻量防雨备用");
   }
   if (input.humidity >= 80 || input.target === "cloud_sea") {
     accessories.add("镜头布");
@@ -301,8 +303,14 @@ function buildRiskNotes(input: {
   if (input.target === "astro" && input.effectiveTemperature <= 10) {
     notes.push("夜间长时间等待会明显降温，建议按更低一档准备保暖。");
   }
-  if (input.precipitationRisk !== "none") {
+  if (input.precipitationAmount !== null && input.precipitationAmount > 0) {
     notes.push("存在降水干扰，器材、备用衣物和存储卡需要防水收纳。");
+  } else if (input.precipitationRisk === "low") {
+    notes.push("有弱降水概率信号，可携带轻量防雨用品，出发前复核小时预报。");
+  } else if (["medium", "high", "severe"].includes(input.precipitationRisk)) {
+    notes.push("降水概率偏高，器材和备用衣物建议防水收纳，出发前复核雨量。");
+  } else if (input.precipitationRisk === "unknown") {
+    notes.push("降水数据不足，出发前复核小时预报和防雨需求。");
   }
   if (input.humidity >= 82 || input.target === "cloud_sea") {
     notes.push("高湿环境注意防潮、防滑，并准备镜头布处理结露。");

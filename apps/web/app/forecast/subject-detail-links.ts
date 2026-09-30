@@ -69,7 +69,7 @@ export type SubjectDetailRequestOptions = {
 };
 
 export type StoredForecastResultContext = {
-  readonly version: 1;
+  readonly version: 2;
   readonly resultId: string;
   readonly createdAt: number;
   readonly query: ForecastQueryInput;
@@ -363,7 +363,7 @@ export function writeForecastResultContext({
 
   const resultId = createForecastResultContextId(query, result);
   const record: StoredForecastResultContext = {
-    version: 1,
+    version: 2,
     resultId,
     createdAt: Date.now(),
     query,
@@ -397,7 +397,7 @@ export function readForecastResultContext(
     }
     const parsed = JSON.parse(raw) as Partial<StoredForecastResultContext>;
     if (
-      parsed.version !== 1 ||
+      parsed.version !== 2 ||
       parsed.resultId !== resultId ||
       typeof parsed.createdAt !== "number" ||
       !parsed.query ||

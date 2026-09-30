@@ -81,9 +81,7 @@ function reliableInput(input: ForecastCalculationInput): ForecastCalculationInpu
   };
 }
 
-function reliableFusionSummary(
-  patch: Partial<WeatherFusionSummary> = {},
-): WeatherFusionSummary {
+function reliableFusionSummary(patch: Partial<WeatherFusionSummary> = {}): WeatherFusionSummary {
   return {
     primarySource: "primary",
     auxiliarySources: [],
@@ -332,6 +330,16 @@ describe("forecast decision convergence", () => {
 
   it("caps precipitation or wind risk without increasing score", () => {
     const result = convergeForTarget("general", {
+      input: (input) => ({
+        ...input,
+        hourlyWeather: input.hourlyWeather.map((hour) => ({
+          ...hour,
+          precipitation: 10,
+          precipitationAmountMm: 10,
+          precipitationProbability: 95,
+          windGust: 20,
+        })),
+      }),
       riskFlags: [highRiskFlag("precipitation"), highRiskFlag("wind")],
     });
 
@@ -340,11 +348,46 @@ describe("forecast decision convergence", () => {
     expect(result.finalScore).toBeLessThanOrEqual(46);
     expect(result.finalScore).toBeLessThanOrEqual(86);
   });
+  it("does not let a storm on another date cap a clear selected night", () => {
+    const result = convergeForTarget("astro", {
+      input: (input) => ({
+        ...input,
+        hourlyWeather: input.hourlyWeather.map((hour) => ({
+          ...hour,
+          precipitation: 0,
+          precipitationAmountMm: 0,
+          precipitationProbability: 0,
+          windSpeed: 2,
+          windGust: 3,
+        })),
+      }),
+      riskFlags: [
+        {
+          ...highRiskFlag("precipitation"),
+          startTime: "2026-05-21T00:00:00+08:00",
+          endTime: "2026-05-21T04:00:00+08:00",
+        },
+      ],
+    });
+    expect(result.appliedCaps).not.toContain("precipitation_wind");
+    const withoutStorm = convergeForTarget("astro", {
+      input: (input) => ({
+        ...input,
+        hourlyWeather: input.hourlyWeather.map((hour) => ({
+          ...hour,
+          precipitation: 0,
+          precipitationAmountMm: 0,
+          precipitationProbability: 0,
+          windSpeed: 2,
+          windGust: 3,
+        })),
+      }),
+    });
+    expect(result.finalScore).toBe(withoutStorm.finalScore);
+  });
 });
 
-function expectPublicDecisionCopyHasNoInternals(
-  result: ForecastDecisionConvergenceResult,
-): void {
+function expectPublicDecisionCopyHasNoInternals(result: ForecastDecisionConvergenceResult): void {
   const publicText = [
     result.finalRecommendationLabel,
     result.finalTripDecisionLabel,

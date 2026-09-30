@@ -1113,7 +1113,7 @@ function buildCurrentNearTermWeatherDisplay(input: {
       {
         key: "temperature",
         title: "气温与体感",
-        timeBasis: currentBasisLabel,
+        timeBasis: nearTermBasisLabel,
         badge: input.displayTemperatureContext.basisLabelZh,
         value: `${input.displayTemperatureContext.userTemperatureTitleZh}：${formatTemperature(
           input.displayTemperatureContext.displayTemperatureC,
@@ -1140,7 +1140,7 @@ function buildCurrentNearTermWeatherDisplay(input: {
         value: `降水概率 ${formatPercent(
           precipitationSummary.probabilityPercent,
         )} / 预计雨量 ${formatAmount(precipitationSummary.amountMm)}`,
-        detail: `${input.windowRiskContext.precipitationWindowSummaryZh} ${input.windowRiskContext.actionAdviceZh}`,
+        detail: `以上为${sectionWindowLabel}范围内的最高小时概率与雨量。${nearTermRainAdvice(precipitationSummary)}`,
       },
       {
         key: "humidity_dew_point",
@@ -1158,15 +1158,9 @@ function buildCurrentNearTermWeatherDisplay(input: {
         key: "gear",
         title: "穿衣与装备",
         timeBasis: tripBasisLabel,
-        badge: input.result.clothingGuide.titleZh,
+        badge: input.displayTemperatureContext.basisLabelZh,
         value: input.displayTemperatureContext.equipmentAdviceZh,
-        detail: gearDisplayAdvice(
-          input.displayTemperatureContext,
-          input.precipitationSignalContext,
-          input.windowRiskContext,
-          input.weatherVariableConsistencyContext,
-          input.result,
-        ),
+        detail: gearDisplayAdvice(input.displayTemperatureContext, precipitationSummary),
       },
     ],
   };
@@ -1261,11 +1255,15 @@ function precipitationSummaryForRows(
     amountMm:
       amountValues.length > 0
         ? round1(Math.max(...amountValues))
-        : finiteNumber(context.maxAmountMm) ?? null,
+        : rows.length === 0
+          ? finiteNumber(context.maxAmountMm) ?? null
+          : null,
     probabilityPercent:
       probabilityValues.length > 0
         ? Math.round(Math.max(...probabilityValues))
-        : finiteNumber(context.maxProbabilityPercent) ?? null,
+        : rows.length === 0
+          ? finiteNumber(context.maxProbabilityPercent) ?? null
+          : null,
   };
 }
 
@@ -1332,17 +1330,23 @@ function dewPointDisplayAdvice(
 
 function gearDisplayAdvice(
   temperature: CloudSeaDisplayTemperatureContext,
-  precipitation: CloudSeaPrecipitationSignalContext,
-  windowRiskContext: CloudSeaWindowRiskContext,
-  variables: CloudSeaWeatherVariableConsistencyContext,
-  result: ForecastCalculationResult,
+  precipitation: ReturnType<typeof precipitationSummaryForRows>,
 ): string {
-  const base = result.clothingGuide.summaryZh;
-  const rain =
-    precipitation.affectsEquipment || variables.shouldDowngradePrecipitationWording
-      ? ` ${windowRiskContext.equipmentAdviceZh}`
-      : "";
-  return `${base} ${temperature.clothingAdviceZh}${rain}`.trim();
+  return `${temperature.userTemperatureSummaryZh} ${temperature.clothingAdviceZh} ${nearTermRainAdvice(precipitation)}`.trim();
+}
+
+function nearTermRainAdvice(precipitation: ReturnType<typeof precipitationSummaryForRows>): string {
+  if (precipitation.amountMm !== null && precipitation.amountMm > 0) {
+    return precipitation.amountMm >= 0.3
+      ? "近时段有可计量降水，器材和备用衣物建议防水收纳。"
+      : "近时段有微量降水信号，准备轻量防雨用品并复核雨量。";
+  }
+  if (precipitation.probabilityPercent !== null && precipitation.probabilityPercent >= 20) {
+    return "近时段有降水概率信号，准备轻量防雨用品并复核雨量。";
+  }
+  return precipitation.amountMm === null && precipitation.probabilityPercent === null
+    ? "近时段降水数据不足，出发前复核防雨需求。"
+    : "近时段降水干扰较低，保持常规器材防护。";
 }
 
 function buildStaleFieldWarnings(input: {

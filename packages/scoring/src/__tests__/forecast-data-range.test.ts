@@ -16,6 +16,33 @@ const query = {
 const now = "2026-09-30T18:00:00+08:00";
 
 describe("forecast data range and official warnings", () => {
+  it("clips both report and daily risks to a partial final forecast hour", () => {
+    const input = buildMockForecastInput({ ...query, target: "general" }, { now });
+    const end = "2026-10-01T18:10:00+08:00";
+    const result = calculateForecast({
+      ...input,
+      calendarBasis: { ...input.calendarBasis, forecastEnd: end },
+      hourlyWeather: input.hourlyWeather.map((hour) => ({
+        ...hour,
+        precipitation: 10,
+        precipitationAmountMm: 10,
+        precipitationProbability: 100,
+        cloudLow: 100,
+        visibility: 0.1,
+        windGust: 20,
+      })),
+    });
+    for (const risk of [
+      ...result.riskFlags,
+      ...result.dailySummaries.flatMap((day) => day.riskFlags),
+    ]) {
+      if (risk.startTime && risk.endTime) {
+        expect(Date.parse(risk.startTime)).toBeGreaterThanOrEqual(Date.parse(result.forecastStart));
+        expect(Date.parse(risk.endTime)).toBeLessThanOrEqual(Date.parse(end));
+      }
+    }
+    expect(result.riskFlags.some((risk) => risk.key === "precipitation")).toBe(true);
+  });
   it("carries alerts and supplemental missing fields from the weather bundle to the result", () => {
     const selectedQuery = { ...query, target: "general" as const };
     const mock = buildMockForecastInput(selectedQuery, { now });

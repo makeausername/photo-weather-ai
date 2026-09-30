@@ -396,7 +396,9 @@ function PaidPlanCard({
         <div className="min-w-0">
           <div className="flex flex-wrap gap-2">
             {product.recommended ? <Badge variant="accent">推荐</Badge> : null}
-            {badgeText ? <Badge variant="info">{badgeText}</Badge> : null}
+            {badgeText && !(product.recommended && badgeText === "推荐") ? (
+              <Badge variant="info">{badgeText}</Badge>
+            ) : null}
           </div>
           <h2 className="mt-3 text-lg font-bold text-card-foreground">
             {displayProductName(product)}

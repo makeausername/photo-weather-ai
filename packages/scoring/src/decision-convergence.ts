@@ -16,6 +16,7 @@ import {
 } from "@photo-weather/shared";
 import { terrainHorizonAssessmentHasDeterministicClearance } from "@photo-weather/terrain";
 import { clampScore } from "./helpers.js";
+import { precipitationAmountMm, precipitationRiskScore } from "./weather-decision-metrics.js";
 
 export type ForecastDecisionConvergenceInput = {
   readonly input: ForecastCalculationInput;
@@ -81,7 +82,7 @@ export function convergeForecastDecision(
   const highDisagreement = hasHighModelDisagreement(input, target);
   const lowConfidence = targetConfidence < 0.55;
   const transparencyPenalty = targetTransparencyPenalty(input, target);
-  const precipitationWindCap = precipitationWindDecisionCap(riskFlags);
+  const precipitationWindCap = precipitationWindDecisionCap(options);
   if (riskFlags.some((flag) => flag.key.startsWith("weather_alert:") && flag.level === "high")) {
     addCap(caps, riskReasonsZh, {
       key: "weather_alert",
@@ -198,7 +199,20 @@ export function convergeForecastDecision(
     targetConfidence,
     transparencyPenalty,
     highDisagreement,
-    riskFlags,
+    riskFlags: riskFlags.filter((flag) => {
+      const window =
+        bestWindows.find(
+          (item) => item.executableForDedicatedTrip || item.windowLevel === "best",
+        ) ?? bestWindows[0];
+      return (
+        !window ||
+        flag.key.startsWith("weather_alert:") ||
+        !flag.startTime ||
+        !flag.endTime ||
+        (Date.parse(flag.startTime) < Date.parse(window.endTime) &&
+          Date.parse(flag.endTime) > Date.parse(window.startTime))
+      );
+    }),
   });
   const finalScore = clampScore(Math.min(baseOverallScore - riskPenalty, capScore));
   const forcedMode = strongestMode(caps);
@@ -505,11 +519,43 @@ function applyGeneralBalancingCaps(options: {
   }
 }
 
-function precipitationWindDecisionCap(riskFlags: readonly ForecastRiskFlag[]): DecisionCap | null {
-  const highPrecipitation = riskFlags.some(
-    (flag) => flag.key === "precipitation" && flag.level === "high",
-  );
-  const highWind = riskFlags.some((flag) => flag.key === "wind" && flag.level === "high");
+function precipitationWindDecisionCap(
+  options: ForecastDecisionConvergenceInput,
+): DecisionCap | null {
+  const window =
+    options.bestWindows.find(
+      (item) => item.executableForDedicatedTrip || item.windowLevel === "best",
+    ) ?? options.bestWindows[0];
+  const hours = window
+    ? options.input.hourlyWeather.filter(
+        (hour) =>
+          Date.parse(hour.time) < Date.parse(window.endTime) &&
+          Date.parse(hour.time) + 3_600_000 > Date.parse(window.startTime),
+      )
+    : [];
+  const scopedFlags = window
+    ? options.riskFlags.filter(
+        (flag) =>
+          !flag.startTime ||
+          !flag.endTime ||
+          (Date.parse(flag.startTime) < Date.parse(window.endTime) &&
+            Date.parse(flag.endTime) > Date.parse(window.startTime)),
+      )
+    : options.riskFlags;
+  const highPrecipitation =
+    hours.length > 0
+      ? hours.some(
+          (hour) =>
+            precipitationRiskScore({
+              probability: hour.precipitationProbability,
+              amountMm: precipitationAmountMm(hour),
+            }) >= 75,
+        )
+      : scopedFlags.some((flag) => flag.key === "precipitation" && flag.level === "high");
+  const highWind =
+    hours.length > 0
+      ? hours.some((hour) => (hour.windGust ?? hour.windSpeed) >= 15)
+      : scopedFlags.some((flag) => flag.key === "wind" && flag.level === "high");
 
   if (!highPrecipitation && !highWind) {
     return null;

@@ -61,6 +61,48 @@ const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
 describe("target-aware forecast history scores", () => {
+  it("uses the selected window rows for rainfall and includes both overlapping hours", () => {
+    const base = resultForTarget("astro");
+    const day = base.astroAnalysis.dailyAstro[0]!;
+    const start = "2026-05-20T19:13:00+08:00";
+    const end = "2026-05-20T20:07:00+08:00";
+    const window = {
+      ...base.astroAnalysis.recommendedMilkyWayWindows[0]!,
+      date: day.date,
+      start,
+      end,
+    };
+    const seed = resultWithGlowHourlyRange("24h", 24).professionalHourlyData![0]!;
+    const result: ForecastCalculationResult = {
+      ...base,
+      astroAnalysis: {
+        ...base.astroAnalysis,
+        dailyAstro: [
+          { ...day, recommendedMilkyWayWindow: window, weatherBlockers: ["整夜预计降水 8mm"] },
+        ],
+      },
+      professionalHourlyData: [
+        {
+          ...seed,
+          time: "2026-05-20T19:00:00+08:00",
+          precipitationAmountMm: 0,
+          precipitationProbabilityPercent: 20,
+        },
+        {
+          ...seed,
+          time: "2026-05-20T20:00:00+08:00",
+          precipitationAmountMm: 0,
+          precipitationProbabilityPercent: 10,
+        },
+      ],
+    };
+    const night = buildAstroForecastViewModel(result).nightlyCards.find(
+      (night) => night.localEveningDate === day.date,
+    )!;
+    expect(night.weather.coverageDisplay).toBe("2 / 2 小时");
+    expect(night.weather.precipitationRisk).toContain("降水量 0mm");
+    expect(night.weather.precipitationRisk).not.toContain("8mm");
+  });
   it("stores each specialist result's practical score instead of the generic composite", () => {
     const cloudSea = resultForTarget("cloud_sea");
     const glow = resultForTarget("glow");
@@ -3458,7 +3500,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("repeat(auto-fit,minmax(300px,1fr))");
     expect(html).toContain("当前与近时段天气（2026年5月20日 星期三 · 00:00–06:00）");
     expect(html).toContain("当前实况：2026年5月20日 00:00");
-    expect(html).toContain("近时段参考：2026年5月20日 星期三 · 00:00–06:00");
+    expect(html).toContain("实况卡片使用观测时点数据");
     expect(html).toContain("查看云海详情");
     expect(html).toContain("查看霞光详情");
     expect(html).toContain("查看星空详情");
@@ -5803,7 +5845,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("w-[4.5rem] min-w-[4.5rem]");
     expect(html).toContain("w-[5rem] min-w-[5rem]");
     expect(html).toContain("min-[760px]:sticky min-[760px]:left-0");
-    expect(html).not.toContain("sticky left-0");
+    expect(html).not.toMatch(/<(?:th|td)[^>]*class="[^"]*(?<!:)sticky left-0/);
     expect(html).not.toContain("bg-inherit");
     expect(html).not.toContain("meteoblue");
     expect(html).not.toContain("Open-Meteo");
@@ -6893,7 +6935,9 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.overallRecommendation.preferredWindow).toContain("17:56");
     expect(today?.sunrise.probabilityDisplay).toBe("已结束");
     expect(today?.sunrise.probabilityPercent).toBeUndefined();
-    expect(html).toContain("预测概率 0%");
+    expect(html).toContain("机会估计 0%");
+    expect(viewModel.overallRecommendation.hasActionableWindow).toBe(false);
+    expect(viewModel.overallRecommendation.arrivalAdvice).not.toMatch(/建议 \d{2}:\d{2} 前到达/);
     expect(html).toContain("若形成，潜在鲜艳度：");
     expect(html).not.toMatch(/>鲜艳度：[^<]+<\/p>/u);
   });
@@ -7026,7 +7070,7 @@ describe("forecast result target-aware view model", () => {
       }
       expect(html).toContain("逐日朝霞 / 晚霞机会");
       expect(html).not.toContain("日出 / 日落霞光窗口");
-      expect(html).toContain("预测概率");
+      expect(html).toContain("机会估计");
       expect(html).toContain("鲜艳度：");
       expect(html).toContain("适拍度：");
       expect(html).toContain('data-glow-section="GlowCoreMetrics"');
@@ -7266,7 +7310,7 @@ describe("forecast result target-aware view model", () => {
       expect(sharedHourlyHtml).toContain("w-[4.5rem] min-w-[4.5rem]");
       expect(sharedHourlyHtml).toContain("w-[5rem] min-w-[5rem]");
       expect(sharedHourlyHtml).toContain("min-[760px]:sticky min-[760px]:left-0");
-      expect(sharedHourlyHtml).not.toContain("sticky left-0");
+      expect(sharedHourlyHtml).not.toMatch(/<(?:th|td)[^>]*class="[^"]*(?<!:)sticky left-0/);
       expect(sharedHourlyHtml).not.toContain("bg-inherit");
     }
 
@@ -9375,7 +9419,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain('data-astro-section="AstroWhyJudgmentSection"');
     expect(html).toContain("专业数据");
     expect(html).toContain("是否值得去");
-    expect(html).toContain("最佳拍摄窗口");
+    expect(html).toContain("天文参考窗口");
     expect(html).toContain('data-astro-public-factor-chip="light-pollution"');
     expect(html).toContain("主要阻碍");
     expect(html).toContain("备选窗口 / 目标");

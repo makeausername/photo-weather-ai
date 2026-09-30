@@ -1,5 +1,6 @@
 import {
   classifyTerrainMode,
+  dewPointFromTemperatureHumidity,
   simplifyWeatherSummaryZh,
   terrainModeUsesLowlandSemantics,
   terrainModeUsesMountainSemantics,
@@ -426,9 +427,35 @@ function adjustHourlyTemperature(
     feelsLike: finiteNumber(hour.feelsLike)
       ? round1(hour.feelsLike - adjustment.correctionCelsius)
       : hour.feelsLike,
-    dewPointSpread: adjustedDewPointSpread,
+    dewPoint: dewPointFromTemperatureHumidity(
+      adjustment.elevationAdjustedTemperature,
+      hour.humidity,
+    ),
+    dewPointSpread: round1(
+      adjustment.elevationAdjustedTemperature -
+        dewPointFromTemperatureHumidity(adjustment.elevationAdjustedTemperature, hour.humidity),
+    ),
     temperatureAdjustment: adjustment,
-    estimatedFields: unique([...(hour.estimatedFields ?? []), "temperatureElevationCorrection"]),
+    fieldMetadata: {
+      ...hour.fieldMetadata,
+      dewPoint: {
+        ...hour.fieldMetadata?.dewPoint,
+        providerCode: hour.providerCode,
+        rawValue: hour.dewPoint,
+        value: dewPointFromTemperatureHumidity(
+          adjustment.elevationAdjustedTemperature,
+          hour.humidity,
+        ),
+        estimated: true,
+        consensusStrategy: "derived_from_terrain_temperature_and_humidity",
+      },
+    },
+    estimatedFields: unique([
+      ...(hour.estimatedFields ?? []),
+      "temperatureElevationCorrection",
+      "dewPoint",
+      "dewPointSpread",
+    ]),
     sourceNotes: unique([
       ...(hour.sourceNotes ?? []),
       "已按机位海拔估算山顶温度，避免低海拔预报直接用于山顶体感。",
@@ -465,7 +492,34 @@ function adjustCurrentTemperature(
       ? round1(weather.feelsLike - adjustment.correctionCelsius)
       : weather.feelsLike,
     temperatureAdjustment: adjustment,
-    estimatedFields: unique([...weather.estimatedFields, "temperatureElevationCorrection"]),
+    dewPoint: dewPointFromTemperatureHumidity(
+      adjustment.elevationAdjustedTemperature,
+      weather.humidity,
+    ),
+    dewPointSpread: round1(
+      adjustment.elevationAdjustedTemperature -
+        dewPointFromTemperatureHumidity(adjustment.elevationAdjustedTemperature, weather.humidity),
+    ),
+    fieldMetadata: {
+      ...weather.fieldMetadata,
+      dewPoint: {
+        ...weather.fieldMetadata?.dewPoint,
+        providerCode: weather.providerCode,
+        rawValue: weather.dewPoint,
+        value: dewPointFromTemperatureHumidity(
+          adjustment.elevationAdjustedTemperature,
+          weather.humidity,
+        ),
+        estimated: true,
+        consensusStrategy: "derived_from_terrain_temperature_and_humidity",
+      },
+    },
+    estimatedFields: unique([
+      ...weather.estimatedFields,
+      "temperatureElevationCorrection",
+      "dewPoint",
+      "dewPointSpread",
+    ]),
   };
 }
 

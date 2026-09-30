@@ -12,7 +12,7 @@ const defaultRetryCount = 2;
 const defaultRetryDelayMs = [600, 1200, 2400] as const;
 const defaultSuccessCacheTtlMs = 5 * 60 * 1000;
 const defaultStaleCacheTtlMs = 30 * 60 * 1000;
-const forecastCacheVersion = 3 as const;
+const forecastCacheVersion = 4 as const;
 const sessionCachePrefix = `photo_weather_forecast_calculation:v${forecastCacheVersion}:`;
 const maxSessionCachePayloadChars = 2_000_000;
 
