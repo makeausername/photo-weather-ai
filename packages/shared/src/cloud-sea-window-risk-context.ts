@@ -354,7 +354,9 @@ function summarizeRainRows(rows: readonly CloudSeaWindowRiskHourlyRow[]): RainSt
       ? round1(amountValues.reduce((sum, value) => sum + Math.max(0, value), 0))
       : undefined;
   const maxHourlyAmountMm =
-    amountValues.length > 0 ? round1(Math.max(...amountValues.map((value) => Math.max(0, value)))) : undefined;
+    amountValues.length > 0
+      ? round1(Math.max(...amountValues.map((value) => Math.max(0, value))))
+      : undefined;
   const maxAmountMm =
     totalAmountMm !== undefined || maxHourlyAmountMm !== undefined
       ? Math.max(totalAmountMm ?? 0, maxHourlyAmountMm ?? 0)
@@ -516,7 +518,10 @@ function classifyWhiteoutReviewLevel(input: {
   if ((score ?? 0) >= 78 || (lowCloudHigh && visibilityPoor && (humidityHigh || dewPointClose))) {
     return "high";
   }
-  if ((score ?? 0) >= 58 || (lowCloudHigh && visibilityLimited && (humidityHigh || dewPointClose))) {
+  if (
+    (score ?? 0) >= 58 ||
+    (lowCloudHigh && visibilityLimited && (humidityHigh || dewPointClose))
+  ) {
     return "medium";
   }
   if (
@@ -595,11 +600,19 @@ function buildScoreCapReasons(input: {
     mediumUncertainties.push("opening");
   }
   if (input.duringWindowRainImpact.impactLevel === "medium") {
-    reasons.push("主窗口受可计量降水影响，最终分数上限 72。");
+    reasons.push(
+      (input.duringWindowRainImpact.totalAmountMm ?? 0) >= 0.1
+        ? "主窗口受可计量降水影响，最终分数上限 72。"
+        : "主窗口降水概率偏高，雨量尚未确认，最终分数上限 72。",
+    );
     mediumUncertainties.push("rain");
   }
   if (input.duringWindowRainImpact.impactLevel === "high") {
-    reasons.push("主窗口受较强或持续降水影响，最终分数上限 64。");
+    reasons.push(
+      (input.duringWindowRainImpact.totalAmountMm ?? 0) >= 0.1
+        ? "主窗口受较强或持续降水影响，最终分数上限 64。"
+        : "主窗口降水概率很高，雨量尚未确认，最终分数上限 64。",
+    );
     mediumUncertainties.push("rain");
   }
   if (input.whiteoutReviewLevel === "medium") {
@@ -659,10 +672,14 @@ function rainSummary(
     : "概率缺测";
   const levelText = rainImpactLevelLabel(impactLevel);
   if (timing === "pre_window") {
-    return `窗口前有${levelText}降水信号（${probabilityText}，${amountText}），可补充水汽，但需复核是否转弱和开口。`;
+    return (stats.maxAmountMm ?? 0) >= 0.1
+      ? `窗口前有${levelText}降水信号（${probabilityText}，${amountText}），可补充水汽，但需复核是否转弱和开口。`
+      : `窗口前降水待复核（${probabilityText}，${amountText}），未确认可计量雨量，暂不据此判断水汽补充。`;
   }
   if (timing === "during_window") {
-    return `主窗口内有${levelText}可计量降水信号（${probabilityText}，${amountText}），直接影响可拍稳定性。`;
+    return (stats.maxAmountMm ?? 0) >= 0.1
+      ? `主窗口内有${levelText}可计量降水信号（${probabilityText}，${amountText}），直接影响可拍稳定性。`
+      : `主窗口内有降水概率信号（${probabilityText}，${amountText}），尚未确认可计量雨量，需复核短临预报。`;
   }
   if (timing === "post_window") {
     return `降水主要在窗口后（${probabilityText}，${amountText}），对主窗口影响有限，需关注返程和器材防潮。`;
@@ -795,10 +812,7 @@ function whiteoutReason(input: {
   return "低云、湿度和能见度暂未形成强白墙信号。";
 }
 
-function openingFollowup(
-  confidence: CloudSeaConfidenceLevel,
-  cloudTopReviewNeed: boolean,
-): string {
+function openingFollowup(confidence: CloudSeaConfidenceLevel, cloudTopReviewNeed: boolean): string {
   if (confidence === "low") {
     return "不建议强推，等待短临确认开口和云顶高度。";
   }
@@ -827,7 +841,9 @@ function scoreCapForRain(
   return null;
 }
 
-function normalizedWindow(window: CloudSeaWindowRiskWindow | null | undefined): NormalizedWindow | null {
+function normalizedWindow(
+  window: CloudSeaWindowRiskWindow | null | undefined,
+): NormalizedWindow | null {
   if (!window?.startTime || !window.endTime) {
     return null;
   }
@@ -999,11 +1015,15 @@ function metersToKilometers(value: number | null | undefined): number | undefine
 }
 
 function ratioAtLeast(values: readonly number[], threshold: number): number {
-  return values.length === 0 ? 0 : values.filter((value) => value >= threshold).length / values.length;
+  return values.length === 0
+    ? 0
+    : values.filter((value) => value >= threshold).length / values.length;
 }
 
 function average(values: readonly number[]): number | undefined {
-  return values.length === 0 ? undefined : values.reduce((sum, value) => sum + value, 0) / values.length;
+  return values.length === 0
+    ? undefined
+    : values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 function finiteNumber(value: number | null | undefined): number | undefined {

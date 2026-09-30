@@ -30,6 +30,7 @@ export type WeatherDataSource = {
 export type WeatherCondition = "clear" | "partly_cloudy" | "cloudy" | "rain" | "snow" | "fog";
 
 export type CurrentWeather = {
+  readonly dataKind?: "observation" | "forecast";
   readonly provider: string;
   readonly observedAt: string;
   readonly coordinates: Coordinates;
@@ -41,6 +42,10 @@ export type CurrentWeather = {
   readonly cloudCoverPercent: number;
   readonly windSpeedMetersPerSecond: number;
   readonly visibilityKilometers: number | null;
+  readonly windDirectionDegrees?: number | null;
+  readonly pressureHpa?: number | null;
+  readonly precipitationAmountMm?: number | null;
+  readonly weatherCode?: string | null;
 };
 
 export type HourlyForecastPoint = {

@@ -223,9 +223,18 @@ export function buildCloudSeaDisplayData(
   });
   const horizonWindow = professionalHourlyBundle.horizonWindow;
   const displayRows = professionalHourlyBundle.rows;
-  const nearTermRows = displayRows.slice(0, 6);
-  const nearTermEnd =
-    nearTermRows.at(-1)?.time ?? fallbackNearTermEnd(horizonWindow.anchorStartLocal);
+  const nearTermStart = displayRows[0]?.time ?? horizonWindow.anchorStartLocal;
+  const nearTermEnd = new Date(
+    Math.min(
+      Date.parse(fallbackNearTermEnd(nearTermStart)),
+      Date.parse(horizonWindow.anchorEndLocal) + 3_600_000,
+    ),
+  ).toISOString();
+  const nearTermRows = displayRows.filter(
+    (row) =>
+      Date.parse(row.time) >= Date.parse(nearTermStart) &&
+      Date.parse(row.time) < Date.parse(nearTermEnd),
+  );
   const professionalHourlyData = professionalHourlyBundle.displayData;
   const cloudLayerCompleteness = professionalHourlyData.cloudLayerCompleteness;
   const cloudBasisConsistency = professionalHourlyData.cloudBasisConsistency;
@@ -253,7 +262,7 @@ export function buildCloudSeaDisplayData(
     weatherVariableConsistencyContext: input.ruleContext.weatherVariableConsistencyContext,
     cloudLayerCompleteness,
     cloudBasisConsistency,
-    anchorStart: horizonWindow.anchorStartLocal,
+    anchorStart: nearTermStart,
     anchorEnd: nearTermEnd,
     rows: nearTermRows,
   });
@@ -905,7 +914,7 @@ function fallbackNearTermEnd(anchorStartLocal: string): string {
   if (!Number.isFinite(startMs)) {
     return anchorStartLocal;
   }
-  return new Date(startMs + 5 * 60 * 60 * 1000).toISOString();
+  return new Date(startMs + 6 * 60 * 60 * 1000).toISOString();
 }
 
 function resolveCloudSeaDisplayHorizon(
@@ -915,6 +924,7 @@ function resolveCloudSeaDisplayHorizon(
   const timeBasis = result.professionalHourlyDataTimeBasis;
   return resolveRollingForecastHorizon({
     generatedAt: timeBasis?.generatedAtLocal ?? result.generatedAt ?? result.forecastStart,
+    forecastStart: timeBasis?.anchorStartLocal ?? result.forecastStart,
     timezone: timeBasis?.timezone ?? result.calendarBasis.timezone,
     horizon: result.horizon,
     requestedForecastHours:
@@ -1077,7 +1087,7 @@ function buildCurrentNearTermWeatherDisplay(input: {
     input.result.calendarBasis.timezone,
   );
   const currentBasisLabel = input.result.currentWeather?.observedAt
-    ? `当前实况：${formatDateTime(input.result.currentWeather.observedAt, input.result.calendarBasis.timezone)}`
+    ? `${input.result.currentWeather.dataKind === "forecast" ? "当前预报参考" : "当前实况"}：${formatDateTime(input.result.currentWeather.observedAt, input.result.calendarBasis.timezone)}`
     : "当前参考：使用预报窗口锚点";
   const nearTermBasisLabel = `近时段参考：${sectionWindowLabel}`;
   const tripBasisLabel = `装备参考：${sectionWindowLabel}`;
@@ -1115,9 +1125,11 @@ function buildCurrentNearTermWeatherDisplay(input: {
         title: "气温与体感",
         timeBasis: nearTermBasisLabel,
         badge: input.displayTemperatureContext.basisLabelZh,
-        value: `${input.displayTemperatureContext.userTemperatureTitleZh}：${formatTemperature(
+        value: `${input.displayTemperatureContext.userTemperatureTitleZh}：${formatTemperatureRange(
+          input.displayTemperatureContext.displayTemperatureRangeC,
           input.displayTemperatureContext.displayTemperatureC,
-        )} / ${bodyFeelLabel(input.displayTemperatureContext)} ${formatTemperature(
+        )} / ${bodyFeelLabel(input.displayTemperatureContext)} ${formatTemperatureRange(
+          input.displayTemperatureContext.bodyFeelRangeC,
           input.displayTemperatureContext.bodyFeelTemperatureC,
         )}`,
         detail: `${input.displayTemperatureContext.userTemperatureSummaryZh} ${input.displayTemperatureContext.clothingAdviceZh}`,
@@ -1164,6 +1176,15 @@ function buildCurrentNearTermWeatherDisplay(input: {
       },
     ],
   };
+}
+
+function formatTemperatureRange(
+  range: readonly [number, number] | null,
+  fallback: number | null,
+): string {
+  return range && range[0] !== range[1]
+    ? `${roundDisplay(range[0])}–${roundDisplay(range[1])}°C`
+    : formatTemperature(range?.[0] ?? fallback);
 }
 
 function buildDisplayDataMeta(input: {

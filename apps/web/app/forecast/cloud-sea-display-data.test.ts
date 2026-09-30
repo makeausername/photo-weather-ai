@@ -20,6 +20,68 @@ const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
 describe("Cloud Sea display data rolling horizon", () => {
+  it("rebuilds missing risk context for each window instead of borrowing another window's rain", () => {
+    const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
+    const morning = {
+      ...fixture.result.cloudSeaAnalysis.bestCloudSeaWindows[0]!,
+      windowRiskContext: undefined,
+    };
+    const evening = {
+      ...morning,
+      startTime: "2026-05-20T17:00:00+08:00",
+      endTime: "2026-05-20T19:00:00+08:00",
+      label: "日落云海",
+    };
+    const morningRows = fixture.result.professionalHourlyData!.map((row) => ({
+      ...row,
+      precipitationAmountMm: 1.2,
+      precipitationProbabilityPercent: 80,
+    }));
+    const eveningRows = morningRows.map((row, index) => ({
+      ...row,
+      time: `2026-05-20T${17 + index}:00:00+08:00`,
+      precipitationAmountMm: 0,
+    }));
+    const result = {
+      ...fixture.result,
+      professionalHourlyData: [...morningRows, ...eveningRows],
+      cloudSeaAnalysis: {
+        ...fixture.result.cloudSeaAnalysis,
+        bestCloudSeaWindow: morning,
+        bestCloudSeaWindows: [morning, evening],
+        watchableCloudSeaWindows: [],
+        notRecommendedCloudSeaWindows: [],
+        windowRiskContext: undefined,
+        scoreCalibration: {
+          ...fixture.result.cloudSeaAnalysis.scoreCalibration,
+          windowRiskContext: undefined,
+        },
+      },
+    };
+    const viewModel = buildCloudSeaForecastViewModel(result);
+    const eveningItem = viewModel.cloudSeaWindows.find(
+      (window) => window.startTime === evening.startTime,
+    )!;
+    expect(eveningItem.rainInterference).toContain("降水概率信号");
+    expect(eveningItem.rainInterference).not.toContain("主窗口内有较强或持续可计量降水");
+    const html = renderToStaticMarkup(
+      React.createElement(CloudSeaResultPage, { query: fixture.query, result, viewModel }),
+    );
+    expect(html).not.toContain("降水：降水：");
+    expect(html).not.toContain("。。");
+  });
+  it("uses an exact six-hour near-term interval including the final row's full hour", () => {
+    const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
+    const data = buildCloudSeaForecastViewModel(fixture.result).displayData.currentNearTermWeather;
+    expect(Date.parse(data.anchorEnd) - Date.parse(data.anchorStart)).toBe(6 * 3_600_000);
+    expect(
+      data.rows.every(
+        (row) =>
+          Date.parse(row.time) >= Date.parse(data.anchorStart) &&
+          Date.parse(row.time) < Date.parse(data.anchorEnd),
+      ),
+    ).toBe(true);
+  });
   it("keeps the target score card on the calibrated Cloud Sea scale", () => {
     const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
     const result: ForecastCalculationResult = {

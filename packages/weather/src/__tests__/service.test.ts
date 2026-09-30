@@ -25,6 +25,70 @@ const coordinates: Coordinates = {
 };
 
 describe("WeatherIntelligenceService", () => {
+  it("keeps observations coherent and does not fill them with another forecast hour", async () => {
+    const provider = new StaticProvider(
+      "qweather",
+      "和风天气",
+      "real",
+      hour({
+        temperature: 15,
+        humidity: 99,
+        dewPoint: 14,
+        dewPointSpread: 1,
+        cloudLow: 90,
+        windGust: 12,
+        windDirection: 10,
+        pressure: 990,
+        precipitationAmountMm: 1,
+        precipitationProbability: 80,
+      }),
+    );
+    const original = await provider.getCurrentWeather(requestInput());
+    vi.spyOn(provider, "getCurrentWeather").mockResolvedValue({
+      ...original,
+      dataKind: "observation",
+      observedAt: "2026-05-20T00:17:00+08:00",
+      temperatureCelsius: 23,
+      humidityPercent: 85,
+      visibilityKilometers: null,
+      windDirectionDegrees: 200,
+      pressureHpa: 1010,
+      precipitationAmountMm: 0,
+    });
+    const bundle = await new WeatherIntelligenceService({
+      providers: [provider],
+    }).getWeatherDataBundle(requestInput());
+    expect(bundle.currentWeather).toMatchObject({
+      dataKind: "observation",
+      temperature: 23,
+      humidity: 85,
+      dewPoint: 20.3,
+      dewPointSpread: 2.7,
+      cloudLow: null,
+      cloudMid: null,
+      cloudHigh: null,
+      windGust: null,
+      visibility: null,
+      windDirection: 200,
+      pressure: 1010,
+      precipitationAmountMm: 0,
+      precipitationProbability: null,
+      estimatedFields: expect.arrayContaining(["dewPoint", "dewPointSpread"]),
+    });
+    expect(bundle.currentWeather?.fieldMetadata?.dewPoint?.sourceValidTime).toBe(
+      "2026-05-20T00:17:00+08:00",
+    );
+  });
+  it("labels a forecast-only current reference as forecast evidence", async () => {
+    const provider = new StaticProvider("open_meteo", "Open-Meteo", "real", hour());
+    const current = await provider.getCurrentWeather(requestInput());
+    vi.spyOn(provider, "getCurrentWeather").mockResolvedValue({ ...current, dataKind: "forecast" });
+    const bundle = await new WeatherIntelligenceService({
+      providers: [provider],
+    }).getWeatherDataBundle(requestInput());
+    expect(bundle.currentWeather?.dataKind).toBe("forecast");
+    expect(bundle.currentWeather?.cloudLow).toBe(bundle.hourly[0]?.cloudLow);
+  });
   it("reports merged availability instead of retaining a primary source's missing layers", async () => {
     const service = new WeatherIntelligenceService({
       providers: [

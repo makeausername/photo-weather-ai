@@ -56,6 +56,7 @@ export class OpenMeteoProvider implements WeatherProvider {
     }
 
     return {
+      dataKind: "forecast",
       provider: source.providerCode,
       observedAt: firstHour.time,
       coordinates: input.coordinates,
@@ -301,7 +302,6 @@ export class OpenMeteoRealProvider implements WeatherProvider {
 
   async getCurrentWeather(input: WeatherRequestInput): Promise<CurrentWeather> {
     const body = await this.fetchForecast(input);
-    const current = asRecord(body.current ?? {});
     let firstHour: NormalizedHourlyWeather | undefined;
     try {
       firstHour = this.normalizer.normalizeHourlyWeather(body)[0];
@@ -311,13 +311,14 @@ export class OpenMeteoRealProvider implements WeatherProvider {
     if (!firstHour) {
       throw openMeteoParseError("Open-Meteo 返回格式异常");
     }
-    const weatherCode = toText(current.weather_code) ?? firstHour.weatherCode;
-    const temperature = toNumber(current.temperature_2m) ?? firstHour.temperature;
-    const humidity = toNumber(current.relative_humidity_2m) ?? firstHour.humidity;
-    const windSpeed = kmhToMetersPerSecond(current.wind_speed_10m) ?? firstHour.windSpeed;
+    const weatherCode = firstHour.weatherCode;
+    const temperature = firstHour.temperature;
+    const humidity = firstHour.humidity;
+    const windSpeed = firstHour.windSpeed;
 
     return {
       provider: realSource.providerCode,
+      dataKind: "forecast",
       observedAt: firstHour.time,
       coordinates: input.coordinates,
       condition: weatherConditionFromCode(weatherCode),

@@ -69,6 +69,7 @@ export class QWeatherRealProvider implements WeatherProvider {
     }
 
     return {
+      dataKind: "observation",
       provider: source.providerCode,
       observedAt: typeof now.obsTime === "string" ? now.obsTime : new Date().toISOString(),
       coordinates: input.coordinates,
@@ -80,6 +81,10 @@ export class QWeatherRealProvider implements WeatherProvider {
       cloudCoverPercent: cloudTotal!,
       windSpeedMetersPerSecond: windSpeed!,
       visibilityKilometers: visibility !== null && visibility >= 0 ? visibility : null,
+      windDirectionDegrees: toNumber(now.wind360),
+      pressureHpa: toNumber(now.pressure),
+      precipitationAmountMm: toNumber(now.precip),
+      weatherCode,
     };
   }
 

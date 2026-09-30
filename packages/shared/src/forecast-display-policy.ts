@@ -1,4 +1,35 @@
-import type { ForecastRiskFlag, ForecastTimeWindow } from "./types.js";
+import type {
+  ForecastDecisionMode,
+  ForecastRiskFlag,
+  ForecastTarget,
+  ForecastTimeWindow,
+} from "./types.js";
+
+export function applyForecastDecisionToWindows(
+  windows: readonly ForecastTimeWindow[],
+  decision: {
+    readonly target: ForecastTarget;
+    readonly decisionMode?: ForecastDecisionMode;
+    readonly finalDecisionSummaryZh?: string;
+  },
+): readonly ForecastTimeWindow[] {
+  if (
+    decision.target !== "general" ||
+    !decision.decisionMode ||
+    decision.decisionMode === "strong_go"
+  ) {
+    return windows;
+  }
+  return windows.map((window) => ({
+    ...window,
+    executableForDedicatedTrip: false,
+    windowLevel: window.windowLevel === "blocked" ? "blocked" : "watchable",
+    recommendationLevel:
+      window.recommendationLevel === "recommended" ? "cautious" : window.recommendationLevel,
+    copyReasonZh: decision.finalDecisionSummaryZh ?? window.copyReasonZh,
+    arrivalAdvice: undefined,
+  }));
+}
 
 export function isExecutableForecastWindow(window: ForecastTimeWindow | undefined): boolean {
   if (

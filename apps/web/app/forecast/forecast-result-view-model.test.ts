@@ -61,6 +61,95 @@ const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
 describe("target-aware forecast history scores", () => {
+  it("selects the linked observing date instead of another preferred night", () => {
+    const result = resultWithAstroHourlyRange("48h", 48);
+    const viewModel = buildAstroForecastViewModel(result);
+    const requested = viewModel.nightlyCards[1]!;
+    expect(requested).toBeDefined();
+    const html = renderToStaticMarkup(
+      React.createElement(AstroResultPage, {
+        query: queryForTarget("astro"),
+        result,
+        viewModel,
+        initialNightDate: requested.localEveningDate,
+      }),
+    );
+    const selectedButton = html.match(/<button[^>]*aria-pressed="true"[^>]*>/)?.[0];
+    expect(selectedButton).toContain(`data-astro-night-selector-item="${requested.nightKey}"`);
+  });
+  it("does not offer a daily astro link to a night outside the forecast range", () => {
+    const base = resultForTarget("general");
+    const result = { ...base, forecastEnd: "2026-05-21T16:00:00+08:00" };
+    const links = buildGeneralDailySubjectLinks({
+      query: queryForTarget("general"),
+      result,
+      date: "2026-05-21",
+    });
+    expect(links.some((link) => link.target === "astro")).toBe(false);
+  });
+  it("does not claim full night coverage when valid weather rows are absent", () => {
+    const base = resultForTarget("astro");
+    const result = { ...base, professionalHourlyData: [] };
+    const night = buildAstroForecastViewModel(result).nightlyCards.find(
+      (n) => n.localEveningDate === base.astroAnalysis.dailyAstro[0]!.date,
+    )!;
+    expect(night.horizonCoverageState).toBe("weather_missing");
+    expect(night.horizonCoverageLabel).toBe("缺少窗口内天气数据");
+    expect(night.weather.validHourCount).toBe(0);
+    expect(night.recommendationLevel).not.toBe("recommended");
+  });
+  it("does not borrow a previous evening's cross-midnight window for the next date", () => {
+    const query = queryForTarget("general");
+    const base = resultForTarget("general");
+    const previous = {
+      ...base.bestWindows.find((w) => w.target === "astro")!,
+      date: "2026-05-20",
+      startTime: "2026-05-20T19:13:00+08:00",
+      endTime: "2026-05-21T04:40:00+08:00",
+      score: 99,
+    };
+    const next = {
+      ...previous,
+      date: "2026-05-21",
+      startTime: "2026-05-21T19:12:00+08:00",
+      endTime: "2026-05-22T04:41:00+08:00",
+      score: 60,
+    };
+    const result = { ...base, bestWindows: [previous, next] };
+    const link = buildGeneralDailySubjectLinks({ query, result, date: "2026-05-21" }).find(
+      (l) => l.target === "astro",
+    )!;
+    const url = new URL(link.href, "http://localhost");
+    expect(url.searchParams.get("windowStart")).toBe(next.startTime);
+    expect(url.searchParams.get("windowEnd")).toBe(next.endTime);
+  });
+  it("does not render dedicated-trip actions from a candidate while waiting for updates", () => {
+    const base = resultForTarget("general");
+    const result: ForecastCalculationResult = {
+      ...base,
+      decisionMode: "wait_for_update",
+      finalRecommendationLabel: "临近复核",
+      finalDecisionSummaryZh: "等待临近复核",
+      bestWindows: base.bestWindows.map((w) => ({
+        ...w,
+        score: 90,
+        practicalScore: 90,
+        windowLevel: "best",
+        recommendationLevel: "recommended",
+        executableForDedicatedTrip: true,
+      })),
+    };
+    const vm = buildForecastResultViewModel(result, "general");
+    expect(vm.bestWindows.every((w) => w.executableForDedicatedTrip === false)).toBe(true);
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel: vm,
+      }),
+    );
+    expect(html).not.toContain("优先安排");
+  });
   it("uses the selected window rows for rainfall and includes both overlapping hours", () => {
     const base = resultForTarget("astro");
     const day = base.astroAnalysis.dailyAstro[0]!;
@@ -3497,7 +3586,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("xl:grid-cols-7");
     expect(html).toContain("repeat(auto-fit,minmax(220px,1fr))");
     expect(html).toContain("repeat(auto-fit,minmax(250px,1fr))");
-    expect(html).toContain("repeat(auto-fit,minmax(300px,1fr))");
+    expect(html).toContain("repeat(auto-fit,minmax(min(100%,300px),1fr))");
     expect(html).toContain("当前与近时段天气（2026年5月20日 星期三 · 00:00–06:00）");
     expect(html).toContain("当前实况：2026年5月20日 00:00");
     expect(html).toContain("实况卡片使用观测时点数据");
@@ -5480,7 +5569,7 @@ describe("forecast result target-aware view model", () => {
       expect(html).toContain("CloudSeaNearTermWeather");
       expect(html).toContain('data-forecast-current-weather-cards="true"');
       expect(html).toContain('data-result-current-weather-section="true"');
-      expect(html).toContain("当前与近时段天气（2026年5月20日 星期三 · 00:00–05:00）");
+      expect(html).toContain("当前与近时段天气（2026年5月20日 星期三 · 00:00–06:00）");
       expect(html).toContain("气温与体感");
       expect(html).toContain("云层与能见度");
       expect(html).toContain("风与降水");
@@ -9012,8 +9101,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain('data-astro-night-key="astro-night-2026-06-15"');
     expect(html).not.toContain("2026年6月15日 星期一");
     expect(viewModel.nightlyCards[0]?.judgmentSummary).toMatchObject({
-      label: "推荐依据",
-      semanticKey: "recommendation_basis",
+      label: "关键判断",
+      semanticKey: "key_judgment",
     });
     expect(viewModel.nightlyCards[0]?.judgmentSummary.value).not.toContain("21:24");
     expect(viewModel.nightlyCards[0]?.judgmentSummary.value).not.toContain("03:34");
@@ -9022,8 +9111,8 @@ describe("forecast result target-aware view model", () => {
       'data-astro-night-card="true"',
       'data-astro-section="AstroProfessionalData"',
     );
-    expect(selectedNightCard).toContain('data-astro-night-judgment="recommendation_basis"');
-    expect(selectedNightCard).toContain("推荐依据");
+    expect(selectedNightCard).toContain('data-astro-night-judgment="key_judgment"');
+    expect(selectedNightCard).toContain("关键判断");
     expect(selectedNightCard).not.toContain("主要阻碍");
     expect(selectedNightCard).not.toContain("主要阻碍：</span><span");
     expect(selectedNightCard).not.toMatch(/主要阻碍[：:][^<]*推荐银河窗口/);
@@ -9551,8 +9640,8 @@ describe("forecast result target-aware view model", () => {
       "2026-05-25",
       "2026-05-26",
     ]);
-    expect(viewModel.nightlyCards[0]?.horizonCoverageState).toBe("covered");
-    expect(viewModel.nightlyCards.at(-1)?.horizonCoverageState).toBe("partial");
+    expect(viewModel.nightlyCards[0]?.horizonCoverageState).toBe("weather_missing");
+    expect(viewModel.nightlyCards.at(-1)?.horizonCoverageState).toBe("weather_missing");
     expect(countOccurrences(html, 'data-astro-night-selector-item="')).toBe(7);
     expect(countOccurrences(html, 'data-astro-night-card="true"')).toBe(1);
   });

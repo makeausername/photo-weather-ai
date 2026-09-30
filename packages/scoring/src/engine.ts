@@ -1,4 +1,5 @@
 import {
+  applyForecastDecisionToWindows,
   buildCloudLayerCompletenessContext,
   buildCloudSeaCloudBasisConsistencyContext,
   buildTerrainTemperatureBasisContext,
@@ -209,6 +210,10 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     riskFlags,
     bestWindows,
   });
+  const finalBestWindows = applyForecastDecisionToWindows(bestWindows, {
+    target: calculationInput.target,
+    ...decisionConvergence,
+  });
   const keyReasons = uniqueStrings([
     ...decisionConvergence.positiveReasonsZh,
     ...decisionConvergence.riskReasonsZh,
@@ -219,17 +224,21 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     decisionConvergence.finalDecisionSummaryZh,
     ...decisionConvergence.riskReasonsZh.slice(0, 2),
     ...decisionConvergence.uncertaintyReasonsZh.slice(0, 1),
-    ...buildPhotographyAdvice(calculationInput, scores, riskFlags, bestWindows),
+    ...buildPhotographyAdvice(calculationInput, scores, riskFlags, finalBestWindows),
   ]).slice(0, 8);
   const targetDailyBreakdown = buildTargetDailyBreakdown(
     calculationInput,
     scores,
-    bestWindows,
+    finalBestWindows,
     cloudSeaAnalysis,
     glowAnalysis,
     astroAnalysis,
   );
-  const dailySummaries = buildDailySummaries(calculationInput, targetDailyBreakdown, bestWindows);
+  const dailySummaries = buildDailySummaries(
+    calculationInput,
+    targetDailyBreakdown,
+    finalBestWindows,
+  );
 
   return {
     place: calculationInput.place,
@@ -261,7 +270,7 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
       decisionConvergence.finalScore,
       decisionConvergence.finalRecommendationLabel,
       scores,
-      bestWindows,
+      finalBestWindows,
     ),
     scores,
     cloudSeaAnalysis,
@@ -272,7 +281,7 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     astroSummaries: calculationInput.astroSummaries,
     dailySummaries,
     targetDailyBreakdown,
-    bestWindows,
+    bestWindows: finalBestWindows,
     riskFlags,
     keyReasons,
     photographyAdvice,
@@ -327,6 +336,7 @@ function applyForecastWindow(input: ForecastCalculationInput): ForecastCalculati
 
   const range = resolveForecastWindowRange({
     generatedAt: input.generatedAt || input.calendarBasis.forecastStart,
+    forecastStart: input.calendarBasis.forecastStart,
     timezone: input.calendarBasis.timezone,
     horizon: input.horizon,
     requestedForecastHours: input.calendarBasis.horizonHours,
@@ -472,6 +482,7 @@ function buildProfessionalHourlyDataTimeBasis(
 ): ProfessionalHourlyDataTimeBasis | undefined {
   const forecastWindowRange = resolveForecastWindowRange({
     generatedAt: input.generatedAt || input.calendarBasis.forecastStart,
+    forecastStart: input.calendarBasis.forecastStart,
     timezone: input.calendarBasis.timezone,
     horizon: input.horizon,
     requestedForecastHours: input.calendarBasis.horizonHours,
@@ -866,7 +877,7 @@ function professionalTemperatureRowNote(
   temperature: ReturnType<typeof professionalTemperatureProfile>,
 ): string | undefined {
   if (temperature.temperatureBasis === "raw_grid") {
-    return "当前仅有原始格点温度，高山机位体感需谨慎参考。";
+    return "当前展示原始格点温度，机位体感请结合地形与风湿条件复核。";
   }
   if (temperature.temperatureBasis === "provider_point") {
     return "当前仅有来源点位温度，未确认机位海拔修正。";
@@ -5592,11 +5603,15 @@ function buildSummary(
           ? `条件适合安排拍摄，但不是高确定性爆发窗口；优先关注${subject ?? "最佳可用窗口"}。`
           : recommendationLabel === "谨慎参考"
             ? "机会存在但不确定性较高，建议等待临近预报和现场云层复核。"
-            : recommendationLabel === "已在附近可观察"
-              ? `若已在附近，可观察${subject ?? "云雾变化和局部光线"}，不建议追加远途成本。`
-              : recommendationLabel === "仅作备选"
-                ? "暂无明确高确定性窗口，可作为机动观察日。"
-                : "暂无可靠可执行拍摄窗口，不建议专程前往。";
+            : recommendationLabel === "临近复核"
+              ? "有候选窗口，但数据仍需临近复核，暂不按专程到达计划安排。"
+              : recommendationLabel === "数据不足"
+                ? "关键数据不足，暂不提供可执行出行建议。"
+                : recommendationLabel === "已在附近可观察"
+                  ? `若已在附近，可观察${subject ?? "云雾变化和局部光线"}，不建议追加远途成本。`
+                  : recommendationLabel === "仅作备选"
+                    ? "暂无明确高确定性窗口，可作为机动观察日。"
+                    : "暂无可靠可执行拍摄窗口，不建议专程前往。";
     return `${input.place.name}${targetPhrase}${scoreLabel}为 ${overallScore} 分，${recommendationLabel}。${decisionText}`;
   }
 

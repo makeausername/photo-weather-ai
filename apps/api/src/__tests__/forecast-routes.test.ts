@@ -1523,10 +1523,19 @@ describe("forecast query validation route", () => {
       latencyMs: expect.any(Number),
     });
     expect(body.currentWeather).toMatchObject({
-      cloudLow: expect.any(Number),
-      cloudMid: expect.any(Number),
-      cloudHigh: expect.any(Number),
+      dataKind: "observation",
+      observedAt: "2026-05-20T00:00:00+08:00",
+      cloudLow: null,
+      cloudMid: null,
+      cloudHigh: null,
+      windGust: null,
+      precipitationProbabilityPercent: null,
       visibility: expect.any(Number),
+    });
+    expect(body.professionalHourlyData[0]).toMatchObject({
+      cloudLowPercent: expect.any(Number),
+      cloudMidPercent: expect.any(Number),
+      cloudHighPercent: expect.any(Number),
     });
     expect(body.clothingGuide.titleZh).toEqual(expect.any(String));
     expect(JSON.stringify(body)).not.toContain("qweather-secret");

@@ -108,8 +108,18 @@ function sourceDisagreement(): ForecastMultiSourceAgreementContext {
 describe("buildCloudSeaScoreCalibrationContext", () => {
   it("caps high-cloud-only windows instead of treating high cloud as cloud sea support", () => {
     const result = calibration([
-      row({ cloudTotalPercent: 94, cloudHighPercent: 92, cloudMidPercent: 18, cloudLowPercent: 12 }),
-      row({ cloudTotalPercent: 91, cloudHighPercent: 88, cloudMidPercent: 16, cloudLowPercent: 15 }),
+      row({
+        cloudTotalPercent: 94,
+        cloudHighPercent: 92,
+        cloudMidPercent: 18,
+        cloudLowPercent: 12,
+      }),
+      row({
+        cloudTotalPercent: 91,
+        cloudHighPercent: 88,
+        cloudMidPercent: 16,
+        cloudLowPercent: 15,
+      }),
     ]);
 
     expect(result.calibratedFormationScore).toBeLessThanOrEqual(52);
@@ -121,8 +131,18 @@ describe("buildCloudSeaScoreCalibrationContext", () => {
 
   it("caps mid-cloud-only windows as texture/reference instead of boosting formation", () => {
     const result = calibration([
-      row({ cloudTotalPercent: 90, cloudHighPercent: 24, cloudMidPercent: 88, cloudLowPercent: 18 }),
-      row({ cloudTotalPercent: 93, cloudHighPercent: 20, cloudMidPercent: 90, cloudLowPercent: 14 }),
+      row({
+        cloudTotalPercent: 90,
+        cloudHighPercent: 24,
+        cloudMidPercent: 88,
+        cloudLowPercent: 18,
+      }),
+      row({
+        cloudTotalPercent: 93,
+        cloudHighPercent: 20,
+        cloudMidPercent: 90,
+        cloudLowPercent: 14,
+      }),
     ]);
 
     expect(result.calibratedFormationScore).toBeLessThanOrEqual(56);
@@ -188,10 +208,7 @@ describe("buildCloudSeaScoreCalibrationContext", () => {
       row({ time: "2026-06-05T06:00:00+08:00" }),
     ]);
     const second = calibration(
-      [
-        row({ time: "2031-01-15T05:00:00+08:00" }),
-        row({ time: "2031-01-15T06:00:00+08:00" }),
-      ],
+      [row({ time: "2031-01-15T05:00:00+08:00" }), row({ time: "2031-01-15T06:00:00+08:00" })],
       {
         bestWindow: {
           startTime: "2031-01-15T05:00:00+08:00",
@@ -231,6 +248,22 @@ describe("buildCloudSeaScoreCalibrationContext", () => {
     expect(result.capReasons.join("")).not.toContain("主窗口受可计量降水");
   });
 
+  it("does not describe probability-only score caps as measured rainfall", () => {
+    const result = calibration([
+      row({
+        time: "2026-06-05T05:00:00+08:00",
+        precipitationAmountMm: 0,
+        precipitationProbabilityPercent: 85,
+      }),
+      row({
+        time: "2026-06-05T06:00:00+08:00",
+        precipitationAmountMm: 0,
+        precipitationProbabilityPercent: 80,
+      }),
+    ]);
+    expect(result.capReasons.join(" ")).not.toContain("可计量降水");
+    expect(result.capReasons.join(" ")).toContain("概率");
+  });
   it("caps shootability when meaningful rain overlaps the recommended window", () => {
     const result = calibration([
       row({

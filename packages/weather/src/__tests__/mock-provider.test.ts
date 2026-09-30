@@ -317,6 +317,7 @@ describe("WeatherDataService", () => {
   it("builds a fixture bundle with honest source status", async () => {
     const provider = new QWeatherProvider();
     const service = new WeatherDataService(provider);
+    const generatedBefore = Date.now();
     const bundle = await service.getWeatherDataBundle({
       coordinates,
       hours: 2,
@@ -332,9 +333,12 @@ describe("WeatherDataService", () => {
       providerLabelZh: "和风天气样例数据",
       dataMode: "fixture",
       noticeZh: "天气数据：和风天气样例数据",
-      generatedAt: "2026-05-22T00:00:00+08:00",
     });
     expect(bundle.hourly[0]?.missingFields).toEqual(["cloudLow", "cloudMid", "cloudHigh"]);
+    expect(Date.parse(bundle.generatedAt)).toBeGreaterThanOrEqual(
+      Math.floor(generatedBefore / 1000) * 1000,
+    );
+    expect(Date.parse(bundle.generatedAt)).toBeLessThanOrEqual(Date.now());
   });
 });
 

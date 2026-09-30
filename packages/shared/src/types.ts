@@ -407,6 +407,7 @@ export type ProfessionalHourlyDataTimeBasis = {
 };
 
 export type NormalizedCurrentWeather = {
+  readonly dataKind?: "observation" | "forecast";
   readonly providerCode: string;
   readonly providerLabelZh: string;
   readonly dataMode: WeatherDataMode;

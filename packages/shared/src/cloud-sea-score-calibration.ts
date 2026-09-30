@@ -163,19 +163,44 @@ export function buildCloudSeaScoreCalibrationContext(
   }
 
   if (precipitationCapsWindow(input, "light")) {
-    applyCap(85, "主窗口有短时降水扰动，降低可拍稳定性。");
+    applyCap(
+      85,
+      windowHasMeasurableRain(input)
+        ? "主窗口有短时降水扰动，降低可拍稳定性。"
+        : "主窗口有降水概率信号，雨量尚未确认，降低可拍稳定性。",
+    );
   }
   if (precipitationCapsWindow(input, "meaningful")) {
-    applyCap(75, "主窗口存在可计量降水，最终推荐需降级。");
+    applyCap(
+      75,
+      windowHasMeasurableRain(input)
+        ? "主窗口存在可计量降水，最终推荐需降级。"
+        : "主窗口降水概率偏高，雨量尚未确认，最终推荐需降级。",
+    );
   }
   if (precipitationCapsWindow(input, "strong")) {
-    applyCap(64, "主窗口存在较强或持续降水，不支持强推荐。");
+    applyCap(
+      64,
+      windowHasMeasurableRain(input)
+        ? "主窗口存在较强或持续降水，不支持强推荐。"
+        : "主窗口降水概率很高，雨量尚未确认，不支持强推荐。",
+    );
   }
   if (input.windowRiskContext?.duringWindowRainImpact.impactLevel === "medium") {
-    applyCap(72, "主窗口受可计量降水影响，最终分数上限 72。");
+    applyCap(
+      72,
+      windowHasMeasurableRain(input)
+        ? "主窗口受可计量降水影响，最终分数上限 72。"
+        : "主窗口降水概率偏高，雨量尚未确认，最终分数上限 72。",
+    );
   }
   if (input.windowRiskContext?.duringWindowRainImpact.impactLevel === "high") {
-    applyCap(64, "主窗口受较强或持续降水影响，最终分数上限 64。");
+    applyCap(
+      64,
+      windowHasMeasurableRain(input)
+        ? "主窗口受较强或持续降水影响，最终分数上限 64。"
+        : "主窗口降水概率很高，雨量尚未确认，最终分数上限 64。",
+    );
   }
 
   if (input.whiteoutRiskScore >= 78) {
@@ -233,12 +258,17 @@ export function buildCloudSeaScoreCalibrationContext(
   if (majorUncertaintyCount >= 3) {
     applyCap(72, "多个主要不确定因素同时存在，最终分数按谨慎上限处理。");
   }
-  if (input.windowRiskContext?.scoreCapReasons.some((reason) => reason.includes("多个中等不确定性"))) {
+  if (
+    input.windowRiskContext?.scoreCapReasons.some((reason) => reason.includes("多个中等不确定性"))
+  ) {
     applyCap(78, "多个中等不确定性叠加，最终分数上限 78。");
   }
 
   if (calibratedFormationScore < 55) {
-    applyCap(Math.min(62, calibratedFormationScore + 8), "云海形成证据不足，不能由光线或高/中云抬高最终分数。");
+    applyCap(
+      Math.min(62, calibratedFormationScore + 8),
+      "云海形成证据不足，不能由光线或高/中云抬高最终分数。",
+    );
   }
 
   const baseFinalScore = Math.min(
@@ -333,7 +363,9 @@ function rowsForWindow(
   });
 }
 
-function summarizeLayerRows(rows: readonly CloudSeaScoreCalibrationHourlyRow[]): CloudLayerWindowStats {
+function summarizeLayerRows(
+  rows: readonly CloudSeaScoreCalibrationHourlyRow[],
+): CloudLayerWindowStats {
   const total = rows.map(totalCloudPercent).filter(isFiniteNumber);
   const high = rows.map(highCloudPercent).filter(isFiniteNumber);
   const mid = rows.map(midCloudPercent).filter(isFiniteNumber);
@@ -375,6 +407,16 @@ function hasStrongOpeningEvidence(
     input.multiSourceAgreementContext?.shouldLowerConfidence !== true &&
     input.weatherVariableConsistencyContext?.shouldLowerConfidence !== true
   );
+}
+
+function windowHasMeasurableRain(input: CloudSeaScoreCalibrationInput): boolean {
+  const during = input.windowRiskContext?.duringWindowRainImpact;
+  const amount = during
+    ? Math.max(during.totalAmountMm ?? 0, during.maxHourlyAmountMm ?? 0)
+    : input.precipitationSignalContext?.focusedWindowMaxAmountMm ??
+      input.precipitationSignalContext?.maxAmountMm ??
+      0;
+  return amount >= 0.1;
 }
 
 function precipitationCapsWindow(
@@ -429,7 +471,10 @@ function majorUncertaintyFlags(
   if (input.windowRiskContext?.windowOpeningConfidence === "low") {
     flags.push("opening");
   }
-  if (input.windowRiskContext?.whiteoutReviewLevel === "medium" || input.windowRiskContext?.whiteoutReviewLevel === "high") {
+  if (
+    input.windowRiskContext?.whiteoutReviewLevel === "medium" ||
+    input.windowRiskContext?.whiteoutReviewLevel === "high"
+  ) {
     flags.push("window_whiteout");
   }
   if (isPoorVisibility(layerStats)) {
@@ -524,7 +569,11 @@ function finalRecommendationLabelForScore(input: {
   readonly confidenceLevel: CloudSeaConfidenceLevel;
   readonly shouldBlockStrongRecommendation: boolean;
 }): string {
-  if (input.score >= 86 && input.confidenceLevel === "high" && !input.shouldBlockStrongRecommendation) {
+  if (
+    input.score >= 86 &&
+    input.confidenceLevel === "high" &&
+    !input.shouldBlockStrongRecommendation
+  ) {
     return "强推荐专程";
   }
   if (input.score >= 70) {
@@ -569,8 +618,7 @@ function buildRecommendationExplanation(input: {
   readonly shouldBlockStrongRecommendation: boolean;
 }): string {
   if (input.formationScore >= 70 && input.shouldBlockStrongRecommendation) {
-    const reason =
-      input.capReasons[0] ?? "可拍窗口和开口稳定性不足";
+    const reason = input.capReasons[0] ?? "可拍窗口和开口稳定性不足";
     return `云海形成条件较好，但${stripTerminalPunctuation(reason)}，因此谨慎参考。`;
   }
   if (input.finalCloudSeaScore >= 86) {
@@ -630,11 +678,15 @@ function metersToKilometers(value: number | null | undefined): number | undefine
 }
 
 function ratioAtLeast(values: readonly number[], threshold: number): number {
-  return values.length === 0 ? 0 : values.filter((value) => value >= threshold).length / values.length;
+  return values.length === 0
+    ? 0
+    : values.filter((value) => value >= threshold).length / values.length;
 }
 
 function ratioBelow(values: readonly number[], threshold: number): number {
-  return values.length === 0 ? 0 : values.filter((value) => value < threshold).length / values.length;
+  return values.length === 0
+    ? 0
+    : values.filter((value) => value < threshold).length / values.length;
 }
 
 function average(values: readonly number[]): number | undefined {

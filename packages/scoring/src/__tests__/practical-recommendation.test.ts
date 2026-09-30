@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { ForecastCalculationInput, ForecastQueryInput, NormalizedHourlyWeather } from "@photo-weather/shared";
+import type {
+  ForecastCalculationInput,
+  ForecastQueryInput,
+  NormalizedHourlyWeather,
+} from "@photo-weather/shared";
 import {
   buildMockForecastInput,
   calculateForecast,
@@ -58,7 +62,9 @@ function localHour(time: string): number {
       timeZone: "Asia/Shanghai",
       hour: "2-digit",
       hour12: false,
-    }).formatToParts(date).find((part) => part.type === "hour")?.value ?? "0",
+    })
+      .formatToParts(date)
+      .find((part) => part.type === "hour")?.value ?? "0",
   );
   return value === 24 ? 0 : value;
 }
@@ -335,7 +341,9 @@ describe("general practical trip recommendation", () => {
 
     expect(bestWindow?.label).toContain("清晨云海窗口");
     expect(bestWindow?.practicalKind).toBe("shooting_window");
-    expect(bestWindow?.arrivalAdvice?.setupBufferMinutes).toBe(90);
+    expect(result.decisionMode).toBe("wait_for_update");
+    expect(bestWindow?.arrivalAdvice).toBeUndefined();
+    expect(bestWindow?.executableForDedicatedTrip).toBe(false);
     expect(formationSignal).toBeDefined();
     expect(formationSignal?.practicalKind).toBe("formation_signal");
     expect(formationSignal?.conditionScore).toBeGreaterThan(formationSignal?.practicalScore ?? 0);
@@ -344,7 +352,7 @@ describe("general practical trip recommendation", () => {
     expect(formationSignal?.practicalNoteZh).toContain("不建议为无光窗口单独熬夜");
   });
 
-  it("keeps astro night windows valid while adding a rest and lodging note", () => {
+  it("keeps astro night geometry without promoting low-confidence travel actions", () => {
     const input = withHourlyWeather(
       buildMockForecastInput({ ...query, name: "武功山金顶" }, { now: fixedNow }),
       (hour) => {
@@ -370,20 +378,20 @@ describe("general practical trip recommendation", () => {
     expect(astroWindow).toBeDefined();
     expect(astroWindow?.practicalKind).toBe("shooting_window");
     expect(astroWindow?.practicalScore).toBeGreaterThanOrEqual(60);
-    expect(astroWindow?.arrivalAdvice?.warningZh).toContain("夜间拍摄需要提前休息");
+    expect(result.decisionMode).toBe("wait_for_update");
+    expect(astroWindow?.arrivalAdvice).toBeUndefined();
+    expect(astroWindow?.executableForDedicatedTrip).toBe(false);
   });
 
-  it("adds mountain-size arrival buffers and backup subjects to the general plan", () => {
+  it("retains backup subjects without an arrival schedule for a low-confidence general plan", () => {
     const result = calculateForecast(buildMockForecastInput(query, { now: fixedNow }));
     const bestWindow = result.bestWindows.find(
       (window) => window.target === "cloud_sea" && window.practicalKind !== "formation_signal",
     );
 
-    expect(bestWindow?.arrivalAdvice).toBeDefined();
-    expect(bestWindow?.arrivalAdvice?.setupBufferMinutes).toBeGreaterThanOrEqual(75);
-    expect(
-      Date.parse(bestWindow!.startTime) - Date.parse(bestWindow!.arrivalAdvice!.recommendedArrivalTime),
-    ).toBe(bestWindow!.arrivalAdvice!.setupBufferMinutes * 60 * 1000);
+    expect(result.decisionMode).toBe("wait_for_update");
+    expect(bestWindow?.arrivalAdvice).toBeUndefined();
+    expect(bestWindow?.executableForDedicatedTrip).toBe(false);
     expect(bestWindow?.backupSubjectLabel).toBeTruthy();
     expect(bestWindow?.subjectPriorityLabel).toContain("云海");
   });
@@ -482,7 +490,7 @@ describe("general practical trip recommendation", () => {
     expect(firstDaily.watchableWindows?.[0]?.suitableForDedicatedTrip).toBe(false);
   });
 
-  it("uses strong dedicated and arrangement labels instead of the legacy dedicated-trip copy", () => {
+  it("does not promote a high-scoring mock candidate to a daily dedicated trip", () => {
     const strongInput = withHourlyWeather(
       buildMockForecastInput(query, { now: fixedNow }),
       (hour) => {
@@ -531,13 +539,14 @@ describe("general practical trip recommendation", () => {
     const firstDaily = result.dailySummaries[0]!;
 
     expect(result.recommendationLabel).toBe("强推荐专程");
-    expect(firstDaily.dedicatedTripRecommendation).toBe("强推荐专程");
+    expect(result.finalRecommendationLabel).toBe("临近复核");
+    expect(firstDaily.dedicatedTripRecommendation).toBe("仅作备选");
     expect(result.recommendationLabel).not.toBe("推荐专程前往");
-    expect(firstDaily.bestShootableWindow?.subjectPriorityLabel).toBe("清晨云海");
-    expect(firstDaily.bestShootableWindow?.executableForDedicatedTrip).toBe(true);
+    expect(firstDaily.bestShootableWindow).toBeUndefined();
+    expect(result.bestWindows.every((window) => !window.executableForDedicatedTrip)).toBe(true);
   });
 
-  it("keeps usable but moderate windows at arrangement or cautious levels", () => {
+  it("keeps moderate low-confidence windows as nearby references", () => {
     const input = withHourlyWeather(buildMockForecastInput(query, { now: fixedNow }), (hour) => {
       const hourValue = localHour(hour.time);
       if (hourValue >= 4 && hourValue <= 7) {
@@ -577,34 +586,38 @@ describe("general practical trip recommendation", () => {
     });
     const firstDaily = result.dailySummaries[0]!;
 
-    expect(["推荐安排", "谨慎参考"]).toContain(firstDaily.dedicatedTripRecommendation);
+    expect(firstDaily.dedicatedTripRecommendation).toBe("仅作备选");
+    expect(firstDaily.nearbyObservationScore).toBeGreaterThan(0);
     expect(firstDaily.dedicatedTripRecommendation).not.toBe("推荐专程前往");
   });
 
   it("penalizes rain overlapping a shootable window without over-penalizing later rain", () => {
-    const baseInput = withHourlyWeather(buildMockForecastInput(query, { now: fixedNow }), (hour) => {
-      const hourValue = localHour(hour.time);
-      if (hourValue >= 4 && hourValue <= 7) {
+    const baseInput = withHourlyWeather(
+      buildMockForecastInput(query, { now: fixedNow }),
+      (hour) => {
+        const hourValue = localHour(hour.time);
+        if (hourValue >= 4 && hourValue <= 7) {
+          return {
+            ...hour,
+            humidity: 84,
+            cloudTotal: 54,
+            cloudLow: 38,
+            windSpeed: 2.2,
+            visibility: 20,
+            dewPointSpread: 2.8,
+            precipitationProbability: 0,
+            precipitation: 0,
+            precipitationAmountMm: 0,
+          };
+        }
         return {
           ...hour,
-          humidity: 84,
-          cloudTotal: 54,
-          cloudLow: 38,
-          windSpeed: 2.2,
-          visibility: 20,
-          dewPointSpread: 2.8,
           precipitationProbability: 0,
           precipitation: 0,
           precipitationAmountMm: 0,
         };
-      }
-      return {
-        ...hour,
-        precipitationProbability: 0,
-        precipitation: 0,
-        precipitationAmountMm: 0,
-      };
-    });
+      },
+    );
     const rainDuringWindow = withHourlyWeather(baseInput, (hour) => {
       const hourValue = localHour(hour.time);
       if (hourValue >= 4 && hourValue <= 7) {
@@ -662,31 +675,34 @@ describe("general practical trip recommendation", () => {
   });
 
   it("marks rain before the priority window as caution without treating later rain as overlap", () => {
-    const baseInput = withHourlyWeather(buildMockForecastInput(query, { now: fixedNow }), (hour) => {
-      const hourValue = localHour(hour.time);
-      if (hourValue >= 4 && hourValue <= 7) {
+    const baseInput = withHourlyWeather(
+      buildMockForecastInput(query, { now: fixedNow }),
+      (hour) => {
+        const hourValue = localHour(hour.time);
+        if (hourValue >= 4 && hourValue <= 7) {
+          return {
+            ...hour,
+            humidity: 86,
+            cloudTotal: 56,
+            cloudLow: 40,
+            windSpeed: 2.4,
+            visibility: 18,
+            dewPointSpread: 2.6,
+            precipitationProbability: 0,
+            precipitation: 0,
+            precipitationAmountMm: 0,
+            rainAmountMm: 0,
+          };
+        }
         return {
           ...hour,
-          humidity: 86,
-          cloudTotal: 56,
-          cloudLow: 40,
-          windSpeed: 2.4,
-          visibility: 18,
-          dewPointSpread: 2.6,
           precipitationProbability: 0,
           precipitation: 0,
           precipitationAmountMm: 0,
           rainAmountMm: 0,
         };
-      }
-      return {
-        ...hour,
-        precipitationProbability: 0,
-        precipitation: 0,
-        precipitationAmountMm: 0,
-        rainAmountMm: 0,
-      };
-    });
+      },
+    );
     const rainBeforeWindow = withHourlyWeather(baseInput, (hour) => {
       const hourValue = localHour(hour.time);
       if (hourValue >= 2 && hourValue <= 3) {
@@ -714,9 +730,7 @@ describe("general practical trip recommendation", () => {
     expect(priorityWindow?.rainActionZh).toContain("推荐窗口前");
     expect(firstDaily.keyWindows.some((window) => window.rainNearWindow)).toBe(true);
     expect(
-      firstDaily.keyWindows.some((window) =>
-        window.rainActionZh?.includes("出发前需复核临近预报"),
-      ),
+      firstDaily.keyWindows.some((window) => window.rainActionZh?.includes("出发前需复核临近预报")),
     ).toBe(true);
   });
 
