@@ -3,6 +3,7 @@ import { openMeteoForecastFixture } from "./fixture-data.js";
 import {
   kmhToMetersPerSecond,
   metersToKilometers,
+  snowfallCmToWaterEquivalentMm,
   normalizeDate,
   normalizeIsoTime,
   nullablePercent,
@@ -120,7 +121,7 @@ export class OpenMeteoProvider implements WeatherProvider {
           throw new Error("Open-Meteo hourly weather missing required field: wind_speed_10m");
         }
         const rainAmount = nullableRounded(at(hourly, "rain", index));
-        const snowAmount = nullableRounded(at(hourly, "snowfall", index));
+        const snowAmount = snowfallCmToWaterEquivalentMm(at(hourly, "snowfall", index));
         if (precipitationProbability === null) {
           missingFields.push("precipitationProbability");
         }
@@ -201,7 +202,7 @@ export class OpenMeteoProvider implements WeatherProvider {
         );
         const precipitation = nullableRounded(at(daily, "precipitation_sum", index));
         const rainAmount = nullableRounded(at(daily, "rain_sum", index));
-        const snowAmount = nullableRounded(at(daily, "snowfall_sum", index));
+        const snowAmount = snowfallCmToWaterEquivalentMm(at(daily, "snowfall_sum", index));
 
         return {
           date,

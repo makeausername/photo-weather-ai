@@ -10,6 +10,7 @@ import {
 } from "./open-meteo-air-quality.js";
 import {
   metersToKilometers,
+  snowfallCmToWaterEquivalentMm,
   normalizeDate,
   normalizeIsoTime,
   nullablePercent,
@@ -510,7 +511,7 @@ export function normalizeOpenMeteoIconCloudLayers(
       );
       const precipitation = nullableRounded(at(hourly, "precipitation", index));
       const rainAmount = nullableRounded(at(hourly, "rain", index));
-      const snowAmount = nullableRounded(at(hourly, "snowfall", index));
+      const snowAmount = snowfallCmToWaterEquivalentMm(at(hourly, "snowfall", index));
       const windSpeed = nullableRounded(at(hourly, "wind_speed_10m", index));
       if (windSpeed === null) {
         throw new Error("Open-Meteo ICON hourly weather missing required field: wind_speed_10m");
@@ -528,8 +529,7 @@ export function normalizeOpenMeteoIconCloudLayers(
         visibility,
         pressure: pressureMsl ?? pressureFallback,
       });
-      const estimatedFields =
-        pressureMsl === null && pressureFallback !== null ? ["pressure"] : [];
+      const estimatedFields = pressureMsl === null && pressureFallback !== null ? ["pressure"] : [];
       const cloudTotal = percent(at(hourly, "cloud_cover", index), "hourly.cloud_cover");
 
       return {
@@ -578,10 +578,11 @@ export function normalizeOpenMeteoIconCloudLayers(
         sourceConfidence: missingFields.length > 0 ? 0.82 : 0.9,
         missingFields: missingFields.length > 0 ? missingFields : undefined,
         estimatedFields: estimatedFields.length > 0 ? estimatedFields : undefined,
-        sourceNotes:
-          missingFields.some((field) => ["cloudLow", "cloudMid", "cloudHigh"].includes(field))
-            ? ["云层分层数据不完整，缺失值保持为空。"]
-            : undefined,
+        sourceNotes: missingFields.some((field) =>
+          ["cloudLow", "cloudMid", "cloudHigh"].includes(field),
+        )
+          ? ["云层分层数据不完整，缺失值保持为空。"]
+          : undefined,
         fieldMetadata: cloudLayerFieldMetadata({
           cloudTotal,
           cloudLow,
@@ -618,7 +619,7 @@ export function normalizeOpenMeteoIconDailyWeather(
       );
       const precipitation = nullableRounded(at(daily, "precipitation_sum", index));
       const rainAmount = nullableRounded(at(daily, "rain_sum", index));
-      const snowAmount = nullableRounded(at(daily, "snowfall_sum", index));
+      const snowAmount = snowfallCmToWaterEquivalentMm(at(daily, "snowfall_sum", index));
 
       return {
         date,
@@ -651,8 +652,7 @@ export function normalizeOpenMeteoIconDailyWeather(
         providerLabelZh: source.providerLabelZh,
         dataMode: source.mode,
         providerElevationMeters,
-        missingFields:
-          precipitationProbability === null ? ["precipitationProbability"] : undefined,
+        missingFields: precipitationProbability === null ? ["precipitationProbability"] : undefined,
       };
     }),
   );
@@ -870,7 +870,10 @@ function cloudLayerFieldMetadata(input: {
 function fieldMetadata(
   value: number | null,
   basis: "explicit_layer" | "total_cloud",
-  input: { readonly providerElevationMeters?: number; readonly selectedSpotElevationMeters?: number },
+  input: {
+    readonly providerElevationMeters?: number;
+    readonly selectedSpotElevationMeters?: number;
+  },
   elevationDifferenceMeters?: number,
 ) {
   return {

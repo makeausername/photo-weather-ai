@@ -1328,6 +1328,24 @@ describe("forecast query validation route", () => {
     configureRealWeatherProviders(state);
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
+      if (url.includes("qweather.example/weatheralert/v1/current/")) {
+        return new Response(
+          JSON.stringify({
+            metadata: { attributions: ["测试预警来源"] },
+            alerts: [
+              {
+                id: "api-warning",
+                headline: "大风橙色预警",
+                description: "山地阵风较强。",
+                effectiveTime: "2026-05-20T00:00:00+08:00",
+                expireTime: "2026-05-20T12:00:00+08:00",
+                color: { code: "orange" },
+                instruction: "暂停登山拍摄。",
+              },
+            ],
+          }),
+        );
+      }
       if (url.includes("qweather.example/v7/weather/now")) {
         return new Response(
           JSON.stringify({
@@ -1385,6 +1403,7 @@ describe("forecast query validation route", () => {
       url: "/forecast/calculate",
       payload: {
         ...validPayload,
+        startDateTime: "2026-05-20T00:00:00+08:00",
         target: "general",
         horizon: "48h",
       },
@@ -1393,6 +1412,18 @@ describe("forecast query validation route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(body.weatherDataMode).toBe("real");
+    expect(body.weatherAlertsStatus).toBe("available");
+    expect(body.weatherAlerts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "api-warning",
+          level: "orange",
+          instruction: "暂停登山拍摄。",
+        }),
+      ]),
+    );
+    expect(body.appliedCaps).toContain("weather_alert");
+    expect(body.finalScore).toBeLessThanOrEqual(35);
     expect(body.currentWeather).toMatchObject({
       providerCode: "qweather",
       rawTemperature: 13,
@@ -1580,6 +1611,7 @@ describe("forecast query validation route", () => {
       url: "/forecast/calculate",
       payload: {
         ...validPayload,
+        startDateTime: "2026-05-20T00:00:00+08:00",
         target: "general",
         horizon: "48h",
       },
@@ -1794,6 +1826,7 @@ describe("forecast query validation route", () => {
       url: "/forecast/calculate",
       payload: {
         ...validPayload,
+        startDateTime: "2026-05-20T00:00:00+08:00",
         target: "general",
         horizon: "48h",
       },
@@ -1902,6 +1935,7 @@ describe("forecast query validation route", () => {
       url: "/forecast/calculate",
       payload: {
         ...validPayload,
+        startDateTime: "2026-05-20T00:00:00+08:00",
         target: "general",
         horizon: "48h",
       },
@@ -1936,6 +1970,7 @@ describe("forecast query validation route", () => {
       url: "/forecast/calculate",
       payload: {
         ...validPayload,
+        startDateTime: "2026-05-20T00:00:00+08:00",
         target: "general",
         horizon: "48h",
       },

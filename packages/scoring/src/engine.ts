@@ -106,7 +106,7 @@ type ScoredForecastWindow = {
 };
 
 export function calculateForecast(input: ForecastCalculationInput): ForecastCalculationResult {
-  const calculationInput = applyCloudSeaForecastWindowAnchor(input);
+  const calculationInput = applyForecastWindow(input);
   const clothingGuide =
     calculationInput.clothingGuide ??
     buildClothingGuide({
@@ -150,7 +150,11 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
   });
   const scores = {
     ...baseScores,
-    stars: applyAstroLightPollutionScore(stars, astroAnalysis.starsScore, astroAnalysis.lightPollution.starPenalty),
+    stars: applyAstroLightPollutionScore(
+      stars,
+      astroAnalysis.starsScore,
+      astroAnalysis.lightPollution.starPenalty,
+    ),
     milkyWay: applyAstroLightPollutionScore(
       milkyWay,
       astroAnalysis.milkyWayScore,
@@ -290,6 +294,10 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
     weatherEstimatedFields: calculationInput.weatherEstimatedFields,
     weatherSourceSummaries: calculationInput.weatherSourceSummaries,
     weatherMissingDataNotes: calculationInput.weatherMissingDataNotes,
+    weatherAlerts: calculationInput.weatherAlerts?.filter((alert) =>
+      riskFlags.some((flag) => flag.key === `weather_alert:${alert.id}`),
+    ),
+    weatherAlertsStatus: calculationInput.weatherAlertsStatus,
     weatherFusionSummary: calculationInput.weatherFusionSummary,
     weatherProviderRuntimeSnapshot: calculationInput.weatherProviderRuntimeSnapshot,
     professionalHourlyData: buildProfessionalHourlyData(calculationInput, cloudSeaAnalysis),
@@ -299,11 +307,19 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
   };
 }
 
-function applyCloudSeaForecastWindowAnchor(
-  input: ForecastCalculationInput,
-): ForecastCalculationInput {
+function applyForecastWindow(input: ForecastCalculationInput): ForecastCalculationInput {
   if (input.target !== "cloud_sea") {
-    return input;
+    const startMs = Date.parse(input.calendarBasis.forecastStart);
+    const endMs = Date.parse(input.calendarBasis.forecastEnd);
+    return {
+      ...input,
+      hourlyWeather: input.hourlyWeather
+        .filter((hour) => {
+          const timeMs = Date.parse(hour.time);
+          return Number.isFinite(timeMs) && timeMs >= startMs && timeMs < endMs;
+        })
+        .sort((left, right) => Date.parse(left.time) - Date.parse(right.time)),
+    };
   }
 
   const range = resolveForecastWindowRange({
@@ -534,9 +550,15 @@ function buildProfessionalFieldCoverageSummary(
   return {
     totalHours: hourlyWeather.length,
     totalCloudCoverage: countFinite(hourlyWeather, (hour) => hour.cloudTotal),
-    cloudLowCoverage: countFinite(hourlyWeather, (hour) => explicitProfessionalCloudLayer(hour, "cloudLow")),
-    cloudMidCoverage: countFinite(hourlyWeather, (hour) => explicitProfessionalCloudLayer(hour, "cloudMid")),
-    cloudHighCoverage: countFinite(hourlyWeather, (hour) => explicitProfessionalCloudLayer(hour, "cloudHigh")),
+    cloudLowCoverage: countFinite(hourlyWeather, (hour) =>
+      explicitProfessionalCloudLayer(hour, "cloudLow"),
+    ),
+    cloudMidCoverage: countFinite(hourlyWeather, (hour) =>
+      explicitProfessionalCloudLayer(hour, "cloudMid"),
+    ),
+    cloudHighCoverage: countFinite(hourlyWeather, (hour) =>
+      explicitProfessionalCloudLayer(hour, "cloudHigh"),
+    ),
     temperatureCoverage: countFinite(
       hourlyWeather,
       (hour) => professionalTemperatureProfile(hour, input).displayedTemperatureC,
@@ -556,7 +578,10 @@ function buildProfessionalFieldCoverageSummary(
       hourlyWeather,
       (hour) => hour.precipitationProbabilityPercent ?? hour.precipitationProbability,
     ),
-    visibilityCoverage: countFinite(hourlyWeather, (hour) => hour.rawVisibilityKm ?? hour.visibility),
+    visibilityCoverage: countFinite(
+      hourlyWeather,
+      (hour) => hour.rawVisibilityKm ?? hour.visibility,
+    ),
     windSpeedCoverage: countFinite(hourlyWeather, (hour) => hour.windSpeed),
     windDirectionCoverage: countFinite(hourlyWeather, (hour) => hour.windDirection),
     weatherCodeCoverage: hourlyWeather.filter(
@@ -617,10 +642,7 @@ function finiteOrNull(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function countFinite<T>(
-  rows: readonly T[],
-  select: (row: T) => number | null | undefined,
-): number {
+function countFinite<T>(rows: readonly T[], select: (row: T) => number | null | undefined): number {
   return rows.filter((row) => finiteOrNull(select(row)) !== null).length;
 }
 
@@ -3481,9 +3503,7 @@ function buildGlowWindows(glowAnalysis: GlowAnalysisResult): readonly ForecastTi
     practicalKind: "shooting_window",
     weatherBlockers: window.riskTags.filter(
       (tag) =>
-        tag !== "风险可控" &&
-        tag !== "当前天气数据未识别到主要风险" &&
-        tag !== "雨后短暂开口",
+        tag !== "风险可控" && tag !== "当前天气数据未识别到主要风险" && tag !== "雨后短暂开口",
     ),
     copyReasonZh: window.noteZh,
     practicalNoteZh: window.noteZh,
@@ -3560,12 +3580,12 @@ function buildCloudSeaWindows(
             window.scoreCalibration?.shouldDowngradeToBackup
           ? "cautious"
           : window.whiteoutRiskScore !== undefined && window.whiteoutRiskScore >= 78
-        ? "not_recommended"
-        : fallbackLevel === "shootable"
-          ? "recommended"
-          : fallbackLevel === "watchable"
-            ? "cautious"
-            : "not_recommended",
+            ? "not_recommended"
+            : fallbackLevel === "shootable"
+              ? "recommended"
+              : fallbackLevel === "watchable"
+                ? "cautious"
+                : "not_recommended",
     executableForDedicatedTrip:
       fallbackLevel === "shootable" &&
       usesMountainSemantics &&
@@ -4418,7 +4438,7 @@ function buildDailyRiskFlags(
   input: ForecastCalculationInput,
   breakdown: TargetDailyBreakdown,
 ): readonly ForecastRiskFlag[] {
-  const flags: ForecastRiskFlag[] = [];
+  const flags = weatherAlertRiskFlags(input, breakdown.date);
   const terrainMode = classifyTerrainMode(input.terrainAnalysis.terrainProfile);
   const usesMountainSemantics = terrainModeUsesMountainSemantics(terrainMode);
   const dailyWeather = input.dailyWeather.find((day) => day.date === breakdown.date);
@@ -5106,12 +5126,49 @@ type RiskTimeWindow = {
   readonly hourCount: number;
 };
 
+function weatherAlertRiskFlags(input: ForecastCalculationInput, date?: string): ForecastRiskFlag[] {
+  const rangeStart = Date.parse(input.calendarBasis.forecastStart);
+  const rangeEnd = Date.parse(input.calendarBasis.forecastEnd);
+  return (input.weatherAlerts ?? []).flatMap((alert): ForecastRiskFlag[] => {
+    const start = Date.parse(alert.startsAt);
+    const end = alert.endsAt ? Date.parse(alert.endsAt) : rangeEnd;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= rangeStart || start >= rangeEnd)
+      return [];
+    if (date) {
+      const firstDate = formatZonedIso(
+        new Date(Math.max(start, rangeStart)),
+        input.calendarBasis.timezone,
+      ).slice(0, 10);
+      const lastDate = formatZonedIso(
+        new Date(Math.min(end, rangeEnd) - 1),
+        input.calendarBasis.timezone,
+      ).slice(0, 10);
+      if (date < firstDate || date > lastDate) return [];
+    }
+    return [
+      {
+        key: `weather_alert:${alert.id}`,
+        label: alert.title,
+        level:
+          alert.level === "orange" || alert.level === "red"
+            ? "high"
+            : alert.level === "yellow"
+              ? "medium"
+              : "low",
+        description: [alert.description, alert.instruction].filter(Boolean).join(" "),
+        startTime: alert.startsAt,
+        endTime: alert.endsAt,
+      },
+    ];
+  });
+}
+
 function buildRiskFlags(
   input: ForecastCalculationInput,
   whiteoutRisk: ForecastScore,
   cloudSeaAnalysis: CloudSeaAnalysisResult,
 ): readonly ForecastRiskFlag[] {
-  const flags: ForecastRiskFlag[] = [];
+  const flags = weatherAlertRiskFlags(input);
   const terrainMode = classifyTerrainMode(input.terrainAnalysis.terrainProfile);
   const usesMountainSemantics = terrainModeUsesMountainSemantics(terrainMode);
   const maxPrecipitationRisk = Math.max(

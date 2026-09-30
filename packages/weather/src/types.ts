@@ -1,6 +1,7 @@
 import type {
   Coordinates,
   ForecastWeatherSourceSummary,
+  ForecastWeatherAlert,
   NormalizedAerosolReference,
   NormalizedCurrentWeather,
   NormalizedDailyWeather,
@@ -75,14 +76,7 @@ export type DailyForecast = {
   readonly days: readonly DailyForecastPoint[];
 };
 
-export type WeatherAlert = {
-  readonly id: string;
-  readonly level: "blue" | "yellow" | "orange" | "red";
-  readonly title: string;
-  readonly description: string;
-  readonly startsAt: string;
-  readonly endsAt?: string;
-};
+export type WeatherAlert = ForecastWeatherAlert;
 
 export type AirQuality = {
   readonly provider: string;
@@ -101,6 +95,7 @@ export type WeatherDataBundle = {
   readonly hourly: readonly NormalizedHourlyWeather[];
   readonly daily: readonly NormalizedDailyWeather[];
   readonly alerts: readonly WeatherAlert[];
+  readonly alertsStatus?: "available" | "unavailable";
   readonly airQuality?: AirQuality;
   readonly providerCode: WeatherProviderCode;
   readonly providerLabelZh: string;

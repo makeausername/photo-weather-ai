@@ -82,6 +82,15 @@ export function convergeForecastDecision(
   const lowConfidence = targetConfidence < 0.55;
   const transparencyPenalty = targetTransparencyPenalty(input, target);
   const precipitationWindCap = precipitationWindDecisionCap(riskFlags);
+  if (riskFlags.some((flag) => flag.key.startsWith("weather_alert:") && flag.level === "high")) {
+    addCap(caps, riskReasonsZh, {
+      key: "weather_alert",
+      maxScore: 35,
+      mode: "not_recommended",
+      reasonZh:
+        "预报范围内存在橙色或红色天气预警，请优先遵循发布部门的防御指引，暂不安排专程拍摄。",
+    });
+  }
   const windowIsDistant = firstWindowHoursFromGeneration(input, bestWindows) >= 48;
 
   if (!hasValidCoordinates(input)) {
@@ -116,7 +125,10 @@ export function convergeForecastDecision(
     addCap(caps, riskReasonsZh, precipitationWindCap);
   }
 
-  if (transparencyPenalty >= 0.16 && (target === "glow" || target === "astro" || target === "general")) {
+  if (
+    transparencyPenalty >= 0.16 &&
+    (target === "glow" || target === "astro" || target === "general")
+  ) {
     addCap(caps, riskReasonsZh, {
       key: "transparency",
       maxScore: 62,
@@ -667,7 +679,10 @@ function targetDecisionConfidenceScore(
   return input.weatherDataMode === "real" ? 0.62 : 0.48;
 }
 
-function targetTransparencyPenalty(input: ForecastCalculationInput, target: ForecastTarget): number {
+function targetTransparencyPenalty(
+  input: ForecastCalculationInput,
+  target: ForecastTarget,
+): number {
   const penalties = input.weatherFusionSummary?.transparencyPenaltyByTarget;
   if (!penalties) {
     return 0;
@@ -683,7 +698,10 @@ function targetTransparencyPenalty(input: ForecastCalculationInput, target: Fore
   return penalties[target] ?? 0;
 }
 
-function hasHighModelDisagreement(input: ForecastCalculationInput, target: ForecastTarget): boolean {
+function hasHighModelDisagreement(
+  input: ForecastCalculationInput,
+  target: ForecastTarget,
+): boolean {
   const agreement = input.weatherFusionSummary?.multiSourceAgreementContext;
   const consensus = input.weatherFusionSummary?.multiModelConsensusDiagnostics;
   const penalty = consensus?.multiModelConfidencePenaltyByTarget[target] ?? 0;
@@ -850,6 +868,8 @@ function buildPublicDecisionTags(input: {
 
 function publicTagForCap(key: string): string {
   switch (key) {
+    case "weather_alert":
+      return "天气预警";
     case "terrain_unavailable":
       return "地形方向不确定";
     case "glow_light_path":

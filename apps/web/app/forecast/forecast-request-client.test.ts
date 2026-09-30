@@ -198,6 +198,59 @@ describe("forecast request client", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps a shared request alive when one subscriber cancels", async () => {
+    const controller = new AbortController();
+    let transportSignal!: AbortSignal;
+    let resolveFetch!: (response: Response) => void;
+    const fetcher = vi.fn((_url: unknown, init: RequestInit) => {
+      transportSignal = init.signal!;
+      return new Promise<Response>((resolve, reject) => {
+        resolveFetch = resolve;
+        transportSignal.addEventListener(
+          "abort",
+          () => reject(new DOMException("Aborted", "AbortError")),
+          { once: true },
+        );
+      });
+    });
+    const options = { fetcher: fetcher as unknown as typeof fetch, useSessionStorage: false };
+    const first = requestForecastCalculation(baseQuery, { ...options, signal: controller.signal });
+    const aborted = expect(first).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    const second = requestForecastCalculation({ ...baseQuery }, options);
+    await aborted;
+    expect(transportSignal.aborted).toBe(false);
+    const result = resultForTarget("general");
+    resolveFetch(jsonResponse(result));
+    await expect(second).resolves.toEqual(result);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels unused transport and lets a later identical query start fresh", async () => {
+    const controller = new AbortController();
+    let transportSignal!: AbortSignal;
+    const fetcher = vi.fn((_url: unknown, init: RequestInit) => {
+      transportSignal = init.signal!;
+      return new Promise<Response>((_resolve, reject) => {
+        transportSignal.addEventListener(
+          "abort",
+          () => reject(new DOMException("Aborted", "AbortError")),
+          { once: true },
+        );
+      });
+    });
+    const options = { fetcher: fetcher as unknown as typeof fetch, useSessionStorage: false };
+    const first = requestForecastCalculation(baseQuery, { ...options, signal: controller.signal });
+    const aborted = expect(first).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await aborted;
+    expect(transportSignal.aborted).toBe(true);
+    const result = resultForTarget("general");
+    fetcher.mockResolvedValueOnce(jsonResponse(result));
+    await expect(requestForecastCalculation(baseQuery, options)).resolves.toEqual(result);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it("treats stale aborts as aborts instead of transient terminal errors", async () => {
     const controller = new AbortController();
     controller.abort();
@@ -430,13 +483,13 @@ describe("forecast request client", () => {
 
     const currentKey = sessionStorage
       .dumpKeys()
-      .find((key) => key.startsWith("photo_weather_forecast_calculation:v2:"));
+      .find((key) => key.startsWith("photo_weather_forecast_calculation:v3:"));
     expect(currentKey).toBeDefined();
     const currentRecord = sessionStorage.getItem(currentKey!);
     expect(currentRecord).not.toBeNull();
     sessionStorage.removeItem(currentKey!);
     sessionStorage.setItem(
-      currentKey!.replace(":v2:", ":v1:"),
+      currentKey!.replace(":v3:", ":v2:"),
       currentRecord!.replace('"version":2', '"version":1'),
     );
     clearForecastRequestClientCachesForTest();

@@ -920,6 +920,18 @@ export type AstroWindowBundle = {
   readonly recommendedMilkyWayWindows: readonly AstroWindow[];
 };
 
+export type ForecastWeatherAlert = {
+  readonly id: string;
+  readonly level: "blue" | "yellow" | "orange" | "red" | "unknown";
+  readonly title: string;
+  readonly description: string;
+  readonly startsAt: string;
+  readonly endsAt?: string;
+  readonly senderName?: string;
+  readonly instruction?: string;
+  readonly attributions?: readonly string[];
+};
+
 export type ForecastCalculationInput = {
   readonly place: Place;
   readonly horizon: ForecastHorizon;
@@ -950,6 +962,8 @@ export type ForecastCalculationInput = {
   readonly astroCalculationBasis?: AstroCalculationBasis;
   readonly astroWindowBundle?: AstroWindowBundle;
   readonly lightPollution?: LightPollutionInfo;
+  readonly weatherAlerts?: readonly ForecastWeatherAlert[];
+  readonly weatherAlertsStatus?: "available" | "unavailable";
 };
 
 export type ForecastScoreLevel = "poor" | "fair" | "good" | "excellent";
@@ -2274,6 +2288,8 @@ export type ForecastCalculationResult = {
   readonly astroDataSourceLabelZh: string;
   readonly astroCalculationBasis?: AstroCalculationBasis;
   readonly calibrationHint?: ForecastCalibrationHint;
+  readonly weatherAlerts?: readonly ForecastWeatherAlert[];
+  readonly weatherAlertsStatus?: "available" | "unavailable";
 };
 
 export type ForecastCalibrationHint = {

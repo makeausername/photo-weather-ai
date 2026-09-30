@@ -5,7 +5,12 @@ import {
   type QWeatherUnit,
 } from "./qweather-client.js";
 import { QWeatherProvider } from "./qweather-provider.js";
-import { weatherConditionFromCode } from "./normalization.js";
+import {
+  kmhToMetersPerSecond,
+  nullablePercent,
+  toNumber,
+  weatherConditionFromCode,
+} from "./normalization.js";
 import type {
   AirQuality,
   CurrentWeather,
@@ -15,6 +20,7 @@ import type {
   WeatherSourceSummary,
 } from "./types.js";
 import type { WeatherProvider } from "./provider.js";
+import { normalizeQWeatherAlerts } from "./qweather-alerts.js";
 
 const source = {
   providerCode: "qweather",
@@ -45,38 +51,35 @@ export class QWeatherRealProvider implements WeatherProvider {
     this.recordFetch(result.statusCode, result.latencyMs);
     const now = result.body.now ?? {};
     const weatherCode = typeof now.icon === "string" ? now.icon : null;
-    const temperature = Number(now.temp);
-    const humidity = Number(now.humidity);
-    const cloudTotal = Number(now.cloud);
-    const windSpeedKmh = Number(now.windSpeed);
-    const visibility = Number(now.vis);
+    const temperature = toNumber(now.temp);
+    const humidity = nullablePercent(now.humidity);
+    const cloudTotal = nullablePercent(now.cloud);
+    const windSpeed = kmhToMetersPerSecond(now.windSpeed);
+    const visibility = toNumber(now.vis);
 
     for (const [field, value] of [
       ["temp", temperature],
       ["humidity", humidity],
       ["cloud", cloudTotal],
-      ["windSpeed", windSpeedKmh],
+      ["windSpeed", windSpeed],
     ] as const) {
-      if (!Number.isFinite(value)) {
+      if (value === null || !Number.isFinite(value) || (field === "windSpeed" && value < 0)) {
         throw new Error(`QWeather current weather missing required field: ${field}`);
       }
     }
 
     return {
       provider: source.providerCode,
-      observedAt:
-        typeof now.obsTime === "string" ? now.obsTime : new Date().toISOString(),
+      observedAt: typeof now.obsTime === "string" ? now.obsTime : new Date().toISOString(),
       coordinates: input.coordinates,
       condition: weatherConditionFromCode(weatherCode),
       summary: typeof now.text === "string" ? now.text : "和风天气实时天气",
-      temperatureCelsius: temperature,
-      feelsLikeCelsius: Number.isFinite(Number(now.feelsLike))
-        ? Number(now.feelsLike)
-          : temperature,
-      humidityPercent: humidity,
-      cloudCoverPercent: cloudTotal,
-      windSpeedMetersPerSecond: Math.round((windSpeedKmh / 3.6) * 10) / 10,
-      visibilityKilometers: Number.isFinite(visibility) ? visibility : null,
+      temperatureCelsius: temperature!,
+      feelsLikeCelsius: toNumber(now.feelsLike) ?? temperature!,
+      humidityPercent: humidity!,
+      cloudCoverPercent: cloudTotal!,
+      windSpeedMetersPerSecond: windSpeed!,
+      visibilityKilometers: visibility !== null && visibility >= 0 ? visibility : null,
     };
   }
 
@@ -111,8 +114,12 @@ export class QWeatherRealProvider implements WeatherProvider {
       }));
   }
 
-  async getWeatherAlerts(_input: WeatherRequestInput): Promise<readonly WeatherAlert[]> {
-    return [];
+  async getWeatherAlerts(input: WeatherRequestInput): Promise<readonly WeatherAlert[]> {
+    const result = await this.options.client.fetchWeatherAlerts(input.coordinates);
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+      throw new Error(`QWeather alert request failed with HTTP ${result.statusCode}.`);
+    }
+    return normalizeQWeatherAlerts(result.body);
   }
 
   async getAirQuality(_input: WeatherRequestInput): Promise<AirQuality> {
