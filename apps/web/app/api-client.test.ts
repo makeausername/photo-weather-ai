@@ -5,7 +5,29 @@ import {
   storeAdminSession,
   type AdminAuthSession,
 } from "./admin/admin-api";
-import { optionalAuthApiFetch, requiredAuthApiFetch } from "../components/api-client";
+import {
+  optionalAuthApiFetch,
+  requiredAuthApiFetch,
+  retryAfterSecondsFromResponse,
+} from "../components/api-client";
+
+describe("rate-limit cooldown parsing", () => {
+  it("accepts both delay seconds and HTTP dates", () => {
+    expect(
+      retryAfterSecondsFromResponse(new Response(null, { headers: { "Retry-After": "60" } })),
+    ).toBe(60);
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-01T00:00:00Z"));
+    expect(
+      retryAfterSecondsFromResponse(
+        new Response(null, { headers: { "Retry-After": "Thu, 01 Oct 2026 00:02:00 GMT" } }),
+      ),
+    ).toBe(120);
+    expect(
+      retryAfterSecondsFromResponse(new Response(null, { headers: { "Retry-After": "invalid" } })),
+    ).toBeUndefined();
+    vi.restoreAllMocks();
+  });
+});
 
 function createLocalStorageMock(): Storage {
   const store = new Map<string, string>();

@@ -16,7 +16,11 @@ import {
   type DecisionProgressContext,
 } from "../app/forecast/forecast-result-client";
 import { requestForecastCalculation } from "../app/forecast/forecast-request-client";
-import { buildForecastResultViewModel } from "../app/forecast/forecast-result-view-model";
+import {
+  buildForecastResultViewModel,
+  buildGlowForecastViewModel,
+} from "../app/forecast/forecast-result-view-model";
+import { focusSubjectDetailResult } from "../app/forecast/subject-detail-focus";
 import {
   formatSubjectDetailWindowLabel,
   buildSubjectDetailFallbackRequest,
@@ -208,7 +212,7 @@ function cloudSeaProgressContext(
 function SubjectResultContent({
   target,
   query,
-  result,
+  result: suppliedResult,
   context,
 }: {
   readonly target: SubjectDetailTarget;
@@ -223,7 +227,23 @@ function SubjectResultContent({
     }),
     [query, target],
   );
-  const viewModel = useMemo(() => buildForecastResultViewModel(result, target), [result, target]);
+  const result = useMemo(
+    () => focusSubjectDetailResult(suppliedResult, target, context),
+    [suppliedResult, target, context],
+  );
+  const viewModel = useMemo(
+    () => (result ? buildForecastResultViewModel(result, target) : undefined),
+    [result, target],
+  );
+
+  if (!result || !viewModel) {
+    return (
+      <SubjectContextFallbackCard
+        target={target}
+        message={`${context?.date ?? "所选日期"} 的原窗口或逐日数据已不可用，刷新后未找到相同窗口；请返回综合判断重新选择日期和时段。`}
+      />
+    );
+  }
 
   if (target === "cloud_sea" && viewModel.cloudSea) {
     return (
@@ -237,7 +257,13 @@ function SubjectResultContent({
   }
 
   if (target === "glow" && viewModel.glow) {
-    return <GlowResultPage query={subjectQuery} result={result} viewModel={viewModel.glow} />;
+    return (
+      <GlowResultPage
+        query={subjectQuery}
+        result={result}
+        viewModel={buildGlowForecastViewModel(result, context)}
+      />
+    );
   }
 
   if (target === "astro" && viewModel.astro) {

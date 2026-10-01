@@ -8,7 +8,7 @@ import {
   writeForecastResultContext,
 } from "./subject-detail-links";
 
-const prefix = "photo_weather_forecast_result_context:v1:";
+const prefix = "photo_weather_forecast_result_context:v2:";
 const query: ForecastQueryInput = {
   name: "黄山",
   source: "manual",

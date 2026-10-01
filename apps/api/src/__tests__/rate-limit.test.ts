@@ -51,9 +51,11 @@ describe("public API rate limit guard", () => {
     expect(secondSearch.statusCode).toBe(429);
     expect(secondSearch.json()).toEqual({
       error: "rate_limited",
-      message: "Too many requests. Please try again later.",
+      message: "查询较频繁，请 60 秒后重试。",
+      retryAfterSeconds: 60,
     });
     expect(secondSearch.headers["retry-after"]).toBeDefined();
+    expect(secondSearch.headers["access-control-expose-headers"]).toContain("Retry-After");
     expect(firstHealth.statusCode).toBe(200);
     expect(secondHealth.statusCode).toBe(200);
   });

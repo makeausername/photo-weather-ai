@@ -6,7 +6,8 @@ import type {
   ForecastHorizon,
   ForecastTarget,
 } from "@photo-weather/shared";
-import { forecastHorizonLabels } from "@photo-weather/shared";
+import { forecastHorizonLabels, formatLocalDateTimeRange } from "@photo-weather/shared";
+import { buildAstroForecastViewModel } from "../app/forecast/forecast-result-view-model";
 import {
   normalizeForecastClientErrorMessage,
   requestForecastCalculation,
@@ -481,7 +482,11 @@ export function buildCloudSeaResultCards(
     {
       title: "最佳云海窗口",
       value: bestWindow
-        ? `${formatCloudSeaTime(bestWindow.startTime)} - ${formatCloudSeaTime(bestWindow.endTime)}`
+        ? formatLocalDateTimeRange(
+            bestWindow.startTime,
+            bestWindow.endTime,
+            result.calendarBasis.timezone,
+          )
         : "暂无明确窗口",
       description: joinCloudSeaPublicText(
         [
@@ -771,7 +776,7 @@ export function buildGlowResultCards(
     {
       title: "最佳霞光窗口",
       value: bestWindow
-        ? `${formatGlowTime(bestWindow.start)} - ${formatGlowTime(bestWindow.end)}`
+        ? formatLocalDateTimeRange(bestWindow.start, bestWindow.end, result.calendarBasis.timezone)
         : "暂无明确窗口",
       description: joinGlowPublicText(
         [
@@ -1021,6 +1026,55 @@ function AstroDecisionCardView({
 export function buildAstroResultCards(
   result: ForecastCalculationResult,
 ): readonly AstroDecisionCard[] {
+  const viewModel = buildAstroForecastViewModel(result);
+  const night = viewModel.bestNight;
+  if (night) {
+    const date = night.localEveningDateLabel;
+    const moonTimes = [
+      night.moon.riseAt ? `月出 ${formatAstroTime(night.moon.riseAt, night.timezone)}` : undefined,
+      night.moon.setAt ? `月落 ${formatAstroTime(night.moon.setAt, night.timezone)}` : undefined,
+    ]
+      .filter(Boolean)
+      .join("，");
+    return [
+      {
+        title: "星空指数",
+        value: night.starPhotographyIndexDisplay,
+        description: `${date}；${night.conciseReason}`,
+        badge: "星空",
+      },
+      {
+        title: "银河机会",
+        value: night.milkyWayPhotographyIndexDisplay,
+        description: `${date}；${night.milkyWay.azimuthSummary}，${night.milkyWay.weatherUsableWindowLabel}`,
+        badge: "银河",
+      },
+      {
+        title: "最佳银河窗口",
+        value: `${date} · ${night.bestShootingWindowLabel}`,
+        description: `${date}；${night.directionSummaryLabel}；${night.actionNote}`,
+        badge: "窗口",
+      },
+      {
+        title: "月光影响",
+        value: night.moonImpactSummaryLabel,
+        description: `${date}；${moonTimes || "月出月落暂缺"}；窗口重叠 ${night.moon.overlapDisplay}。`,
+        badge: "月光",
+      },
+      {
+        title: "云量与通透",
+        value: night.weather.cloudSummary,
+        description: `${date}；${night.weather.visibilitySummary}；${night.cloudWeatherBlockerLabel}`,
+        badge: "天气",
+      },
+      {
+        title: "光污染与地形",
+        value: viewModel.decisionSummary.recommendationLabel,
+        description: `${date}；${night.lightPollutionSummaryLabel}；${night.terrainSummaryLabel}；${viewModel.decisionSummary.oneSentenceAdvice}`,
+        badge: "行动",
+      },
+    ];
+  }
   const analysis = result.astroAnalysis;
   const milkyWayWindow = astroMilkyWayDecisionWindow(analysis);
   const bestWindow = milkyWayWindow ?? astroBestDecisionWindow(analysis);
@@ -1424,14 +1478,14 @@ function formatAstroIllumination(value: number): string {
   return `${Math.round(normalized)}%`;
 }
 
-function formatAstroTime(value: string): string {
+function formatAstroTime(value: string, timezone = "Asia/Shanghai"): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) {
     return value;
   }
 
   return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
+    timeZone: timezone,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -1614,20 +1668,6 @@ function formatGlowConfidence(value: number | null | undefined): string {
     : "临近复核";
 }
 
-function formatGlowTime(value: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(timestamp));
-}
-
 function firstGlowPublicText(
   values: readonly (string | null | undefined)[],
   fallback: string,
@@ -1764,20 +1804,6 @@ function formatCloudSeaScore(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value)
     ? `${Math.round(value)} / 100`
     : "待计算";
-}
-
-function formatCloudSeaTime(value: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(timestamp));
 }
 
 export function SubjectKnowledgeGuide({

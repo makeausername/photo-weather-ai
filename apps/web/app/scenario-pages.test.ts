@@ -33,6 +33,7 @@ import {
   scenarioPageConfigs,
 } from "./scenario-configs";
 import { cloudSeaRegressionFixture } from "./forecast/__tests__/fixtures/cloudSeaRegressionFixtures";
+import { buildAstroForecastViewModel } from "./forecast/forecast-result-view-model";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/cloud-sea",
@@ -1116,13 +1117,17 @@ describe("scenario module pages", () => {
       expect(html).toContain(title);
     }
     expect(html).toContain("天文黑夜");
-    expect(html).toContain("无月黑夜");
-    expect(html).toContain("银河核心高度较理想");
-    expect(html).toContain("东南偏南");
-    expect(html).toContain("月落后进入无月黑夜");
-    expect(html).toContain("云量较低");
-    expect(html).toContain("银河方向光害较低");
-    expect(html).toContain("目标方向地平线遮挡较低");
+    const selectedNight = buildAstroForecastViewModel(result).bestNight!;
+    expect(
+      cards.every((card) => card.description.includes(selectedNight.localEveningDateLabel)),
+    ).toBe(true);
+    expect(cards.find((card) => card.title === "月光影响")?.value).toBe(
+      selectedNight.moonImpactSummaryLabel,
+    );
+    expect(cards.find((card) => card.title === "云量与通透")?.value).toBe(
+      selectedNight.weather.cloudSummary,
+    );
+    expect(html).toContain("缺少这个观测夜");
     expect(html).not.toContain("综合指数");
     expect(html).not.toContain("推荐等级");
     expect(html).not.toContain("云层与风");

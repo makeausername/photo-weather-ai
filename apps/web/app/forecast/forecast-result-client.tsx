@@ -443,7 +443,7 @@ export function ForecastDecisionLoadingState({
           ],
           title: "云海拍摄判断",
           message: "正在读取云海拍摄条件…",
-          description: "正在读取天气、地形、云层和光线时段。",
+          description: `${context.horizon === "7d" ? "7天分析正在汇总多日天气，耗时会更长；数据尚在加载，未判为缺失。" : ""}正在读取天气、地形、云层和光线时段。`,
         }}
         info={cloudSeaDecisionInfoCard()}
         dataCloudSeaPageMode="loading"
@@ -458,7 +458,7 @@ export function ForecastDecisionLoadingState({
       context={decisionContextFromProgressContext("general", context)}
       loading={{
         message: "正在读取拍摄条件…",
-        description: "正在读取天气、天文时段和地形信息。",
+        description: `${context.horizon === "7d" ? "7天分析正在汇总多日天气，耗时会更长；数据尚在加载，未判为缺失。" : ""}正在读取天气、天文时段和地形信息。`,
       }}
       info={{
         title: "分析基础",
@@ -741,7 +741,7 @@ function WeatherEssentialsPanel({ result }: { readonly result: ForecastCalculati
             current,
             firstDay,
             result,
-          )} ${current ? `当前温度口径：${terrainCorrectionUserNote(result, current, undefined)}` : ""}`}
+          )} ${current ? `当前温度口径：${terrainCorrectionUserNote(result, current, undefined)}` : ""} ${temperatureReviewNotice(result)}`}
         />
         <CompactInfoCard
           title="云层与能见度"
@@ -1467,6 +1467,16 @@ function terrainTemperaturePrefix(
       : "机位估算温度";
   }
   return "机位估算温度";
+}
+
+function temperatureReviewNotice(result: ForecastCalculationResult): string {
+  const context = result.weatherFusionSummary?.multiSourceAgreementContext;
+  const warning = context?.keyWarningsZh.find((note) => note.startsWith("气温来源分歧"));
+  if (!warning) return "";
+  const validTime = context?.fieldDisagreements.find(
+    (field) => field.field === "temperature",
+  )?.validTime;
+  return `未来预报提示：${warning}${validTime ? `最大分歧有效时间：${formatFullDateTimeForTimezone(validTime, result.calendarBasis.timezone)}。` : ""}`;
 }
 
 function temperatureCorrectionText(
@@ -6665,7 +6675,7 @@ function buildGeneralSubjectSummaries(
         resultId,
         target: linkConfig.target,
         subject: linkConfig.subject,
-        date: generalSubjectLinkDate(result, linkWindow),
+        date: generalSubjectLinkDate(result, linkWindow, key),
         window: linkWindow,
         returnUrl,
       }),
@@ -6933,10 +6943,24 @@ function generalSubjectAction(
 function generalSubjectLinkDate(
   result: ForecastCalculationResult,
   window: ForecastCalculationResult["bestWindows"][number] | undefined,
+  subject: GeneralSubjectKey,
 ): string {
+  const anchor = Date.parse(result.calendarBasis.forecastStart);
+  const end = Date.parse(result.calendarBasis.forecastEnd);
+  const upcomingDate = result.astroSummaries.find((day) => {
+    const event =
+      subject === "sunsetGlow"
+        ? day.sunsetGlowCandidateEndAt ?? day.sunset
+        : subject === "stars" || subject === "milkyWay"
+          ? day.astronomicalNightEnd
+          : day.sunriseGlowCandidateEndAt ?? day.sunrise;
+    const timestamp = event ? Date.parse(event) : NaN;
+    return timestamp >= anchor && timestamp <= end;
+  })?.date;
   return (
     window?.date ??
     dateFromIsoLike(window?.startTime) ??
+    upcomingDate ??
     result.calendarBasis.targetDates[0] ??
     result.targetDates[0] ??
     dateFromIsoLike(result.forecastStart) ??

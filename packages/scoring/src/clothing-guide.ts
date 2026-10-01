@@ -2,10 +2,16 @@ import type {
   ClothingComfortLevel,
   ClothingGuide,
   ForecastTarget,
+  ForecastMultiSourceAgreementContext,
   NormalizedCurrentWeather,
   NormalizedHourlyWeather,
 } from "@photo-weather/shared";
-import { buildTerrainTemperatureBasisContext } from "@photo-weather/shared";
+import {
+  buildTerrainTemperatureBasisContext,
+  formatLocalDate,
+  formatLocalTime,
+  localDateKey,
+} from "@photo-weather/shared";
 import { getHourInTimezone } from "@photo-weather/calendar";
 import { precipitationAmountMm, precipitationRiskLevel } from "./weather-decision-metrics.js";
 
@@ -19,6 +25,7 @@ export type ClothingGuideInput = {
   readonly target: ForecastTarget;
   readonly timezone: string;
   readonly forecastStart: string;
+  readonly multiSourceAgreementContext?: ForecastMultiSourceAgreementContext;
 };
 
 export function buildClothingGuide(input: ClothingGuideInput): ClothingGuide {
@@ -128,18 +135,25 @@ export function buildClothingGuide(input: ClothingGuideInput): ClothingGuide {
     effectiveTemperature,
     temperatureBasisAdvice: temperatureBasis.clothingAdviceModifierZh,
   });
+  const temperatureDisagreement = input.multiSourceAgreementContext?.fieldDisagreements.find(
+    (field) =>
+      field.field === "temperature" && (field.level === "medium" || field.level === "high"),
+  );
+  const temperatureCaution = temperatureDisagreement
+    ? `预报气温来源分歧约 ${temperatureDisagreement.range ?? "待复核"}°C${temperatureDisagreement.validTime ? `（${formatLocalDate(localDateKey(temperatureDisagreement.validTime, input.timezone) ?? temperatureDisagreement.validTime.slice(0, 10), input.timezone)} ${formatLocalTime(temperatureDisagreement.validTime, input.timezone)}）` : ""}，温度与穿衣建议可信度降低；请复核机位海拔和临近预报，保留备用保暖层。`
+    : "";
 
   return {
     titleZh: titleForComfort(comfortLevel, input.target),
     summaryZh: `参考体感约 ${Math.round(effectiveTemperature)}°C，风速约 ${round1(
       windSpeed,
-    )} m/s，${precipitationSummary(precipitationProbability, precipitationAmount)}。${temperatureBasis.clothingAdviceModifierZh}${summarySuffix(
+    )} m/s，${precipitationSummary(precipitationProbability, precipitationAmount, "dataKind" in reference && reference.dataKind === "observation")}。${temperatureCaution}${temperatureBasis.clothingAdviceModifierZh}${summarySuffix(
       comfortLevel,
       input.target,
     )}`,
     layers,
     accessories,
-    riskNotes,
+    riskNotes: temperatureCaution ? [temperatureCaution, ...riskNotes] : riskNotes,
     comfortLevel,
   };
 }
@@ -369,7 +383,16 @@ function summarySuffix(level: ClothingComfortLevel, target: ForecastTarget): str
   return "按分层穿法准备，方便随窗口变化调整。";
 }
 
-function precipitationSummary(probability: number | null, amount: number | null): string {
+function precipitationSummary(
+  probability: number | null,
+  amount: number | null,
+  observation: boolean,
+): string {
+  if (observation) {
+    return amount === null
+      ? "观测降水暂缺，未来降水请查看小时预报"
+      : `观测小时降水 ${round1(amount)} mm，未来降水请查看小时预报`;
+  }
   const displayProbability =
     amount !== null && amount >= 0.1 && probability !== null && probability <= 0
       ? null

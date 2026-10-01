@@ -121,6 +121,23 @@ function adminSession(accessToken = "paid-access-token"): AdminAuthSession {
 }
 
 describe("forecast request client", () => {
+  it("shows Retry-After in Chinese without immediately retrying a rate-limited query", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ error: "rate_limited", message: "Too many requests" }), {
+          status: 429,
+          headers: { "Content-Type": "application/json", "Retry-After": "120" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(requestForecastCalculation(baseQuery)).rejects.toMatchObject({
+      status: 429,
+      message: "查询较频繁，请 120 秒后重试。",
+      retryAfterSeconds: 120,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
   afterEach(() => {
     clearAdminSession();
     clearForecastRequestClientCachesForTest();
@@ -483,14 +500,14 @@ describe("forecast request client", () => {
 
     const currentKey = sessionStorage
       .dumpKeys()
-      .find((key) => key.startsWith("photo_weather_forecast_calculation:v4:"));
+      .find((key) => key.startsWith("photo_weather_forecast_calculation:v5:"));
     expect(currentKey).toBeDefined();
     const currentRecord = sessionStorage.getItem(currentKey!);
     expect(currentRecord).not.toBeNull();
     sessionStorage.removeItem(currentKey!);
     sessionStorage.setItem(
-      currentKey!.replace(":v4:", ":v2:"),
-      currentRecord!.replace('"version":4', '"version":3'),
+      currentKey!.replace(":v5:", ":v4:"),
+      currentRecord!.replace('"version":5', '"version":4'),
     );
     clearForecastRequestClientCachesForTest();
 

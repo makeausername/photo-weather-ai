@@ -35,6 +35,7 @@ type ApiErrorPayload = {
 };
 
 export type ApiClientErrorOptions = {
+  readonly retryAfterSeconds?: number;
   readonly status?: number;
   readonly code?: string;
   readonly kind?: ApiErrorKind;
@@ -48,6 +49,7 @@ export type ApiClientErrorOptions = {
 };
 
 export class ApiClientError extends Error {
+  readonly retryAfterSeconds?: number;
   readonly status?: number;
   readonly code?: string;
   readonly kind: ApiErrorKind;
@@ -63,6 +65,7 @@ export class ApiClientError extends Error {
     super(message);
     this.name = "ApiClientError";
     this.status = options.status;
+    this.retryAfterSeconds = options.retryAfterSeconds;
     this.code = options.code;
     this.kind = options.kind ?? "unknown";
     this.publicMessage = options.publicMessage ?? message;
@@ -92,6 +95,20 @@ export const captchaRequiredMessage = "请先完成人机验证后再提交。";
 export const validationFailedMessage = "提交内容有误，请检查后重试。";
 export const retryableServiceMessage = "服务暂时不可用，请稍后重试。";
 export const unknownServiceMessage = "服务暂时不可用，请稍后重试。";
+
+export function retryAfterSecondsFromResponse(response: Response): number | undefined {
+  const value = response.headers.get("Retry-After");
+  if (!value) return undefined;
+  const numeric = Number(value);
+  const seconds = Number.isFinite(numeric) ? numeric : (Date.parse(value) - Date.now()) / 1000;
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds) : undefined;
+}
+
+export function rateLimitedMessage(seconds?: number): string {
+  return seconds !== undefined
+    ? `查询较频繁，请 ${seconds} 秒后重试。`
+    : "查询较频繁，请稍后重试。";
+}
 
 const authErrorCodes = new Set([
   "invalid_refresh_token",
@@ -273,7 +290,11 @@ export async function normalizeApiResponseError(
   const status = response.status;
   const kind = apiErrorKind(status, code, record.errorCategory);
   const fallback = fallbackMessageForKind(kind, status, code, fallbackMessage);
-  const message = publicMessageFromPayload(record, fallback);
+  const retryAfterSeconds = retryAfterSecondsFromResponse(response);
+  const message =
+    status === 429
+      ? rateLimitedMessage(retryAfterSeconds)
+      : publicMessageFromPayload(record, fallback);
   const retryable = isRetryableApiError(status, code, kind);
 
   if (kind === "auth") {
@@ -286,6 +307,7 @@ export async function normalizeApiResponseError(
     kind,
     publicMessage: message,
     retryable,
+    retryAfterSeconds,
     access: record.access,
     required: record.required,
     issues: record.issues,

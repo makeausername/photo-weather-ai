@@ -71,6 +71,9 @@ describe("weather source fusion", () => {
     expect(fused.estimatedFields).toContain("dewPoint");
     expect(fused.estimatedFields).not.toContain("cloudLow");
     expect(fused.missingFields).not.toContain("cloudLow");
+    expect(result.confidenceByTarget.general).toBeLessThanOrEqual(0.49);
+    expect(result.confidenceByTarget.astro).toBeLessThanOrEqual(0.49);
+    expect(result.summary.missingDataNotes?.join(" ")).toContain("气温来源分歧");
   });
   it("increases confidence when two sources agree within thresholds", () => {
     const result = fuseWeatherSources({

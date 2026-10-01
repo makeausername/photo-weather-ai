@@ -47,6 +47,7 @@ type FieldDefinition = {
 
 type FieldComparison = {
   readonly field: AgreementField;
+  readonly validTime?: string;
   readonly labelZh: string;
   readonly level: ForecastDisagreementLevel;
   readonly range: number | null;
@@ -273,6 +274,7 @@ function compareField(
         readonly values: readonly number[];
         readonly level: ForecastDisagreementLevel;
         readonly range: number;
+        readonly validTime: string;
       }
     | undefined;
   let comparableValues:
@@ -282,7 +284,7 @@ function compareField(
       }
     | undefined;
 
-  for (const values of valuesByTime.values()) {
+  for (const [hourKey, values] of valuesByTime.entries()) {
     if (values.length < 2) {
       continue;
     }
@@ -294,8 +296,17 @@ function compareField(
     if (level === "none") {
       continue;
     }
-    if (!strongest || severityRank(level) > severityRank(strongest.level)) {
-      strongest = { values, level, range };
+    if (
+      !strongest ||
+      severityRank(level) > severityRank(strongest.level) ||
+      (level === strongest.level && range > strongest.range)
+    ) {
+      strongest = {
+        values,
+        level,
+        range,
+        validTime: new Date(Number(hourKey) * 60 * 60 * 1000).toISOString(),
+      };
     }
   }
 
@@ -335,6 +346,7 @@ function compareField(
     field: definition.field,
     labelZh: definition.labelZh,
     level: strongest.level,
+    validTime: strongest.validTime,
     range: strongest.range,
     min: round1(min),
     max: round1(max),
@@ -420,6 +432,13 @@ function buildKeyWarnings(
   const precipitationAmount = findComparison(comparisons, "precipitationAmountMm");
   const precipitationProbability = findComparison(comparisons, "precipitationProbability");
   const visibility = findComparison(comparisons, "visibility");
+  const temperature = findComparison(comparisons, "temperature");
+
+  if (temperature && severityRank(temperature.level) >= severityRank("medium")) {
+    warnings.push(
+      `气温来源分歧约 ${temperature.range}°C，需复核来源海拔；温度与穿衣建议可信度降低，保留备用保暖层。`,
+    );
+  }
 
   if (lowCloud && severityRank(lowCloud.level) >= severityRank("medium")) {
     warnings.push("低云分歧较大，云海与白墙判断需结合临近预报复核。");
@@ -519,7 +538,9 @@ function shouldLowerCloudSeaConfidence(comparisons: readonly FieldComparison[]):
   const lowCloud = findComparison(comparisons, "cloudLow");
   const precipitationAmount = findComparison(comparisons, "precipitationAmountMm");
   const precipitationProbability = findComparison(comparisons, "precipitationProbability");
+  const temperature = findComparison(comparisons, "temperature");
   return (
+    Boolean(temperature && severityRank(temperature.level) >= severityRank("high")) ||
     Boolean(lowCloud && severityRank(lowCloud.level) >= severityRank("high")) ||
     Boolean(
       [precipitationAmount, precipitationProbability].some(
