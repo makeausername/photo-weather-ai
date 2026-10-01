@@ -75,7 +75,7 @@ describe("SiteFooter", () => {
     const html = renderToStaticMarkup(React.createElement(SiteFooter));
 
     expect(html).toContain("border-t border-border bg-card/70 text-muted-foreground");
-    expect(html).toContain("max-w-[1600px]");
+    expect(html).toContain("max-w-[1440px]");
     expect(html).toContain("flex-wrap");
     expect(html).toContain("items-center justify-center");
     expect(html).toContain("gap-x-3 gap-y-2");
@@ -86,7 +86,7 @@ describe("SiteFooter", () => {
     expect(html).not.toContain("justify-between");
     expect(html).not.toContain("justify-end");
     expect(html).not.toContain("border-y");
-    expect(html).not.toContain("min-h-");
+    expect(html).toContain("min-h-11");
     expect(html).not.toContain("grid-cols");
     expect(html).not.toContain("bg-[#071614]");
     expect(html).not.toContain("rgb(7_22_20)");

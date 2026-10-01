@@ -535,7 +535,7 @@ export function ResultHeaderSummaryCard({
 }: ResultHeaderSummaryCardProps) {
   return (
     <Card
-      className={cn(className, "h-full min-w-0 max-w-full p-5 sm:p-6")}
+      className={cn(className, "decision-hero h-full min-w-0 max-w-full p-5 sm:p-6")}
       data-forecast-result-summary-card="true"
       data-result-header-summary-card="true"
       data-result-target={target}

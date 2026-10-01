@@ -23,6 +23,7 @@ import {
 } from "./selected-location";
 import { SubjectControlPanel } from "./subject-control-panel";
 import { Badge, Card, cn } from "./ui";
+import { DecisionValue } from "./decision-value";
 
 type PopularScenarioSpot = {
   readonly name: string;
@@ -337,7 +338,7 @@ export function CloudSeaDecisionPanel({
       data-cloud-sea-decision-status={state.status}
       data-cloud-sea-generated-result={hasGeneratedResult ? "true" : "false"}
     >
-      <Card className="p-5" data-cloud-sea-decision-intro="true">
+      <Card className="decision-hero p-5" data-cloud-sea-decision-intro="true">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="accent">云海判断</Badge>
           <Badge variant="muted">{forecastHorizonLabels[horizon]}</Badge>
@@ -387,7 +388,7 @@ function CloudSeaDecisionCardView({
   return (
     <article
       className={cn(
-        "grid min-w-0 content-start gap-4 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel",
+        "grid min-w-0 content-start gap-3 overflow-hidden rounded-2xl border border-border bg-card p-4",
         fillHeight && "min-[900px]:h-full",
       )}
       data-cloud-sea-decision-card={card.title}
@@ -395,10 +396,8 @@ function CloudSeaDecisionCardView({
       <div className="flex items-start justify-between gap-3">
         <span
           className={cn(
-            "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
-            index % 2 === 0
-              ? "border-primary bg-secondary text-primary"
-              : "border-accent bg-card text-accent-strong",
+            "inline-flex shrink-0 items-center text-xs font-semibold",
+            "text-muted-foreground",
           )}
         >
           {String(index + 1).padStart(2, "0")}
@@ -408,20 +407,7 @@ function CloudSeaDecisionCardView({
       <div className="min-w-0">
         <h3 className="text-base font-bold leading-6 text-card-foreground">{card.title}</h3>
         {card.value ? (
-          <p
-            className={cn(
-              "mt-2 break-words text-lg font-bold leading-7",
-              card.tone === "danger"
-                ? "text-danger"
-                : card.tone === "warning"
-                  ? "text-warning-strong"
-                  : card.tone === "muted"
-                    ? "text-muted-foreground"
-                    : "text-primary",
-            )}
-          >
-            {card.value}
-          </p>
+          <DecisionValue value={card.value} className="mt-2 text-card-foreground" />
         ) : null}
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{card.description}</p>
       </div>
@@ -620,7 +606,7 @@ export function GlowDecisionPanel({
       data-glow-decision-status={state.status}
       data-glow-generated-result={hasGeneratedResult ? "true" : "false"}
     >
-      <Card className="p-5" data-glow-decision-intro="true">
+      <Card className="decision-hero p-5" data-glow-decision-intro="true">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="accent">朝霞晚霞判断</Badge>
           <Badge variant="muted">{forecastHorizonLabels[horizon]}</Badge>
@@ -670,7 +656,7 @@ function GlowDecisionCardView({
   return (
     <article
       className={cn(
-        "grid min-w-0 content-start gap-4 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel",
+        "grid min-w-0 content-start gap-3 overflow-hidden rounded-2xl border border-border bg-card p-4",
         fillHeight && "min-[900px]:h-full",
       )}
       data-glow-decision-card={card.title}
@@ -678,10 +664,8 @@ function GlowDecisionCardView({
       <div className="flex items-start justify-between gap-3">
         <span
           className={cn(
-            "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
-            index % 2 === 0
-              ? "border-primary bg-secondary text-primary"
-              : "border-accent bg-card text-accent-strong",
+            "inline-flex shrink-0 items-center text-xs font-semibold",
+            "text-muted-foreground",
           )}
         >
           {String(index + 1).padStart(2, "0")}
@@ -691,20 +675,7 @@ function GlowDecisionCardView({
       <div className="min-w-0">
         <h3 className="text-base font-bold leading-6 text-card-foreground">{card.title}</h3>
         {card.value ? (
-          <p
-            className={cn(
-              "mt-2 break-words text-lg font-bold leading-7",
-              card.tone === "danger"
-                ? "text-danger"
-                : card.tone === "warning"
-                  ? "text-warning-strong"
-                  : card.tone === "muted"
-                    ? "text-muted-foreground"
-                    : "text-primary",
-            )}
-          >
-            {card.value}
-          </p>
+          <DecisionValue value={card.value} className="mt-2 text-card-foreground" />
         ) : null}
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{card.description}</p>
       </div>
@@ -931,7 +902,7 @@ export function AstroDecisionPanel({
       data-astro-decision-status={state.status}
       data-astro-generated-result={hasGeneratedResult ? "true" : "false"}
     >
-      <Card className="p-5" data-astro-decision-intro="true">
+      <Card className="decision-hero p-5" data-astro-decision-intro="true">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="accent">星空银河判断</Badge>
           <Badge variant="muted">{forecastHorizonLabels[horizon]}</Badge>
@@ -981,7 +952,7 @@ function AstroDecisionCardView({
   return (
     <article
       className={cn(
-        "grid min-w-0 content-start gap-4 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel",
+        "grid min-w-0 content-start gap-3 overflow-hidden rounded-2xl border border-border bg-card p-4",
         fillHeight && "min-[900px]:h-full",
       )}
       data-astro-decision-card={card.title}
@@ -989,10 +960,8 @@ function AstroDecisionCardView({
       <div className="flex items-start justify-between gap-3">
         <span
           className={cn(
-            "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
-            index % 2 === 0
-              ? "border-primary bg-secondary text-primary"
-              : "border-accent bg-card text-accent-strong",
+            "inline-flex shrink-0 items-center text-xs font-semibold",
+            "text-muted-foreground",
           )}
         >
           {String(index + 1).padStart(2, "0")}
@@ -1002,20 +971,7 @@ function AstroDecisionCardView({
       <div className="min-w-0">
         <h3 className="text-base font-bold leading-6 text-card-foreground">{card.title}</h3>
         {card.value ? (
-          <p
-            className={cn(
-              "mt-2 break-words text-lg font-bold leading-7",
-              card.tone === "danger"
-                ? "text-danger"
-                : card.tone === "warning"
-                  ? "text-warning-strong"
-                  : card.tone === "muted"
-                    ? "text-muted-foreground"
-                    : "text-primary",
-            )}
-          >
-            {card.value}
-          </p>
+          <DecisionValue value={card.value} className="mt-2 text-card-foreground" />
         ) : null}
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{card.description}</p>
       </div>
@@ -1836,21 +1792,19 @@ export function SubjectKnowledgeGuide({
         </p>
       </div>
 
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="guide-grid grid min-w-0 gap-0 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((item, index) => (
           <article
             key={item.title}
-            className="grid min-w-0 content-start gap-4 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-panel"
+            className="grid min-w-0 content-start gap-3 overflow-hidden rounded-2xl border border-border bg-card p-4"
             data-cloud-sea-knowledge-card={isCloudSea ? "true" : undefined}
             data-subject-knowledge-card={config.target}
           >
             <div className="flex items-start justify-between gap-3">
               <span
                 className={cn(
-                  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
-                  index % 2 === 0
-                    ? "border-primary bg-secondary text-primary"
-                    : "border-accent bg-card text-accent-strong",
+                  "inline-flex shrink-0 items-center text-xs font-semibold",
+                  "text-muted-foreground",
                 )}
               >
                 {String(index + 1).padStart(2, "0")}

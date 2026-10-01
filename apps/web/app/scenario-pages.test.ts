@@ -578,8 +578,8 @@ describe("scenario module pages", () => {
 
     expect(guideStart).toBeGreaterThanOrEqual(0);
     expect(html).toContain("min-[960px]:items-stretch");
-    expect(guideHtml).toContain("grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3");
-    expect(guideHtml).toContain("grid min-w-0 content-start gap-4");
+    expect(guideHtml).toContain("guide-grid grid min-w-0 gap-0 sm:grid-cols-2 xl:grid-cols-3");
+    expect(guideHtml).toContain("grid min-w-0 content-start gap-3");
     expect(guideHtml).not.toMatch(/min-w-\[[^\]]+\]/);
     expect(guideHtml).not.toContain("overflow-x");
   });

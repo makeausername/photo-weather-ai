@@ -27,6 +27,7 @@ import {
   requestForecastCalculation,
 } from "../app/forecast/forecast-request-client";
 import { Badge, Card, cn } from "./ui";
+import { DecisionValue } from "./decision-value";
 
 type LayerStatus = "idle" | "loading" | "ready" | "partial" | "fallback" | "error";
 
@@ -209,7 +210,7 @@ export function HomepageGuidancePanel({
       )}
       data-homepage-guidance-panel="true"
     >
-      <Card className="p-5 sm:p-6" data-homepage-guidance-intro="true">
+      <Card className="decision-hero p-5 sm:p-6" data-homepage-guidance-intro="true">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="accent">综合判断</Badge>
           <Badge variant="muted">{forecastHorizonLabels[horizon]}</Badge>
@@ -228,6 +229,7 @@ export function HomepageGuidancePanel({
         <div
           className={cn(
             "grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3",
+            !hasResult && "guide-grid",
             hasResult && "min-[960px]:h-full min-[960px]:auto-rows-fr",
           )}
           data-homepage-card-grid="true"
@@ -261,7 +263,7 @@ function HomepageInsightCardView({
   return (
     <article
       className={cn(
-        "grid min-w-0 content-start gap-3 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-panel transition sm:p-5",
+        "grid min-w-0 content-start gap-3 overflow-hidden rounded-2xl border border-border bg-card p-4 transition sm:p-5",
         fillHeight && "min-[960px]:h-full",
         loading && "animate-pulse",
       )}
@@ -271,10 +273,8 @@ function HomepageInsightCardView({
       <div className="flex items-start justify-between gap-3">
         <span
           className={cn(
-            "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold",
-            index % 2 === 0
-              ? "border-primary bg-secondary text-primary"
-              : "border-accent bg-card text-accent-strong",
+            "inline-flex shrink-0 items-center text-xs font-semibold",
+            "text-muted-foreground",
           )}
         >
           {String(index + 1).padStart(2, "0")}
@@ -293,14 +293,7 @@ function HomepageInsightCardView({
           <div className="mt-2 h-4 w-1/2 animate-pulse rounded-full bg-muted" aria-hidden="true" />
         ) : null}
         {card.value ? (
-          <p
-            className={cn(
-              "mt-2 break-words text-lg font-bold leading-7",
-              card.tone === "danger" ? "text-danger" : "text-primary",
-            )}
-          >
-            {card.value}
-          </p>
+          <DecisionValue value={card.value} className="mt-2 text-card-foreground" />
         ) : null}
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{card.description}</p>
       </div>

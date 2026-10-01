@@ -429,7 +429,7 @@ export function HorizonSelector({
               }
             }}
             className={cn(
-              "h-10 rounded-xl border px-3 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-55",
+              "h-11 rounded-xl border px-3 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-55",
               value === option
                 ? "border-primary bg-primary text-primary-foreground"
                 : "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary disabled:hover:border-border disabled:hover:bg-card",
@@ -831,7 +831,7 @@ export function PlaceSearchCard({
         </div>
       ) : null}
 
-      <div aria-live="polite" className="grid gap-2">
+      <div aria-live="polite" className="grid gap-2 empty:hidden">
         {currentLocationStatus === "loading" ? (
           <div className="rounded-xl border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
             正在获取当前位置…
@@ -969,7 +969,7 @@ export function PlaceSearchCard({
                   aria-pressed={target === option}
                   onClick={() => setTarget(option)}
                   className={cn(
-                    "h-10 rounded-xl border px-3 text-xs font-semibold transition",
+                    "h-11 rounded-xl border px-3 text-xs font-semibold transition",
                     target === option
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border bg-card text-card-foreground hover:border-primary hover:bg-secondary",

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { PublicAccountEntry } from "./public-account-entry";
+import { ThemeToggle } from "./theme-toggle";
 import { cn } from "./ui";
 
 export const publicHeaderActionLabels = ["账户"] as const;
@@ -42,7 +43,7 @@ function NavLink({
       href={href}
       onClick={onClick}
       className={cn(
-        "inline-flex h-10 items-center rounded-xl px-3.5 text-sm font-medium transition",
+        "inline-flex h-11 items-center rounded-xl px-3.5 text-sm font-medium transition",
         active
           ? "bg-secondary text-secondary-foreground"
           : "text-muted-foreground hover:bg-secondary hover:text-foreground",
@@ -92,16 +93,18 @@ export function PublicHeader(props?: PublicHeaderProps) {
       ref={headerMenuRef}
       className="sticky top-0 z-40 border-b border-border/90 bg-card/90 backdrop-blur-xl"
     >
-      <nav className="mx-auto flex min-h-[72px] w-full max-w-[1600px] min-w-0 items-center gap-4 px-[clamp(16px,4vw,64px)] lg:grid lg:grid-cols-[minmax(220px,1fr)_auto_minmax(220px,1fr)]">
+      <nav className="mx-auto flex min-h-[72px] w-full max-w-[1440px] min-w-0 items-center gap-2 px-[clamp(16px,4vw,48px)] lg:grid lg:grid-cols-[minmax(200px,1fr)_auto_minmax(200px,1fr)]">
         <Link
           href="/"
-          className="flex min-w-0 shrink-0 items-center gap-3"
+          className="flex min-w-0 items-center gap-2"
           onClick={() => setMenuOpen(false)}
         >
           <img src="/brand-mark.svg" alt="" className="h-10 w-10 shrink-0" aria-hidden="true" />
           <span className="grid min-w-0 leading-tight">
             <span className="truncate text-base font-bold text-card-foreground">逐光天气</span>
-            <span className="truncate text-xs text-muted-foreground">风光摄影出行判断工具</span>
+            <span className="hidden truncate text-xs text-muted-foreground min-[360px]:block">
+              风光摄影出行判断工具
+            </span>
           </span>
         </Link>
 
@@ -116,29 +119,31 @@ export function PublicHeader(props?: PublicHeaderProps) {
           ))}
         </div>
 
-        <div className="hidden shrink-0 items-center justify-end gap-2 lg:flex">
-          <PublicAccountEntry variant="desktop" />
-        </div>
-
-        <button
-          type="button"
-          className="ml-auto inline-flex h-11 items-center gap-1.5 rounded-xl border border-border bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary lg:hidden"
-          aria-expanded={menuOpen}
-          aria-controls="public-mobile-menu"
-          onClick={() => setMenuOpen((current) => !current)}
-        >
-          菜单
-          <svg
-            className={cn("h-3.5 w-3.5 transition-transform", menuOpen && "rotate-180")}
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            aria-hidden="true"
+        <div className="ml-auto flex shrink-0 items-center justify-end gap-2 lg:ml-0">
+          <ThemeToggle />
+          <div className="hidden lg:block">
+            <PublicAccountEntry variant="desktop" />
+          </div>
+          <button
+            type="button"
+            className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary lg:hidden"
+            aria-expanded={menuOpen}
+            aria-controls="public-mobile-menu"
+            onClick={() => setMenuOpen((current) => !current)}
           >
-            <path d="M3 6l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+            菜单
+            <svg
+              className={cn("h-3.5 w-3.5 transition-transform", menuOpen && "rotate-180")}
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              aria-hidden="true"
+            >
+              <path d="M3 6l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
       </nav>
 
       {menuOpen ? (

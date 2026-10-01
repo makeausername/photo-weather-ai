@@ -55,7 +55,7 @@ export function ResultViewTabs({
                 <span className="truncate">{item.label}</span>
               </span>
               {item.eyebrow ? (
-                <span className="hidden text-[10px] font-bold tracking-[0.06em] opacity-75 min-[760px]:block">
+                <span className="hidden text-xs font-normal opacity-75 min-[760px]:block">
                   {item.eyebrow}
                 </span>
               ) : null}

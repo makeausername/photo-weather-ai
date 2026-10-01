@@ -398,8 +398,8 @@ describe("Cloud Sea display data rolling horizon", () => {
     expect(panelSource).toContain("border-separate border-spacing-0");
     expect(panelSource).not.toContain("border-collapse");
     expect(panelSource).toContain("professionalHourlyDateHeaderClassName");
-    expect(panelSource).toContain("min-[760px]:sticky min-[760px]:left-0");
-    expect(panelSource).not.toContain("sticky left-0 z-20");
+    expect(panelSource).toContain("professional-time sticky left-0");
+    expect(panelSource).toContain("sticky left-[4.5rem]");
     expect(panelSource).not.toContain("ProfessionalHourlyCloudCard");
     expect(panelSource).not.toContain("professionalHourlyRowsByDate");
     expect(panelSource).not.toContain("data-professional-hourly-card-layout");

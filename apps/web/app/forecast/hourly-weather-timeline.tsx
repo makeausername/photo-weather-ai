@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import {
   Area,
   Bar,
@@ -37,142 +37,170 @@ export function HourlyWeatherTimeline({
   readonly description?: string;
   readonly controls?: ReactNode;
 }) {
-  if (points.length === 0) {
-    return null;
-  }
-
+  const id = useId().replace(/:/g, "");
+  if (points.length === 0) return null;
   const nightRanges = buildNightRanges(points);
-
+  const labels = new Map(points.map((point) => [point.key, point.label]));
+  const tracks = [
+    { key: "cloud", label: "云层", unit: "%", domain: [0, 100] },
+    { key: "rain", label: "降水", unit: "mm", domain: [0, "auto"] },
+    { key: "temperature", label: "气温与露点", unit: "°C", domain: ["auto", "auto"] },
+  ] as const;
   return (
     <section
-      className="min-w-0 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-panel sm:p-5"
+      className="min-w-0 overflow-hidden rounded-2xl border border-border bg-card p-4 sm:p-5"
       data-hourly-weather-timeline="true"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="text-lg font-bold text-card-foreground">{title}</h2>
+          <h2 className="text-lg font-semibold text-card-foreground">{title}</h2>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">{description}</p>
         </div>
-        <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
-          {points.length} 小时
-        </span>
+        <span className="text-xs text-muted-foreground">{points.length} 小时</span>
       </div>
-
       {controls ? <div className="mt-4 min-w-0">{controls}</div> : null}
-
-      <div className="mt-4 h-[280px] min-w-0 sm:h-[320px]" role="img" aria-label={title}>
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={points} margin={{ top: 12, right: 2, bottom: 4, left: -18 }}>
-            <defs>
-              <linearGradient id="hourly-cloud-cover" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--muted-foreground)" stopOpacity={0.24} />
-                <stop offset="100%" stopColor="var(--muted-foreground)" stopOpacity={0.03} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid stroke="var(--border)" strokeDasharray="3 5" vertical={false} />
-            {nightRanges.map((range) => (
-              <ReferenceArea
-                key={`${range.start}-${range.end}`}
-                x1={range.start}
-                x2={range.end}
-                yAxisId="percent"
-                fill="var(--foreground)"
-                fillOpacity={0.035}
-              />
-            ))}
-            <XAxis
-              dataKey="label"
-              axisLine={false}
-              tickLine={false}
-              minTickGap={22}
-              tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-            />
-            <YAxis
-              yAxisId="percent"
-              domain={[0, 100]}
-              axisLine={false}
-              tickLine={false}
-              width={42}
-              tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
-              tickFormatter={(value) => `${value}%`}
-            />
-            <YAxis
-              yAxisId="temperature"
-              orientation="right"
-              axisLine={false}
-              tickLine={false}
-              width={38}
-              tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
-              tickFormatter={(value) => `${value}°`}
-            />
-            <YAxis yAxisId="rain" hide domain={[0, "auto"]} />
-            <Tooltip
-              cursor={{ fill: "var(--muted)", opacity: 0.55 }}
-              contentStyle={{
-                border: "1px solid var(--border)",
-                borderRadius: 12,
-                background: "var(--card)",
-                color: "var(--card-foreground)",
-                fontSize: 12,
-              }}
-              labelStyle={{ color: "var(--card-foreground)", fontWeight: 700 }}
-            />
-            <Legend wrapperStyle={{ fontSize: 11, color: "var(--muted-foreground)" }} />
-            <Area
-              yAxisId="percent"
-              type="monotone"
-              dataKey="cloudCoverPercent"
-              name="总云量 %"
-              stroke="var(--muted-foreground)"
-              strokeWidth={1.5}
-              fill="url(#hourly-cloud-cover)"
-              connectNulls
-            />
-            <Bar
-              yAxisId="rain"
-              dataKey="precipitationMm"
-              name="降水 mm"
-              fill="var(--info-strong)"
-              opacity={0.72}
-              maxBarSize={12}
-              radius={[3, 3, 0, 0]}
-            />
-            <Line
-              yAxisId="percent"
-              type="monotone"
-              dataKey="precipitationProbabilityPercent"
-              name="降水概率 %"
-              stroke="var(--info-strong)"
-              strokeWidth={2}
-              dot={false}
-              connectNulls
-            />
-            <Line
-              yAxisId="temperature"
-              type="monotone"
-              dataKey="temperatureC"
-              name="气温 °C"
-              stroke="var(--accent-strong)"
-              strokeWidth={2.25}
-              dot={false}
-              connectNulls
-            />
-            <Line
-              yAxisId="temperature"
-              type="monotone"
-              dataKey="dewPointC"
-              name="露点 °C"
-              stroke="var(--primary)"
-              strokeDasharray="4 4"
-              strokeWidth={1.75}
-              dot={false}
-              connectNulls
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
+      <div className="mt-4 grid min-w-0 gap-3" aria-label={title}>
+        {tracks.map((track) => (
+          <div key={track.key} className="min-w-0" data-hourly-track={track.key}>
+            <p className="mb-1 text-xs font-semibold text-muted-foreground">
+              {track.label}{" "}
+              <span className="font-normal">
+                / {track.unit}
+                {track.key === "rain" ? " · 右轴为概率 %" : ""}
+              </span>
+            </p>
+            <div className="h-[180px] min-w-0 sm:h-[200px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={points}
+                  syncId={id}
+                  margin={{ top: 8, right: 0, bottom: 0, left: 0 }}
+                  accessibilityLayer
+                >
+                  <CartesianGrid stroke="var(--border)" vertical={false} />
+                  {nightRanges.map((range) => (
+                    <ReferenceArea
+                      key={range.start}
+                      x1={range.start}
+                      x2={range.end}
+                      yAxisId="value"
+                      fill="var(--foreground)"
+                      fillOpacity={0.035}
+                    />
+                  ))}
+                  <XAxis
+                    dataKey="key"
+                    tickFormatter={(key) => labels.get(String(key)) ?? String(key)}
+                    axisLine={false}
+                    tickLine={false}
+                    minTickGap={30}
+                    tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                  />
+                  <YAxis
+                    yAxisId="value"
+                    domain={[...track.domain]}
+                    width={48}
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                  />
+                  <YAxis
+                    yAxisId="probability"
+                    orientation="right"
+                    domain={[0, 100]}
+                    width={44}
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                    tickFormatter={(value) => (track.key === "rain" ? `${value}%` : "")}
+                  />
+                  <Tooltip
+                    labelFormatter={(key) => labels.get(String(key)) ?? String(key)}
+                    cursor={{ stroke: "var(--info)", strokeDasharray: "3 3" }}
+                    contentStyle={{
+                      border: "1px solid var(--border)",
+                      borderRadius: 8,
+                      background: "var(--card)",
+                      color: "var(--card-foreground)",
+                      fontSize: 13,
+                    }}
+                    labelStyle={{ color: "var(--card-foreground)", fontWeight: 600 }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12, color: "var(--muted-foreground)" }} />
+                  {track.key === "cloud" ? (
+                    <Area
+                      yAxisId="value"
+                      type="linear"
+                      dataKey="cloudCoverPercent"
+                      name="总云量 %"
+                      stroke="var(--info)"
+                      fill="var(--info)"
+                      fillOpacity={0.12}
+                      strokeWidth={2}
+                      connectNulls={false}
+                      isAnimationActive={false}
+                    />
+                  ) : null}
+                  {track.key === "rain" ? (
+                    <>
+                      <Bar
+                        yAxisId="value"
+                        dataKey="precipitationMm"
+                        name="降水 mm"
+                        fill="var(--info)"
+                        maxBarSize={16}
+                        radius={[2, 2, 0, 0]}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        yAxisId="probability"
+                        type="linear"
+                        dataKey="precipitationProbabilityPercent"
+                        name="降水概率 %"
+                        stroke="var(--primary)"
+                        strokeDasharray="5 4"
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls={false}
+                        isAnimationActive={false}
+                      />
+                    </>
+                  ) : null}
+                  {track.key === "temperature" ? (
+                    <>
+                      <Line
+                        yAxisId="value"
+                        type="linear"
+                        dataKey="temperatureC"
+                        name="气温 °C"
+                        stroke="var(--accent-strong)"
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls={false}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        yAxisId="value"
+                        type="linear"
+                        dataKey="dewPointC"
+                        name="露点 °C"
+                        stroke="var(--info)"
+                        strokeDasharray="5 4"
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls={false}
+                        isAnimationActive={false}
+                      />
+                    </>
+                  ) : null}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        ))}
       </div>
-      <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-        深色背景表示夜间时段；图表用于快速识别趋势，具体数值以专业数据表为准。
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">
+        深色背景表示夜间。各图共用时间轴，断线表示数据缺失；降水量与概率分别读左右轴。具体数值以专业数据表为准。
       </p>
     </section>
   );
@@ -181,17 +209,12 @@ export function HourlyWeatherTimeline({
 function buildNightRanges(points: readonly HourlyTimelinePoint[]) {
   const ranges: Array<{ start: string; end: string }> = [];
   let start: string | null = null;
-
   points.forEach((point, index) => {
-    if (point.isNight && start === null) {
-      start = point.label;
-    }
-    const nextIsNight = points[index + 1]?.isNight ?? false;
-    if (start !== null && !nextIsNight) {
-      ranges.push({ start, end: point.label });
+    if (point.isNight && start === null) start = point.key;
+    if (start !== null && !(points[index + 1]?.isNight ?? false)) {
+      ranges.push({ start, end: point.key });
       start = null;
     }
   });
-
   return ranges;
 }
