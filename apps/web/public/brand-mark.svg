@@ -20,22 +20,22 @@
   />
   <path
     d="M20 61C28.5 48.2 36.2 41.8 43.2 41.8C50.5 41.8 55.2 50.2 62.2 50.2C66.7 50.2 70.7 47.6 76 42"
-    stroke="#2F6F5E"
+    stroke="#263D55"
     stroke-width="6"
     stroke-linecap="round"
     stroke-linejoin="round"
   />
-  <path d="M21 68H75" stroke="#17231F" stroke-width="5" stroke-linecap="round" />
+  <path d="M21 68H75" stroke="#17283B" stroke-width="5" stroke-linecap="round" />
   <path
     d="M34 68C42 58.1 48.5 53.2 53.5 53.2C58.3 53.2 63 58.1 68.5 68"
-    stroke="#5F8D8A"
+    stroke="#527DA8"
     stroke-width="5"
     stroke-linecap="round"
     stroke-linejoin="round"
   />
   <path
     d="M28 77C40.7 79.1 54.5 78.8 68 76"
-    stroke="#A9C7B8"
+    stroke="#AFC8DE"
     stroke-width="4"
     stroke-linecap="round"
   />

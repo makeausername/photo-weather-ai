@@ -51,7 +51,7 @@ describe("public header", () => {
     expect(accountLink).toContain('href="/login"');
     expect(accountLink).not.toContain("w-full max-w-full min-w-0");
     expect(html).not.toContain('role="group"');
-    expect(html).not.toContain('aria-pressed="');
+    expect(html).toContain('aria-label="切换夜间阅读" aria-pressed="false"');
 
     for (const link of expectedNavLinks) {
       expect(findRenderedLink(html, link.href, link.label)).toBeTruthy();
@@ -73,7 +73,7 @@ describe("public header", () => {
     expect(html).not.toContain('href="/#analysis"');
     expect(html).toContain("账户");
     expect(html).not.toContain('role="group"');
-    expect(html).not.toContain('aria-pressed="');
+    expect(html).toContain('aria-label="切换夜间阅读" aria-pressed="false"');
 
     for (const link of expectedNavLinks) {
       expect(findRenderedLink(html, link.href, link.label)).toBeTruthy();

@@ -6024,7 +6024,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("露点 °C");
     expect(html).toContain("露点差 °C");
     expect(html).toContain("湿度 %");
-    expect(html).toContain("降水 mm / 降水概率 %");
+    expect(html).toContain("降水 mm");
+    expect(html).toContain("降水概率 %");
     expect(html).toContain("能见度 km");
     expect(html).toContain("风速 m/s");
     expect(html).toContain("风向");
@@ -6040,8 +6041,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain("border-collapse");
     expect(html).toContain("w-[4.5rem] min-w-[4.5rem]");
     expect(html).toContain("w-[5rem] min-w-[5rem]");
-    expect(html).toContain("min-[760px]:sticky min-[760px]:left-0");
-    expect(html).not.toMatch(/<(?:th|td)[^>]*class="[^"]*(?<!:)sticky left-0/);
+    expect(html).toContain("professional-time sticky left-0");
+    expect(html).toContain("sticky left-[4.5rem]");
     expect(html).not.toContain("bg-inherit");
     expect(html).not.toContain("meteoblue");
     expect(html).not.toContain("Open-Meteo");
@@ -6474,19 +6475,20 @@ describe("forecast result target-aware view model", () => {
 
     expect(html).not.toContain("meteoblue");
     expect(html).toMatch(/data-professional-hourly-cell="weather">[\s\S]*?<span>—<\/span>/);
-    expect(html).toMatch(/data-professional-hourly-cell="cloud-total"[^>]*>88%<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="cloud-low">—<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="cloud-mid">—<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="cloud-high">—<\/td>/);
-    expect(html).not.toMatch(/data-professional-hourly-cell="cloud-low"[^>]*>(88|42)%<\/td>/);
-    expect(html).not.toMatch(/data-professional-hourly-cell="cloud-mid"[^>]*>(88|42)%<\/td>/);
-    expect(html).not.toMatch(/data-professional-hourly-cell="cloud-high"[^>]*>(88|42)%<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="dew-point">—<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="dew-point-spread">—<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="visibility">—<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="wind-speed">—<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="wind-direction">—<\/td>/);
-    expect(html).toContain("0 mm / —");
+    expect(html).toMatch(/data-professional-hourly-cell="cloud-total"[^>]*>88<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="cloud-low"[^>]*>—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="cloud-mid"[^>]*>—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="cloud-high"[^>]*>—<\/td>/);
+    expect(html).not.toMatch(/data-professional-hourly-cell="cloud-low"[^>]*>(88|42)<\/td>/);
+    expect(html).not.toMatch(/data-professional-hourly-cell="cloud-mid"[^>]*>(88|42)<\/td>/);
+    expect(html).not.toMatch(/data-professional-hourly-cell="cloud-high"[^>]*>(88|42)<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="dew-point"[^>]*>—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="dew-point-spread"[^>]*>—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="visibility"[^>]*>—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="wind-speed"[^>]*>—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="wind-direction"[^>]*>—<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="precipitation"[^>]*>0<\/td>/);
+    expect(html).toMatch(/data-professional-hourly-cell="precipitation-probability"[^>]*>—<\/td>/);
     expect(html).toContain("当前仅有总云量，缺少低/中/高云分层");
     expect(html).toContain("不使用总云量回填");
   });
@@ -6593,7 +6595,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("仅总云量，缺少低/中/高云分层");
     expect(html).toContain("原始格点气温 °C");
     expect(html).toContain("需复核");
-    expect(html).not.toContain("白墙风险</span>");
+    expect(sectionAfter(html, "CloudSeaProfessionalData")).not.toContain("白墙风险</span>");
   });
 
   it("downgrades cloud sea UI confidence when professional cloud layers are total-only", () => {
@@ -7505,8 +7507,8 @@ describe("forecast result target-aware view model", () => {
       expect(sharedHourlyHtml).toContain("border-separate border-spacing-0");
       expect(sharedHourlyHtml).toContain("w-[4.5rem] min-w-[4.5rem]");
       expect(sharedHourlyHtml).toContain("w-[5rem] min-w-[5rem]");
-      expect(sharedHourlyHtml).toContain("min-[760px]:sticky min-[760px]:left-0");
-      expect(sharedHourlyHtml).not.toMatch(/<(?:th|td)[^>]*class="[^"]*(?<!:)sticky left-0/);
+      expect(sharedHourlyHtml).toContain("professional-time sticky left-0");
+      expect(sharedHourlyHtml).toContain("sticky left-[4.5rem]");
       expect(sharedHourlyHtml).not.toContain("bg-inherit");
     }
 

@@ -246,12 +246,12 @@ function MoonPhaseIcon({
           <circle cx="50" cy="50" r="45" />
         </clipPath>
       </defs>
-      <circle cx="50" cy="50" r="45" fill="#17231F" />
+      <circle cx="50" cy="50" r="45" fill="#17283B" />
       {showLight ? <circle cx="50" cy="50" r="45" fill="#FFF7D6" /> : null}
       {darkPath ? (
         <path
           d={darkPath}
-          fill="#17231F"
+          fill="#17283B"
           fillRule="evenodd"
           clipPath={`url(#${clipId})`}
           clipRule="evenodd"

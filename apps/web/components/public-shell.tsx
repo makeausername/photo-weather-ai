@@ -15,7 +15,7 @@ export function PublicShell({ children, className, contentClassName }: PublicShe
       <PublicHeader />
       <div
         className={cn(
-          "mx-auto w-full max-w-[1600px] min-w-0 px-[clamp(16px,4vw,64px)] py-7 sm:py-10 lg:py-12",
+          "mx-auto w-full max-w-[1440px] min-w-0 px-[clamp(16px,4vw,48px)] py-6 sm:py-8 lg:py-9",
           contentClassName,
         )}
       >

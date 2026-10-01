@@ -195,7 +195,9 @@ describe("Cloud Sea helper-level final regression QA", () => {
     const meaningful = buildCloudSeaRuleContext(
       cloudSeaRegressionFixture("genericMeaningfulRainNearWindowCase").result,
     );
-    const heavy = buildCloudSeaRuleContext(cloudSeaRegressionFixture("genericHeavyRainCase").result);
+    const heavy = buildCloudSeaRuleContext(
+      cloudSeaRegressionFixture("genericHeavyRainCase").result,
+    );
     const outside = buildCloudSeaRuleContext(
       cloudSeaRegressionFixture("genericRainOutsideWindowCase").result,
     );
@@ -220,9 +222,7 @@ describe("Cloud Sea helper-level final regression QA", () => {
     expect(outside.precipitationSignalContext.precipitationSignalType).toBe("sustained_rain");
     expect(outside.precipitationSignalContext.affectsMainWindow).toBe(false);
     expect(outside.precipitationSignalContext.shouldDowngradeWindow).toBe(false);
-    expect(outside.recommendationGuardContext.finalRecommendationLevel).toBe(
-      "strong_special_trip",
-    );
+    expect(outside.recommendationGuardContext.finalRecommendationLevel).toBe("strong_special_trip");
   });
 
   it("treats humidity and dew-point conflicts as review-only water-vapor evidence", () => {
@@ -347,7 +347,9 @@ describe("Cloud Sea result page final regression QA", () => {
     expect(actionSection).not.toContain("30°C");
     expect(professionalSection).toContain("原始格点气温 °C");
     expect(professionalSection).toContain("机位估算气温 °C");
-    expect(professionalSection).toContain("30°C");
+    expect(professionalSection).toMatch(
+      /data-professional-hourly-cell="raw-temperature"[^>]*>30<\/td>/,
+    );
   });
 
   it("keeps near-term precipitation aligned with professional hourly rows instead of stale current zero", () => {
@@ -468,12 +470,12 @@ describe("Cloud Sea result page final regression QA", () => {
     const professionalSection = sectionAfter(html, "CloudSeaProfessionalData");
 
     expect(professionalSection).toContain("需复核");
-    expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-total"[^>]*>88%/);
+    expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-total"[^>]*>88/);
     expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-low"[^>]*>—<\/td>/);
     expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-mid"[^>]*>—<\/td>/);
     expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-high"[^>]*>—<\/td>/);
     expect(professionalSection).not.toMatch(
-      /data-professional-hourly-cell="cloud-(low|mid|high)"[^>]*>(88|86|42)%<\/td>/,
+      /data-professional-hourly-cell="cloud-(low|mid|high)"[^>]*>(88|86|42)<\/td>/,
     );
   });
 
@@ -490,8 +492,8 @@ describe("Cloud Sea result page final regression QA", () => {
       )?.value,
     ).toContain("低云 70%");
     expect(viewModel.recommendationGuard.finalRecommendationLevel).toBe("cautious_reference");
-    expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-total"[\s\S]*?20%/);
-    expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-low"[^>]*>70%/);
+    expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-total"[\s\S]*?20/);
+    expect(professionalSection).toMatch(/data-professional-hourly-cell="cloud-low"[^>]*>70/);
     expect(professionalSection).toContain("口径需复核");
     expect(professionalSection).not.toContain("可拍窗口</span>");
   });
@@ -636,8 +638,12 @@ describe("Cloud Sea result page final regression QA", () => {
   });
 
   it("keeps low-elevation wording downgraded while high-mountain wording remains available", () => {
-    const low = renderCloudSeaFixture(cloudSeaRegressionFixture("genericLowElevationWeakCloudSeaCase"));
-    const high = renderCloudSeaFixture(cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase"));
+    const low = renderCloudSeaFixture(
+      cloudSeaRegressionFixture("genericLowElevationWeakCloudSeaCase"),
+    );
+    const high = renderCloudSeaFixture(
+      cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase"),
+    );
 
     expect(low.viewModel.terrainContext.shouldDowngradeCloudSeaWording).toBe(true);
     expect(low.html).toContain("低云观察与备选");
@@ -655,7 +661,9 @@ describe("Cloud Sea result page final regression QA", () => {
   });
 
   it("keeps professional hourly table columns visible after copy polish", () => {
-    const { html } = renderCloudSeaFixture(cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase"));
+    const { html } = renderCloudSeaFixture(
+      cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase"),
+    );
     const professionalSection = sectionAfter(html, "CloudSeaProfessionalData");
 
     for (const header of [
@@ -668,7 +676,8 @@ describe("Cloud Sea result page final regression QA", () => {
       "露点 °C",
       "露点差 °C",
       "湿度 %",
-      "降水 mm / 降水概率 %",
+      "降水 mm",
+      "降水概率 %",
       "能见度 km",
       "风速 m/s",
       "风向",

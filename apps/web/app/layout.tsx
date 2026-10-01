@@ -31,8 +31,15 @@ type RootLayoutProps = {
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="zh-CN" data-theme="light">
-      <body>{children}</body>
+    <html lang="zh-CN" data-theme="light" suppressHydrationWarning>
+      <body>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{document.documentElement.dataset.theme=localStorage.getItem('zhuguang-reading-theme')==='dark'?'dark':'light'}catch(e){}`,
+          }}
+        />
+        {children}
+      </body>
     </html>
   );
 }

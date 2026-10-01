@@ -25,13 +25,13 @@ const buttonVariants: Record<ButtonVariant, string> = {
   ghost:
     "border-transparent bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground disabled:hover:bg-transparent",
   danger:
-    "border-danger bg-danger text-white shadow-sm hover:brightness-95 disabled:hover:brightness-100",
+    "border-danger bg-danger text-[var(--status-foreground)] shadow-sm hover:brightness-95 disabled:hover:brightness-100",
   success:
-    "border-success bg-success text-white shadow-sm hover:brightness-95 disabled:hover:brightness-100",
+    "border-success bg-success text-[var(--status-foreground)] shadow-sm hover:brightness-95 disabled:hover:brightness-100",
 };
 
 const buttonSizes: Record<ButtonSize, string> = {
-  sm: "h-9 px-3 text-xs",
+  sm: "h-11 px-3 text-xs",
   md: "h-11 px-4 text-sm",
   lg: "h-12 px-5 text-sm",
 };
@@ -145,10 +145,11 @@ export function Badge({ children, variant = "default", className }: BadgeProps) 
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold",
+        "badge inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold",
         badgeVariants[variant],
         className,
       )}
+      data-badge-variant={variant}
     >
       {children}
     </span>

@@ -76,7 +76,7 @@ export function PublicAccountEntry({ onNavigate, variant = "desktop" }: PublicAc
         href="/login"
         onClick={onNavigate}
         className={cn(
-          "inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary",
+          "inline-flex h-11 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary",
           isMobile && "w-full max-w-full min-w-0 justify-center",
         )}
       >
@@ -106,7 +106,7 @@ export function PublicAccountEntry({ onNavigate, variant = "desktop" }: PublicAc
       <button
         type="button"
         className={cn(
-          "inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary",
+          "inline-flex h-11 items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary hover:bg-secondary",
           isMobile && "w-full max-w-full min-w-0 justify-center",
           menuOpen && "border-primary bg-secondary",
         )}

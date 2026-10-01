@@ -7,6 +7,8 @@ module.exports = {
   ],
   theme: {
     extend: {
+      fontSize: { xs: ["13px", "1.5"], sm: ["15px", "1.6"] },
+      fontWeight: { bold: "600" },
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
@@ -52,9 +54,9 @@ module.exports = {
         sm: "0.5rem",
         DEFAULT: "0.75rem",
         md: "0.75rem",
-        lg: "1rem",
-        xl: "1.25rem",
-        "2xl": "1.5rem",
+        lg: "0.75rem",
+        xl: "0.875rem",
+        "2xl": "1.125rem",
         "3xl": "1.875rem",
       },
     },

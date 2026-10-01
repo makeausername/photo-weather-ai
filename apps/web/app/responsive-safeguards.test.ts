@@ -50,9 +50,9 @@ describe("responsive safeguards", () => {
 
     expect(html).toContain("min-h-screen bg-background");
     expect(html).not.toContain("overflow-x-hidden bg-background");
-    expect(html).toContain("mx-auto w-full max-w-[1600px] min-w-0 px-[clamp(16px,4vw,64px)]");
-    expect(html).toContain("mx-auto flex min-h-[72px] w-full max-w-[1600px] min-w-0 items-center");
-    expect(html).toContain("mx-auto flex w-full max-w-[1600px] min-w-0");
+    expect(html).toContain("mx-auto w-full max-w-[1440px] min-w-0 px-[clamp(16px,4vw,48px)]");
+    expect(html).toContain("mx-auto flex min-h-[72px] w-full max-w-[1440px] min-w-0 items-center");
+    expect(html).toContain("mx-auto flex w-full max-w-[1440px] min-w-0");
     expect(html).not.toContain("px-[clamp(24px,4vw,72px)]");
   });
 
@@ -119,9 +119,9 @@ describe("responsive safeguards", () => {
     expect(forecastSource).toContain('data-cloud-sea-professional-table-scroll="true"');
     expect(forecastSource).toContain('data-professional-hourly-table-layout="mobile-scroll-safe"');
     expect(forecastSource).toContain("border-separate border-spacing-0");
-    expect(forecastSource).toContain("min-[760px]:sticky min-[760px]:left-0");
+    expect(forecastSource).toContain("professional-time sticky left-0");
     expect(forecastSource).not.toContain("bg-inherit");
-    expect(forecastSource).not.toContain("sticky left-0");
+    expect(forecastSource).toContain("sticky left-[4.5rem]");
     expect(forecastSource).toContain("<ResponsiveDataScroller");
     expect(combinedSource).not.toContain("w-screen");
     expect(combinedSource).not.toContain("w-[100vw]");

@@ -1,6 +1,13 @@
 "use client";
 
 import * as React from "react";
+import { DecisionValue } from "../../components/decision-value";
+import {
+  hourlyColumnGroups,
+  hourlyColumnVisibility,
+  hourlyTableNumber,
+  type HourlyColumnGroup,
+} from "./professional-hourly-columns";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import dynamic from "next/dynamic";
@@ -2471,7 +2478,7 @@ function AstroTopContext({
       data-astro-decision-first="true"
     >
       <Card
-        className="AstroDecisionHero grid w-full min-w-0 gap-5 p-5 min-[900px]:p-6"
+        className="decision-hero AstroDecisionHero grid w-full min-w-0 gap-5 p-5 min-[900px]:p-6"
         data-astro-decision-hero="true"
         data-astro-decision-layout="single-main"
       >
@@ -2554,28 +2561,19 @@ function AstroActionPlanGrid({
   }
 
   return (
-    <section
-      className="rounded-xl border border-border bg-secondary/70 p-4"
-      data-astro-action-plan="true"
-    >
+    <section className="border-t border-border pt-4" data-astro-action-plan="true">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-bold text-card-foreground">核心判断</h2>
         <Badge variant="muted">一眼看懂</Badge>
       </div>
-      <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <dl className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
         {items.map((item) => (
-          <div
-            key={item.key}
-            className="min-w-0 rounded-xl border border-border bg-card px-2.5 py-3 sm:px-3"
-            data-astro-action-plan-item={item.key}
-          >
-            <dt className="text-[11px] font-semibold leading-4 text-muted-foreground">
-              {item.label}
-            </dt>
+          <div key={item.key} className="min-w-0 py-1" data-astro-action-plan-item={item.key}>
+            <dt className="text-xs font-normal leading-5 text-muted-foreground">{item.label}</dt>
             <dd
               className={cn(
-                "mt-1 break-words text-[13px] font-bold leading-5 sm:text-sm",
-                cardToneText(item.tone),
+                "mt-2 break-words text-base font-semibold leading-6 sm:text-lg",
+                item.key === "worth" ? cardToneText(item.tone) : "text-card-foreground",
               )}
             >
               {item.value}
@@ -3109,7 +3107,9 @@ function GlowHeroConclusion({
 
   return (
     <Card
-      className={glowPanelClassName("GlowHeroConclusion glow-hero-conclusion min-w-0 p-4")}
+      className={glowPanelClassName(
+        "decision-hero GlowHeroConclusion glow-hero-conclusion min-w-0 p-4",
+      )}
       data-forecast-result-summary-card="true"
       data-result-header-summary-card="true"
       data-result-target="glow"
@@ -3260,14 +3260,7 @@ function GlowPrimaryMetricCard({ card }: { readonly card: ForecastResultCard }) 
       data-glow-metric-card={card.key}
     >
       <p className="text-xs font-semibold text-muted-foreground">{card.label}</p>
-      <p
-        className={cn(
-          "break-words text-xl font-bold leading-7 [overflow-wrap:anywhere]",
-          glowToneClassName(card.tone),
-        )}
-      >
-        {card.value}
-      </p>
+      <DecisionValue value={card.value} className="mt-2 text-card-foreground" />
       <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
         {compactResultCardDetail(card.detail)}
       </p>
@@ -3870,7 +3863,7 @@ function CloudSeaHeroConclusion({
   return (
     <Card
       className={cloudSeaPanelClassName(
-        "CloudSeaHeroConclusion cloud-sea-hero-conclusion min-w-0 p-4",
+        "decision-hero CloudSeaHeroConclusion cloud-sea-hero-conclusion min-w-0 p-4",
       )}
       data-forecast-result-summary-card="true"
       data-result-header-summary-card="true"
@@ -4043,14 +4036,7 @@ function CloudSeaPrimaryResultCard({ card }: { readonly card: ForecastResultCard
       )}
     >
       <p className="text-xs font-semibold text-muted-foreground">{card.label}</p>
-      <p
-        className={cn(
-          "break-words text-xl font-bold leading-7 [overflow-wrap:anywhere]",
-          cloudSeaToneClassName(card.tone),
-        )}
-      >
-        {card.value}
-      </p>
+      <DecisionValue value={card.value} className="mt-2 text-card-foreground" />
       <p className="text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
         {compactResultCardDetail(card.detail)}
       </p>
@@ -4685,6 +4671,7 @@ type ProfessionalHourlySectionConfig = {
   readonly showVisibilityColumn?: boolean;
   readonly showWindColumns?: boolean;
   readonly precipitationColumnLabel?: string;
+  readonly showPrecipitationColumns?: boolean;
   readonly compactTable?: boolean;
   readonly cardClassName?: string;
 };
@@ -4793,48 +4780,38 @@ export function CloudSeaProfessionalHourlyDataPanel({
 }
 
 function professionalHourlyDateHeaderClassName(): string {
-  return cn(
-    "w-[4.5rem] min-w-[4.5rem] bg-muted",
-    "min-[760px]:sticky min-[760px]:left-0 min-[760px]:z-20",
-    "min-[760px]:shadow-[4px_0_0_var(--border)]",
-  );
+  return "professional-time sticky left-0 z-20 w-[4.5rem] min-w-[4.5rem] text-left";
 }
 
-function professionalHourlyDateCellClassName(rowBackgroundClassName: string): string {
-  return cn(
-    "w-[4.5rem] min-w-[4.5rem] font-semibold text-card-foreground",
-    rowBackgroundClassName,
-    "min-[760px]:sticky min-[760px]:left-0 min-[760px]:z-10",
-    "min-[760px]:shadow-[4px_0_0_var(--border)]",
-  );
+function professionalHourlyDateCellClassName(_rowBackgroundClassName: string): string {
+  return "professional-time sticky left-0 z-10 w-[4.5rem] min-w-[4.5rem] font-semibold text-card-foreground";
 }
 
 function professionalHourlyTimeCellClassName(): string {
-  return "w-[5rem] min-w-[5rem] font-semibold text-card-foreground";
+  return "professional-time sticky left-[4.5rem] z-10 w-[5rem] min-w-[5rem] font-semibold text-card-foreground shadow-[2px_0_0_var(--border)]";
 }
 
 function professionalHourlyRowBackgroundClassName(
   rowIndex: number,
   tone: ProfessionalHourlyRowAnnotation["tone"] | undefined,
 ): string {
-  if (tone === "success") {
-    return "bg-secondary/20";
-  }
-
-  if (tone === "warning" || tone === "danger") {
-    return "bg-accent/10";
-  }
-
-  return rowIndex % 2 === 0 ? "bg-card" : "bg-muted/35";
+  if (tone === "success") return "professional-row professional-row-success";
+  if (tone === "warning" || tone === "danger") return "professional-row professional-row-warning";
+  return rowIndex % 2 === 0 ? "professional-row" : "professional-row professional-row-alternate";
 }
 
 function ProfessionalHourlyCloudSection({
   target,
   data,
   terrainContext,
-  config,
+  config: sourceConfig,
   variant = "card",
 }: ProfessionalHourlyCloudSectionProps) {
+  const [columnGroup, setColumnGroup] = useState<HourlyColumnGroup>("all");
+  const config = useMemo(
+    () => ({ ...sourceConfig, ...hourlyColumnVisibility(columnGroup, sourceConfig) }),
+    [sourceConfig, columnGroup],
+  );
   const rows = data.rows;
   const basis = data.timeBasis;
   const embedded = variant === "embedded";
@@ -4845,11 +4822,11 @@ function ProfessionalHourlyCloudSection({
 
   useEffect(() => {
     setExpanded(config?.initiallyExpanded ?? true);
-  }, [config]);
+  }, [sourceConfig]);
 
   useEffect(() => {
     setFilterMode(defaultProfessionalHourlyFilter(data, config));
-  }, [config, data]);
+  }, [sourceConfig, data]);
 
   const filteredRows = useMemo(
     () => filterProfessionalHourlyRows(rows, data, filterMode, config?.focusPaddingHours ?? 3),
@@ -4909,6 +4886,11 @@ function ProfessionalHourlyCloudSection({
   )} - ${formatFullDateTimeForTimezone(rows.at(-1)?.time ?? basis.endTime, basis.timezone)}`;
   const showHourlyToggleHeader = !embedded || config?.initiallyExpanded === false;
   const showCoverageNote = target !== "astro" && (config?.showCoverageNote ?? true);
+  const coverageNeedsAttention =
+    !coverageComplete ||
+    basis.partialData ||
+    cloudLayerCompleteness.layerCompletenessLevel !== "complete" ||
+    cloudBasisConsistency.cloudBasisLevel === "mixed_basis";
   const showCollapsedPreview = target !== "astro" && (config?.showCollapsedPreview ?? true);
   const previewRowLimit = Math.max(1, config?.previewRowLimit ?? 4);
   const hourlyTableHeaders = [
@@ -4920,7 +4902,7 @@ function ProfessionalHourlyCloudSection({
     ...(config?.showTemperatureColumns === false ? [] : [...temperatureColumnLabels]),
     ...(config?.showDewPointColumns === false ? [] : ["露点 °C", "露点差 °C"]),
     ...(config?.showHumidityColumn === false ? [] : ["湿度 %"]),
-    config?.precipitationColumnLabel ?? "降水 mm / 降水概率 %",
+    ...(config.showPrecipitationColumns === false ? [] : ["降水 mm", "降水概率 %"]),
     ...(config?.showVisibilityColumn === false ? [] : ["能见度 km"]),
     ...(config?.showWindColumns === false ? [] : ["风速 m/s", "风向"]),
   ];
@@ -4964,41 +4946,56 @@ function ProfessionalHourlyCloudSection({
       )}
 
       {config?.showBasisSummary !== false ? (
-        <dl className="mt-4 grid gap-2 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground min-[760px]:grid-cols-4">
-          <CompactDefinition label="目标有效时间" value={targetRangeLabel} />
-          <CompactDefinition label="覆盖率" value={`${rows.length} / ${expectedRowCount} 小时`} />
-          {!coverageComplete ? (
-            <CompactDefinition label="实际显示" value={actualRangeLabel} />
-          ) : null}
-          <CompactDefinition
-            label="有效时间"
-            value={`${formatFullDateTimeForTimezone(
-              basis.startTime,
-              basis.timezone,
-            )} – ${formatFullDateTimeForTimezone(basis.endTime, basis.timezone)}`}
-          />
-          <CompactDefinition label="时间步长" value={timeStepLabel} />
-          <CompactDefinition label="时区" value={basis.timezone} />
-          <CompactDefinition
-            label="温度口径"
-            value={professionalTemperatureBasisLabel(basis.temperatureBasis)}
-          />
-          <CompactDefinition
-            label="云量口径"
-            value={professionalCloudBasisLabel(cloudBasisConsistency, cloudLayerCompleteness)}
-          />
-          {basis.fieldCoverageSummary ? (
+        <details className="mt-4 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground">
+          <summary className="cursor-pointer font-semibold">
+            数据口径与覆盖 · {rows.length} / {expectedRowCount} 小时 · {timeStepLabel} ·{" "}
+            {basis.timezone}
+          </summary>
+          <dl className="mt-3 grid gap-3 min-[760px]:grid-cols-4">
+            <CompactDefinition label="目标有效时间" value={targetRangeLabel} />
+            <CompactDefinition label="覆盖率" value={`${rows.length} / ${expectedRowCount} 小时`} />
+            {!coverageComplete ? (
+              <CompactDefinition label="实际显示" value={actualRangeLabel} />
+            ) : null}
             <CompactDefinition
-              label="分层覆盖"
-              value={professionalCloudCoverageLabel(basis.fieldCoverageSummary)}
+              label="有效时间"
+              value={`${formatFullDateTimeForTimezone(
+                basis.startTime,
+                basis.timezone,
+              )} – ${formatFullDateTimeForTimezone(basis.endTime, basis.timezone)}`}
             />
-          ) : null}
-          {missingHeaderNote ? (
-            <CompactDefinition label="缺失说明" value={missingHeaderNote} />
-          ) : null}
-        </dl>
+            <CompactDefinition label="时间步长" value={timeStepLabel} />
+            <CompactDefinition label="时区" value={basis.timezone} />
+            <CompactDefinition
+              label="温度口径"
+              value={professionalTemperatureBasisLabel(basis.temperatureBasis)}
+            />
+            <CompactDefinition
+              label="云量口径"
+              value={professionalCloudBasisLabel(cloudBasisConsistency, cloudLayerCompleteness)}
+            />
+            {basis.fieldCoverageSummary ? (
+              <CompactDefinition
+                label="分层覆盖"
+                value={professionalCloudCoverageLabel(basis.fieldCoverageSummary)}
+              />
+            ) : null}
+            {missingHeaderNote ? (
+              <CompactDefinition label="缺失说明" value={missingHeaderNote} />
+            ) : null}
+            {showCoverageNote && coverageNote && !coverageNeedsAttention ? (
+              <p className="min-[760px]:col-span-4" data-testid="cloud-layer-coverage-note">
+                {coverageNote}
+              </p>
+            ) : null}
+          </dl>
+        </details>
+      ) : null}
+      {missingHeaderNote ? (
+        <p className="mt-3 text-xs leading-5 text-warning-strong">{missingHeaderNote}</p>
       ) : null}
       {showCoverageNote &&
+      coverageNeedsAttention &&
       coverageNote &&
       coverageNote !== missingHeaderNote &&
       coverageNote !== incompleteFieldNote ? (
@@ -5043,11 +5040,12 @@ function ProfessionalHourlyCloudSection({
                   key={filter.mode}
                   type="button"
                   className={cn(
-                    "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                    "min-h-11 rounded-lg border px-3 py-2 text-xs font-semibold transition",
                     filterMode === filter.mode
                       ? "border-primary bg-secondary text-secondary-foreground"
                       : "border-border bg-card text-muted-foreground hover:border-primary hover:text-foreground",
                   )}
+                  aria-pressed={filterMode === filter.mode}
                   onClick={() => {
                     setFilterMode(filter.mode);
                   }}
@@ -5062,11 +5060,34 @@ function ProfessionalHourlyCloudSection({
             {rows.length} / {expectedRowCount} 小时。{professionalUsageText}
           </p>
 
+          {!sourceConfig?.compactTable ? (
+            <div role="group" aria-label="专业数据指标分组" className="flex flex-wrap gap-2">
+              {hourlyColumnGroups.map((group) => (
+                <button
+                  key={group.value}
+                  type="button"
+                  aria-pressed={columnGroup === group.value}
+                  onClick={() => setColumnGroup(group.value)}
+                  className={cn(
+                    "min-h-11 rounded-lg border px-3 py-2 text-xs font-semibold",
+                    columnGroup === group.value
+                      ? "border-primary bg-secondary text-secondary-foreground"
+                      : "border-border text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  {group.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <p className="text-xs text-muted-foreground">
+            单位见表头；蓝色深浅只表示云量大小，拍摄判断见信号列。— 表示缺失。
+          </p>
           <ResponsiveDataScroller bare data-cloud-sea-professional-table-scroll="true">
             <table
               className={cn(
-                "border-separate border-spacing-0 text-left text-[12px] leading-5",
-                config?.compactTable
+                "border-separate border-spacing-0 text-left text-[13px] leading-5",
+                config?.compactTable || columnGroup !== "all"
                   ? "mx-auto w-full max-w-max min-w-[560px]"
                   : "w-full min-w-[1280px]",
               )}
@@ -5083,7 +5104,9 @@ function ProfessionalHourlyCloudSection({
                       className={cn(
                         "whitespace-nowrap border-b border-border px-2 py-2 font-semibold",
                         index === 0 && professionalHourlyDateHeaderClassName(),
-                        index === 1 && "w-[5rem] min-w-[5rem]",
+                        index === 1 &&
+                          "professional-time sticky left-[4.5rem] z-20 w-[5rem] min-w-[5rem] shadow-[2px_0_0_var(--border)]",
+                        index > (config?.showSignalColumn === false ? 2 : 3) && "text-right",
                       )}
                     >
                       {label}
@@ -5363,76 +5386,66 @@ function CloudSeaProfessionalHourlyRow({
       )}
       {config?.showCloudColumns === false ? null : (
         <>
-          <ProfessionalHourlyCell
-            cell="cloud-total"
-            className={professionalHourlyToneClass(row.cloudTotalPercent, "cloud-total")}
-          >
+          <ProfessionalHourlyCell cell="cloud-total" cloudAmount={row.cloudTotalPercent}>
             <ProfessionalCloudValue
-              value={formatProfessionalPercent(row.cloudTotalPercent)}
+              value={hourlyTableNumber(row.cloudTotalPercent, 0)}
               note={cloudBasisRowNote}
             />
           </ProfessionalHourlyCell>
-          <ProfessionalHourlyCell cell="cloud-high">
-            {formatProfessionalPercent(row.cloudHighPercent)}
+          <ProfessionalHourlyCell cell="cloud-high" cloudAmount={row.cloudHighPercent}>
+            {hourlyTableNumber(row.cloudHighPercent, 0)}
           </ProfessionalHourlyCell>
-          <ProfessionalHourlyCell cell="cloud-mid">
-            {formatProfessionalPercent(row.cloudMidPercent)}
+          <ProfessionalHourlyCell cell="cloud-mid" cloudAmount={row.cloudMidPercent}>
+            {hourlyTableNumber(row.cloudMidPercent, 0)}
           </ProfessionalHourlyCell>
-          <ProfessionalHourlyCell
-            cell="cloud-low"
-            className={professionalHourlyToneClass(row.cloudLowPercent, "cloud-low")}
-          >
-            {formatProfessionalPercent(row.cloudLowPercent)}
+          <ProfessionalHourlyCell cell="cloud-low" cloudAmount={row.cloudLowPercent}>
+            {hourlyTableNumber(row.cloudLowPercent, 0)}
           </ProfessionalHourlyCell>
         </>
       )}
       {showRawTemperatureColumn && config?.showTemperatureColumns !== false ? (
         <ProfessionalHourlyCell cell="raw-temperature" dataBasis="raw_grid">
-          {formatProfessionalTemperature(row.rawTemperatureC)}
+          {hourlyTableNumber(row.rawTemperatureC)}
         </ProfessionalHourlyCell>
       ) : null}
       {config?.showTemperatureColumns === false ? null : (
         <ProfessionalHourlyCell cell="temperature" dataBasis={row.temperatureBasis}>
-          {formatProfessionalTemperature(row.displayedTemperatureC)}
+          {hourlyTableNumber(row.displayedTemperatureC)}
         </ProfessionalHourlyCell>
       )}
       {config?.showDewPointColumns === false ? null : (
         <>
           <ProfessionalHourlyCell cell="dew-point">
-            {formatProfessionalTemperature(row.dewPointC)}
+            {hourlyTableNumber(row.dewPointC)}
           </ProfessionalHourlyCell>
-          <ProfessionalHourlyCell
-            cell="dew-point-spread"
-            className={professionalHourlyToneClass(row.dewPointSpreadC, "dew-point-spread")}
-          >
-            {formatProfessionalTemperatureDelta(row.dewPointSpreadC)}
+          <ProfessionalHourlyCell cell="dew-point-spread">
+            {hourlyTableNumber(row.dewPointSpreadC)}
           </ProfessionalHourlyCell>
         </>
       )}
       {config?.showHumidityColumn === false ? null : (
-        <ProfessionalHourlyCell
-          cell="humidity"
-          className={professionalHourlyToneClass(row.relativeHumidityPercent, "humidity")}
-        >
-          {formatProfessionalPercent(row.relativeHumidityPercent)}
+        <ProfessionalHourlyCell cell="humidity">
+          {hourlyTableNumber(row.relativeHumidityPercent, 0)}
         </ProfessionalHourlyCell>
       )}
-      <ProfessionalHourlyCell
-        cell="precipitation"
-        className={
-          professionalHourlyHasPrecipitation(row)
-            ? "bg-accent/10 font-semibold text-accent-strong"
-            : undefined
-        }
-      >
-        {formatProfessionalPrecipitation(row)}
-      </ProfessionalHourlyCell>
+      {config?.showPrecipitationColumns === false ? null : (
+        <>
+          <ProfessionalHourlyCell cell="precipitation">
+            {hourlyTableNumber(row.precipitationAmountMm, 2)}
+          </ProfessionalHourlyCell>
+          <ProfessionalHourlyCell cell="precipitation-probability">
+            {hourlyTableNumber(row.precipitationProbabilityPercent, 0)}
+          </ProfessionalHourlyCell>
+        </>
+      )}
       {config?.showVisibilityColumn === false ? null : (
         <ProfessionalHourlyCell
           cell="visibility"
           className={professionalHourlyToneClass(row.visibilityMeters, "visibility")}
         >
-          {formatProfessionalVisibility(row.visibilityMeters)}
+          {hourlyTableNumber(
+            isFiniteNumber(row.visibilityMeters) ? row.visibilityMeters / 1000 : null,
+          )}
         </ProfessionalHourlyCell>
       )}
       {config?.showWindColumns === false ? null : (
@@ -5441,7 +5454,7 @@ function CloudSeaProfessionalHourlyRow({
             cell="wind-speed"
             className={professionalHourlyToneClass(row.windSpeedMs, "wind-speed")}
           >
-            {formatProfessionalWindSpeed(row.windSpeedMs)}
+            {hourlyTableNumber(row.windSpeedMs)}
           </ProfessionalHourlyCell>
           <ProfessionalHourlyCell cell="wind-direction">
             {formatProfessionalWindDirection(row.windDirectionDeg)}
@@ -5751,17 +5764,31 @@ function professionalHourlyRowHasIncompleteFields(row: ProfessionalHourlyRow): b
 function ProfessionalHourlyCell({
   cell,
   dataBasis,
+  cloudAmount,
   className,
   children,
 }: {
   readonly cell: string;
   readonly dataBasis?: string;
+  readonly cloudAmount?: number | null;
   readonly className?: string;
   readonly children: ReactNode;
 }) {
   return (
     <td
-      className={cn("whitespace-nowrap border-t border-border px-2 py-1.5 align-middle", className)}
+      className={cn(
+        "whitespace-nowrap border-t border-border px-2 py-2.5 align-middle",
+        !["date", "time", "weather", "signal"].includes(cell) && "professional-numeric",
+        cloudAmount !== undefined && "professional-cloud",
+        className,
+      )}
+      style={
+        isFiniteNumber(cloudAmount)
+          ? ({
+              "--cloud-fill": `${Math.min(100, Math.max(0, cloudAmount)) * 0.16}%`,
+            } as React.CSSProperties)
+          : undefined
+      }
       data-professional-hourly-cell={cell}
       data-professional-hourly-basis={dataBasis}
     >
@@ -5931,43 +5958,13 @@ function professionalHourlyHasPrecipitation(row: ProfessionalHourlyRow): boolean
 
 function professionalHourlyToneClass(
   value: number | null | undefined,
-  field:
-    | "cloud-total"
-    | "cloud-low"
-    | "dew-point-spread"
-    | "humidity"
-    | "visibility"
-    | "wind-speed",
+  field: "visibility" | "wind-speed",
 ): string | undefined {
-  if (!isFiniteNumber(value)) {
-    return undefined;
-  }
-
-  if (field === "cloud-low" && value >= 75) {
-    return "bg-primary/10 font-semibold text-primary";
-  }
-  if (field === "cloud-total" && value >= 90) {
-    return "bg-accent/10 font-semibold text-accent-strong";
-  }
-  if (field === "humidity" && value >= 90) {
-    return "bg-primary/10 font-semibold text-primary";
-  }
-  if (field === "dew-point-spread" && value <= 2) {
-    return "bg-accent/10 font-semibold text-accent-strong";
-  }
-  if (field === "visibility" && value <= 3000) {
+  if (!isFiniteNumber(value)) return undefined;
+  if ((field === "visibility" && value <= 3000) || (field === "wind-speed" && value >= 9))
     return "bg-danger/10 font-semibold text-danger";
-  }
-  if (field === "visibility" && value <= 8000) {
+  if ((field === "visibility" && value <= 8000) || (field === "wind-speed" && value >= 6))
     return "bg-accent/10 font-semibold text-accent-strong";
-  }
-  if (field === "wind-speed" && value >= 9) {
-    return "bg-danger/10 font-semibold text-danger";
-  }
-  if (field === "wind-speed" && value >= 6) {
-    return "bg-accent/10 font-semibold text-accent-strong";
-  }
-
   return undefined;
 }
 
@@ -6015,17 +6012,9 @@ function formatProfessionalPercent(value: number | null | undefined): string {
   return isFiniteNumber(value) ? `${Math.round(value)}%` : "—";
 }
 
-function formatProfessionalTemperature(value: number | null | undefined): string {
-  return isFiniteNumber(value) ? `${roundDisplay(value)}°C` : "—";
-}
-
-function formatProfessionalTemperatureDelta(value: number | null | undefined): string {
-  return isFiniteNumber(value) ? `${roundDisplay(value)}°C` : "—";
-}
-
 function formatProfessionalPrecipitation(row: ProfessionalHourlyRow): string {
   const amount = isFiniteNumber(row.precipitationAmountMm)
-    ? `${roundDisplay(row.precipitationAmountMm)} mm`
+    ? `${hourlyTableNumber(row.precipitationAmountMm, 2)} mm`
     : "—";
   const probability = isFiniteNumber(row.precipitationProbabilityPercent)
     ? `${Math.round(row.precipitationProbabilityPercent)}%`
@@ -7526,7 +7515,7 @@ export function GeneralRainHourlyTable({
             data-general-rain-desktop-layout="true"
           >
             <table
-              className="w-full table-fixed border-separate border-spacing-0 text-left text-[12px] leading-5"
+              className="w-full table-fixed border-separate border-spacing-0 text-left text-[13px] leading-5"
               data-general-rain-table-layout="grouped-days"
             >
               <colgroup>
@@ -7537,11 +7526,14 @@ export function GeneralRainHourlyTable({
               </colgroup>
               <thead className="bg-muted text-xs text-muted-foreground">
                 <tr>
-                  {columnLabels.map((label) => (
+                  {columnLabels.map((label, index) => (
                     <th
                       key={label}
                       scope="col"
-                      className="whitespace-nowrap border-b border-border px-4 py-2 font-semibold"
+                      className={cn(
+                        "whitespace-nowrap border-b border-border px-4 py-2 font-semibold",
+                        index >= 2 && "text-right",
+                      )}
                     >
                       {label}
                     </th>
@@ -7794,7 +7786,7 @@ function generalRainProbabilityTextClassName(probability: number): string {
 
 function formatProfessionalRainAmount(row: ProfessionalHourlyRow): string {
   return isFiniteNumber(row.precipitationAmountMm)
-    ? `${roundDisplay(row.precipitationAmountMm)} mm`
+    ? `${hourlyTableNumber(row.precipitationAmountMm, 2)} mm`
     : "—";
 }
 
@@ -8723,11 +8715,9 @@ function CompactDefinition({ label, value }: { readonly label: string; readonly 
 
 function PrimaryResultCard({ card }: { readonly card: ForecastResultCard }) {
   return (
-    <div className="grid h-full content-start rounded-xl border border-border bg-muted/70 p-4">
+    <div className="grid h-full content-start rounded-xl border border-border bg-card p-4">
       <p className="text-xs font-semibold text-muted-foreground">{card.label}</p>
-      <p className={cn("mt-2 break-words text-2xl font-bold leading-8", cardToneText(card.tone))}>
-        {card.value}
-      </p>
+      <DecisionValue value={card.value} className="mt-2 text-card-foreground" />
       <p className="mt-2 text-xs leading-5 text-muted-foreground">
         {card.key === "comprehensive-arrival"
           ? userFacingResultText(card.detail)
