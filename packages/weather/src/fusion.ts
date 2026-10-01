@@ -192,7 +192,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
     buildConfidenceByField(providerFamilyBundles, baseConflictFlags),
     cloudLayerCoverage.fieldCoverageSummary,
   );
-  const confidenceByTarget = applyAerosolTargetConfidencePenalty(
+  const baseConfidenceByTarget = applyAerosolTargetConfidencePenalty(
     applyMultiModelTargetConfidencePenalty(
       applyProviderConfidenceFloor(
         buildConfidenceByTarget(confidenceByField, baseConflictFlags, input.terrainSummary),
@@ -203,10 +203,28 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
     ),
     transparencyPenaltyByTarget,
   );
+  const temperatureDisagreement = multiSourceAgreementContext.fieldDisagreements.find(
+    (field) => field.field === "temperature",
+  );
+  const temperatureConfidenceCap =
+    temperatureDisagreement?.level === "high"
+      ? 0.49
+      : temperatureDisagreement?.level === "medium"
+        ? 0.69
+        : 1;
+  const confidenceByTarget = Object.fromEntries(
+    Object.entries(baseConfidenceByTarget).map(([target, confidence]) => [
+      target,
+      Math.min(confidence, temperatureConfidenceCap),
+    ]),
+  ) as WeatherConfidenceByTarget;
   const missingDataNotes = [
     ...new Set([
       ...buildMissingDataNotes(confidenceByField, sourceSummaries),
       ...coverageMissingDataNotes(cloudLayerCoverage),
+      ...(temperatureConfidenceCap < 1
+        ? multiSourceAgreementContext.keyWarningsZh.filter((note) => note.startsWith("气温"))
+        : []),
     ]),
   ];
   const recommendedPrimarySource = primaryBundle.providerCode;

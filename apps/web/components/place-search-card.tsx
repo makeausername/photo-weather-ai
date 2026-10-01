@@ -1072,7 +1072,7 @@ function formatSelectedLocationElevation(location: SelectedLocation): string {
     return `${Math.round(location.elevationMeters)} 米`;
   }
 
-  return location.source === "browser_geolocation" ? "海拔将在生成判断时补全" : "";
+  return "海拔将在生成判断时补全；当前坐标不一定是山顶机位";
 }
 
 function formatSelectedLocationCoordinates(location: SelectedLocation): string {

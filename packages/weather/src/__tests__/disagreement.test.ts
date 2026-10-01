@@ -4,6 +4,47 @@ import { buildMultiSourceAgreementContext } from "../disagreement.js";
 import type { WeatherDataBundle } from "../types.js";
 
 describe("multi-source agreement context", () => {
+  it("surfaces temperature-only disagreement and selects the largest hourly spread", () => {
+    const primary = bundle("qweather", hour({ temperature: 20 }));
+    const secondary = bundle("open_meteo", hour({ temperature: 14 }));
+    const context = buildMultiSourceAgreementContext({
+      providerBundles: [
+        {
+          ...primary,
+          hourly: [...primary.hourly, hour({ time: "2026-05-22T07:00:00+08:00", temperature: 22 })],
+        },
+        {
+          ...secondary,
+          hourly: [
+            ...secondary.hourly,
+            hour({ time: "2026-05-22T07:00:00+08:00", temperature: 10.9 }),
+          ],
+        },
+      ],
+      target: "general",
+    });
+    expect(context.fieldDisagreements).toContainEqual(
+      expect.objectContaining({
+        field: "temperature",
+        level: "high",
+        range: 11.1,
+        validTime: "2026-05-21T23:00:00.000Z",
+      }),
+    );
+    expect(context.shouldLowerConfidence).toBe(true);
+    expect(context.keyWarningsZh.join(" ")).toContain("来源海拔");
+  });
+  it("does not compare temperatures at different valid hours", () => {
+    const context = buildMultiSourceAgreementContext({
+      providerBundles: [
+        bundle("qweather", hour({ temperature: 20 })),
+        bundle("open_meteo", hour({ time: "2026-05-22T08:00:00+08:00", temperature: 8 })),
+      ],
+      target: "general",
+    });
+    expect(context.fieldDisagreements.find((item) => item.field === "temperature")).toBeUndefined();
+    expect(context.shouldLowerConfidence).toBe(false);
+  });
   it("detects high low-cloud disagreement and lowers cloud sea confidence", () => {
     const context = buildMultiSourceAgreementContext({
       providerBundles: [

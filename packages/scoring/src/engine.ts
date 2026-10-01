@@ -124,6 +124,8 @@ export function calculateForecast(input: ForecastCalculationInput): ForecastCalc
       target: calculationInput.target,
       timezone: calculationInput.calendarBasis.timezone,
       forecastStart: calculationInput.calendarBasis.forecastStart,
+      multiSourceAgreementContext:
+        calculationInput.weatherFusionSummary?.multiSourceAgreementContext,
     });
   const cloudSeaAnalysis = analyzeCloudSea(calculationInput);
   const glowAnalysis = calculateGlowAnalysis(calculationInput);

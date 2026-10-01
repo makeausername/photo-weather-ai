@@ -1975,16 +1975,16 @@ function astroWeatherBlockersForStats(stats: WeatherWindowStats): readonly strin
 
   if (stats.totalCloudAvg >= 70 || stats.totalCloudMax >= 85) {
     blockers.push(
-      stats.totalCloudAvg >= 85 || stats.totalCloudMax >= 90
+      stats.totalCloudAvg >= 85
         ? `总云量约 ${Math.round(stats.totalCloudAvg)}%，接近满天云，星空银河实际不可见`
-        : `总云量约 ${Math.round(stats.totalCloudAvg)}%，星点和银河主体容易被遮挡`,
+        : `总云量平均约 ${Math.round(stats.totalCloudAvg)}%，局部最高 ${Math.round(stats.totalCloudMax)}%，部分时段星点和银河主体容易被遮挡`,
     );
   }
   if (lowCloudAvg >= 30 || lowCloudMax >= 50) {
     blockers.push(
-      lowCloudAvg >= 50 || lowCloudMax >= 65
+      lowCloudAvg >= 50
         ? `低云约 ${Math.round(lowCloudAvg)}%，星空银河实际可见性较差`
-        : `低云约 ${Math.round(lowCloudAvg)}%，会遮挡地景和低角度银河`,
+        : `低云平均约 ${Math.round(lowCloudAvg)}%，局部最高 ${Math.round(lowCloudMax)}%，部分时段可能遮挡地景和低角度银河`,
     );
   }
   if ((stats.midCloudAvg ?? 0) >= 70) {

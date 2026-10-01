@@ -52,6 +52,8 @@ import {
   parseSubjectDetailSearchParams,
 } from "./subject-detail-links";
 import { upgradeRequiredDefaultMessage, upgradeRequiredTitle } from "../../components/api-client";
+import { focusSubjectDetailResult } from "./subject-detail-focus";
+import { buildAstroResultCards } from "../../components/scenario-module-page";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/forecast",
@@ -61,6 +63,111 @@ const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
 describe("target-aware forecast history scores", () => {
+  it("links zero-score sunrise details to the next covered sunrise", () => {
+    const base = resultForTarget("general");
+    const result = {
+      ...base,
+      forecastStart: "2026-05-20T19:00:00+08:00",
+      forecastEnd: "2026-05-21T19:00:00+08:00",
+      calendarBasis: {
+        ...base.calendarBasis,
+        forecastStart: "2026-05-20T19:00:00+08:00",
+        forecastEnd: "2026-05-21T19:00:00+08:00",
+      },
+      bestWindows: base.bestWindows.filter((window) => window.target !== "glow"),
+      astroSummaries: ["2026-05-20", "2026-05-21"].map((date) => ({
+        ...base.astroSummaries[0]!,
+        date,
+        sunrise: `${date}T06:00:00+08:00`,
+        sunriseGlowCandidateEndAt: `${date}T07:00:00+08:00`,
+      })),
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(ComprehensiveForecastView, {
+        query: queryForTarget("general"),
+        result,
+        viewModel: buildForecastResultViewModel(result, "general"),
+      }),
+    );
+    const href = [...html.matchAll(/href="([^"]+)"/g)]
+      .map((match) => match[1]!.replaceAll("&amp;", "&"))
+      .find((url) => url.includes("subject=sunrise_glow"))!;
+    expect(new URL(href, "http://localhost").searchParams.get("date")).toBe("2026-05-21");
+  });
+  it("keeps cloud-sea detail scores and windows on the requested day", () => {
+    const base = resultForTarget("general");
+    const day = base.cloudSeaAnalysis.dailyCloudSea[0]!;
+    const date = "2026-05-21";
+    const window = {
+      ...day.bestWindow,
+      date,
+      startTime: "2026-05-21T06:00:00+08:00",
+      endTime: "2026-05-21T07:00:00+08:00",
+      score: 15,
+      formationScore: 20,
+      shootableScore: 15,
+    };
+    const result = {
+      ...base,
+      cloudSeaAnalysis: {
+        ...base.cloudSeaAnalysis,
+        dailyCloudSea: [
+          ...base.cloudSeaAnalysis.dailyCloudSea.filter((d) => d.date !== date),
+          { ...day, date, opportunityScore: 20, bestWindow: window },
+        ],
+      },
+    };
+    const focused = focusSubjectDetailResult(result, "cloud_sea", {
+      date,
+      windowStart: window.startTime,
+    })!;
+    expect(focused.cloudSeaAnalysis.bestCloudSeaWindow?.startTime).toBe(window.startTime);
+    expect(focused.cloudSeaAnalysis.shootableScore).toBe(15);
+    expect(focused.cloudSeaAnalysis.dailyCloudSea.map((d) => d.date)).toEqual([date]);
+    expect(
+      focusSubjectDetailResult(result, "cloud_sea", {
+        date,
+        windowStart: window.startTime,
+        windowEnd: "2026-05-21T08:00:00+08:00",
+      }),
+    ).toBeUndefined();
+    expect(
+      focusSubjectDetailResult(result, "cloud_sea", {
+        date,
+        windowStart: new Date(window.startTime).toISOString(),
+        windowEnd: new Date(window.endTime).toISOString(),
+      })?.cloudSeaAnalysis.bestCloudSeaWindow?.startTime,
+    ).toBe(window.startTime);
+    expect(focusSubjectDetailResult(result, "cloud_sea", { date: "2026-05-30" })).toBeUndefined();
+    expect(
+      focusSubjectDetailResult(result, "cloud_sea", {
+        date,
+        windowStart: "2026-05-21T12:00:00+08:00",
+      }),
+    ).toBeUndefined();
+    expect(base.cloudSeaAnalysis.bestCloudSeaWindow?.startTime).not.toBe(window.startTime);
+  });
+  it("preserves an ended sunrise context rather than replacing it with another sunset", () => {
+    const result = resultForTarget("glow");
+    const date = result.glowAnalysis.dailyGlow[0]!.date;
+    const focused = focusSubjectDetailResult(result, "glow", { date, subject: "sunrise_glow" })!;
+    const vm = buildGlowForecastViewModel(focused, { date, subject: "sunrise_glow" });
+    expect(vm.dailyOpportunities.map((d) => d.date)).toEqual([date]);
+    expect(vm.overallRecommendation.preferredTarget).toContain("朝霞");
+    expect(vm.overallRecommendation.windowStartAt?.slice(0, 10)).toBe(date);
+  });
+  it("uses one best observing night for every astro preview card", () => {
+    const result = resultWithAstroHourlyRange("7d", 168);
+    const night = buildAstroForecastViewModel(result).bestNight!;
+    const cards = buildAstroResultCards(result);
+    expect(cards).toHaveLength(6);
+    expect(cards.every((card) => card.description.includes(night.localEveningDateLabel))).toBe(
+      true,
+    );
+    expect(cards.find((card) => card.title === "月光影响")?.value).toBe(
+      night.moonImpactSummaryLabel,
+    );
+  });
   it("selects the linked observing date instead of another preferred night", () => {
     const result = resultWithAstroHourlyRange("48h", 48);
     const viewModel = buildAstroForecastViewModel(result);

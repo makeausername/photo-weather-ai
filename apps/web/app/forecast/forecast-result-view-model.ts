@@ -67,6 +67,7 @@ import {
   type PublicSkyDarknessDisplay,
 } from "@photo-weather/shared";
 import { addHoursInTimezone, getForecastTargetDates } from "@photo-weather/calendar";
+import type { SubjectDetailFocus } from "./subject-detail-focus";
 import { resolveMilkyWayTerrainHorizonAssessment } from "@photo-weather/terrain";
 import {
   bestShootableWindowText,
@@ -1975,6 +1976,7 @@ function buildCloudSeaViewModel(result: ForecastCalculationResult): ForecastResu
 
 export function buildGlowForecastViewModel(
   result: ForecastCalculationResult,
+  focus?: SubjectDetailFocus,
 ): GlowForecastViewModel {
   const analysis = result.glowAnalysis;
   const lowCloudFogWallRiskLabel = glowRiskLabel(
@@ -1991,8 +1993,10 @@ export function buildGlowForecastViewModel(
   const aerosolCard = buildGlowAerosolCard(analysis.aerosolAssessment);
   const terrainObstructionCards = buildGlowTerrainObstructionCards(result, analysis);
   const terrainObstructionSummary = buildGlowTerrainObstructionSummary(terrainObstructionCards);
-  const overallRecommendation = buildGlowOverallRecommendation(result, analysis);
-  const dailyOpportunities = buildGlowDailyOpportunities(result, analysis);
+  const overallRecommendation = buildGlowOverallRecommendation(result, analysis, focus);
+  const dailyOpportunities = buildGlowDailyOpportunities(result, analysis).filter(
+    (day) => !focus?.date || day.date === focus.date,
+  );
   const professionalScoringWindows = buildGlowProfessionalScoringWindows(result, analysis);
   const professionalEvidence = buildGlowProfessionalEvidence(
     result,
@@ -2135,8 +2139,27 @@ function joinChineseClauses(parts: readonly string[]): string {
 function buildGlowOverallRecommendation(
   result: ForecastCalculationResult,
   analysis: GlowAnalysisResult,
+  focus?: SubjectDetailFocus,
 ): GlowOverallRecommendation {
-  const selectedWindow = selectOverallGlowWindowState(result, analysis);
+  const day = analysis.dailyGlow.find((item) => item.date === focus?.date);
+  const phase =
+    focus?.subject === "sunrise_glow"
+      ? "sunrise"
+      : focus?.subject === "sunset_glow" || focus?.subject === "afterglow"
+        ? "sunset"
+        : undefined;
+  const selectedWindow =
+    focus?.date && phase
+      ? buildGlowPhaseWindowStateForDate(
+          result,
+          analysis,
+          day,
+          focus.date,
+          phase,
+          focus.windowStart,
+          focus.windowEnd,
+        )
+      : selectOverallGlowWindowState(result, analysis);
   const baseRecommendation = selectedWindow
     ? glowRecommendationForLifecycle(selectedWindow.state, selectedWindow.score)
     : "暂无后续窗口";
@@ -2693,8 +2716,19 @@ function buildGlowPhaseWindowStateForDate(
   day: GlowAnalysisResult["dailyGlow"][number] | undefined,
   date: string,
   phase: GlowOpportunityPhase,
+  preferredStart?: string,
+  preferredEnd?: string,
 ): GlowLifecycleWindowView {
   const window =
+    allGlowWindows(analysis).find(
+      (candidate) =>
+        preferredStart &&
+        Date.parse(candidate.start) === Date.parse(preferredStart) &&
+        (!preferredEnd || Date.parse(candidate.end) === Date.parse(preferredEnd)) &&
+        (candidate.date ?? glowLocalDateKey(candidate.start, result.calendarBasis.timezone)) ===
+          date &&
+        (phase === "sunrise" ? isMorningGlowWindow(candidate) : !isMorningGlowWindow(candidate)),
+    ) ??
     glowWindowForDateAndPhase(analysis, date, phase) ??
     (day ? dailyGlowWindowForPhase(day, phase) : undefined);
   const score = dailyGlowPhaseScore(day, window, analysis, phase);
@@ -5718,7 +5752,7 @@ function astroNightCoverageState(
 
 function horizonCoverageLabel(state: AstroNightHorizonCoverageState): string {
   if (state === "covered") {
-    return "本次预报完整覆盖";
+    return "本次预报完整覆盖所选观测窗口（不代表整夜）";
   }
   if (state === "partial") {
     return "本次预报部分覆盖";
@@ -6753,7 +6787,13 @@ function buildAstroHourlySummary(
       key: "best-hours",
       label: "参考小时",
       value: formatHourlySummaryTimes(bestRows, timezone),
-      detail: data.focusWindows[0]?.label ?? "按银河/天文焦点窗口和云量、降水、能见度做展示摘要。",
+      detail:
+        uniqueDisplayTexts(
+          data.focusWindows
+            .filter((window) => rowsForHourlyWindows(bestRows, [window]).length > 0)
+            .map((window) => window.label)
+            .filter((label): label is string => Boolean(label)),
+        ).join("；") || "按本次预报范围内的云量、降水、能见度做展示摘要。",
       tone: bestRows.length > 0 ? "primary" : "muted",
     },
     {
@@ -8596,7 +8636,6 @@ function buildGlowTerrainObstructionCards(
   result: ForecastCalculationResult,
   analysis: GlowAnalysisResult,
 ): readonly GlowTerrainObstructionCard[] {
-  const terrainDisplay = buildTerrainDisplayModel(result);
   return analysis.terrainObstructionAssessments.map((assessment) => {
     const dateLabel = assessment.date ? dateLabelForResult(result, assessment.date) : "未定日期";
     return {
@@ -8608,7 +8647,16 @@ function buildGlowTerrainObstructionCards(
       horizonLabel: formatTerrainHorizonAngleLabel(assessment.terrainHorizonAngleDegrees),
       clearanceLabel: formatTerrainClearanceLabel(assessment.solarClearanceDegrees),
       detail: compactTerrainObstructionDisplayText(
-        `${assessment.noteZh} ${terrainDisplay.demStatus.labelZh}；${terrainDisplay.uncertaintyBoundaryZh}`,
+        `${assessment.noteZh} ${
+          assessment.dataAvailable &&
+          assessment.obstructionStatus !== "unavailable" &&
+          isMeaningfulNumber(assessment.terrainHorizonAngleDegrees) &&
+          isMeaningfulNumber(assessment.solarClearanceDegrees)
+            ? assessment.confidence === "low"
+              ? "该方向地形数据已返回，低置信度，需现场复核"
+              : "该方向地形遮挡已可用，仍需现场复核"
+            : "该方向地形剖面暂缺，需现场确认"
+        }`,
       ),
       tone: terrainTone(assessment),
     };

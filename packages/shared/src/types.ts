@@ -2321,6 +2321,7 @@ export type ForecastDisagreementLevel = "none" | "low" | "medium" | "high" | "un
 
 export type ForecastFieldDisagreement = {
   readonly field: string;
+  readonly validTime?: string;
   readonly level: ForecastDisagreementLevel;
   readonly range: number | null;
   readonly min?: number;

@@ -446,12 +446,11 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   const weatherProvider =
     options.weatherProvider ??
     (env.NODE_ENV === "test" ? createWeatherProvider({ nodeEnv: "test" }) : undefined);
-  const weatherDataService =
-    weatherProvider
-      ? undefined
-      : options.dbClient
-        ? createRuntimeWeatherDataService({ dbClient: options.dbClient, env, logger: app.log })
-        : new WeatherIntelligenceService({ providers: [] });
+  const weatherDataService = weatherProvider
+    ? undefined
+    : options.dbClient
+      ? createRuntimeWeatherDataService({ dbClient: options.dbClient, env, logger: app.log })
+      : new WeatherIntelligenceService({ providers: [] });
   const geoProvider = options.geoProvider ?? new MockGeoProvider();
   const authConfig = options.authConfig ?? loadAuthConfig();
   const resolveRuntimeGeoProvider = () =>
@@ -471,6 +470,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     reply.header("Access-Control-Allow-Origin", "*");
     reply.header("Access-Control-Allow-Methods", "GET,PATCH,POST,DELETE,OPTIONS");
     reply.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
+    reply.header("Access-Control-Expose-Headers", "Retry-After");
   });
 
   app.addHook("onRequest", async (request, reply) => {
@@ -487,10 +487,14 @@ export function buildApiServer(options: ApiServerOptions = {}) {
       return;
     }
 
-    return reply.status(429).header("Retry-After", String(decision.retryAfterSeconds)).send({
-      error: "rate_limited",
-      message: "Too many requests. Please try again later.",
-    });
+    return reply
+      .status(429)
+      .header("Retry-After", String(decision.retryAfterSeconds))
+      .send({
+        error: "rate_limited",
+        message: `查询较频繁，请 ${decision.retryAfterSeconds} 秒后重试。`,
+        retryAfterSeconds: decision.retryAfterSeconds,
+      });
   });
 
   app.addHook("preParsing", (request, _reply, payload, done) => {

@@ -240,6 +240,28 @@ function lightPollutionFixture(overrides: Partial<LightPollutionInfo> = {}): Lig
 }
 
 describe("astro analysis", () => {
+  it("distinguishes an hourly cloud peak from overcast conditions throughout a window", () => {
+    const input = withLowMoon(buildMockForecastInput(baseQuery, { now: fixedNow }));
+    const varying = withHourlyWeather(input, (hour) => ({
+      ...hour,
+      cloudTotal: hour.time.includes("T22:") ? 95 : 30,
+      cloudLow: hour.time.includes("T22:") ? 65 : 10,
+      cloudMid: 20,
+      cloudHigh: 20,
+      visibility: 25,
+      humidity: 60,
+      precipitation: 0,
+      precipitationAmountMm: 0,
+      precipitationProbability: 0,
+      weatherTextZh: "晴",
+      dewPointSpread: 8,
+    }));
+    const blockers = calculateForecast(varying).astroAnalysis.weatherBlockers.join("；");
+    expect(blockers).toContain("局部最高 95%");
+    expect(blockers).toContain("部分时段");
+    expect(blockers).not.toContain("接近满天云");
+    expect(blockers).not.toContain("实际不可见");
+  });
   it("resolves directional light-pollution risk at an exact sector center", () => {
     expect(resolveDirectionalLightPollutionRisk(90, directionalRiskFixture)).toMatchObject({
       azimuthDegrees: 90,

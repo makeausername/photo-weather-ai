@@ -93,7 +93,7 @@ export type GeneralDailySubjectLink = {
   readonly href: string;
 };
 
-const resultContextStoragePrefix = "photo_weather_forecast_result_context:v1:";
+const resultContextStoragePrefix = "photo_weather_forecast_result_context:v2:";
 const resultContextTtlMs = 1000 * 60 * 60;
 const maxStoredResultContexts = 8;
 

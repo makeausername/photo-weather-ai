@@ -3,16 +3,18 @@ import {
   ApiClientError,
   currentAuthCacheScope,
   optionalAuthApiFetch,
+  rateLimitedMessage,
+  retryAfterSecondsFromResponse,
 } from "../../components/api-client";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
-const transientForecastStatuses = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+const transientForecastStatuses = new Set([408, 409, 425, 500, 502, 503, 504]);
 const defaultRetryCount = 2;
 const defaultRetryDelayMs = [600, 1200, 2400] as const;
 const defaultSuccessCacheTtlMs = 5 * 60 * 1000;
 const defaultStaleCacheTtlMs = 30 * 60 * 1000;
-const forecastCacheVersion = 4 as const;
+const forecastCacheVersion = 5 as const;
 const sessionCachePrefix = `photo_weather_forecast_calculation:v${forecastCacheVersion}:`;
 const maxSessionCachePayloadChars = 2_000_000;
 
@@ -45,6 +47,7 @@ export type ForecastCalculationRequestInput = ForecastQueryInput & {
 
 export type ForecastRequestErrorOptions = {
   readonly status?: number;
+  readonly retryAfterSeconds?: number;
   readonly code?: string;
   readonly retryable?: boolean;
   readonly transient?: boolean;
@@ -54,6 +57,7 @@ export type ForecastRequestErrorOptions = {
 
 export class ForecastRequestError extends Error {
   readonly status?: number;
+  readonly retryAfterSeconds?: number;
   readonly code?: string;
   readonly retryable: boolean;
   readonly transient: boolean;
@@ -64,6 +68,7 @@ export class ForecastRequestError extends Error {
     super(message);
     this.name = "ForecastRequestError";
     this.status = options.status;
+    this.retryAfterSeconds = options.retryAfterSeconds;
     this.code = options.code;
     this.retryable = options.retryable ?? false;
     this.transient = options.transient ?? false;
@@ -249,24 +254,31 @@ export async function normalizeForecastApiError(response: Response): Promise<For
   const status = response.status;
   const transient = isTransientForecastStatus(status);
   const publicMessage =
-    code === "upgrade_required"
-      ? safeValidationMessage(payload)
-      : status === 400
+    status === 429
+      ? rateLimitedMessage(retryAfterSecondsFromResponse(response))
+      : code === "upgrade_required"
         ? safeValidationMessage(payload)
-        : transient
-          ? forecastCalculationTransientFailureMessage
-          : forecastCalculationGenericFailureMessage;
+        : status === 400
+          ? safeValidationMessage(payload)
+          : transient
+            ? forecastCalculationTransientFailureMessage
+            : forecastCalculationGenericFailureMessage;
 
   return new ForecastRequestError(publicMessage, {
     status,
+    retryAfterSeconds: status === 429 ? retryAfterSecondsFromResponse(response) : undefined,
     code,
-    retryable: transient,
+    retryable: transient || status === 429,
     transient,
     publicMessage,
   });
 }
 
 export function isTransientForecastError(error: unknown): boolean {
+  if (isRecord(error) && (error.status === 429 || error.statusCode === 429)) {
+    // Do not send immediate retries during the server's rate-limit cooldown.
+    return false;
+  }
   if (isForecastRequestAbortError(error)) {
     return false;
   }
@@ -310,6 +322,7 @@ export function normalizeForecastClientError(error: unknown): ForecastRequestErr
   if (error instanceof ApiClientError) {
     return new ForecastRequestError(error.publicMessage, {
       status: error.status,
+      retryAfterSeconds: error.retryAfterSeconds,
       code: error.code,
       retryable: error.retryable,
       transient: error.retryable && isTransientForecastStatus(error.status),
