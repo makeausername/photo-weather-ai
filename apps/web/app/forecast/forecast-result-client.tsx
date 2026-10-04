@@ -78,6 +78,7 @@ import {
 } from "./result-dashboard-components";
 import { ResultViewTabs } from "./result-experience-controls";
 import { WeatherAlerts } from "./weather-alerts";
+import { HourlyWeatherMatrix } from "./hourly-weather-matrix";
 import { StickyDataScroller } from "../../components/sticky-data-scroller";
 import {
   GeneralWeatherHeader,
@@ -3628,6 +3629,7 @@ type ProfessionalHourlySectionConfig = {
 };
 
 type ProfessionalHourlyCloudSectionProps = {
+  readonly onSelectTime?: (time: string) => void;
   readonly selectedDate?: string;
   readonly selectedTime?: string;
   readonly target: ProfessionalHourlySectionTarget;
@@ -3708,7 +3710,9 @@ export function CloudSeaProfessionalHourlyDataPanel({
   variant = "card",
   selectedDate,
   selectedTime,
+  onSelectTime,
 }: {
+  readonly onSelectTime?: (time: string) => void;
   readonly selectedDate?: string;
   readonly selectedTime?: string;
   readonly target?: ProfessionalHourlySectionTarget;
@@ -3733,6 +3737,7 @@ export function CloudSeaProfessionalHourlyDataPanel({
         variant={variant}
         selectedDate={selectedDate}
         selectedTime={selectedTime}
+        onSelectTime={onSelectTime}
       />
     </div>
   );
@@ -3766,8 +3771,10 @@ function ProfessionalHourlyCloudSection({
   config: sourceConfig,
   selectedDate,
   selectedTime,
+  onSelectTime,
   variant = "card",
 }: ProfessionalHourlyCloudSectionProps) {
+  const [matrixMode, setMatrixMode] = useState(true);
   const [columnGroup, setColumnGroup] = useState<HourlyColumnGroup>(
     target === "general" ? "common" : "all",
   );
@@ -3783,16 +3790,14 @@ function ProfessionalHourlyCloudSection({
   const basis = data.timeBasis;
   const embedded = variant === "embedded";
   const [expanded, setExpanded] = useState(config?.initiallyExpanded ?? true);
-  const [filterMode, setFilterMode] = useState<ProfessionalHourlyFilterMode>(() =>
-    defaultProfessionalHourlyFilter(data, config),
-  );
+  const [filterMode, setFilterMode] = useState<ProfessionalHourlyFilterMode>(() => "all");
 
   useEffect(() => {
     setExpanded(config?.initiallyExpanded ?? true);
   }, [sourceConfig]);
 
   useEffect(() => {
-    setFilterMode(defaultProfessionalHourlyFilter(data, config));
+    setFilterMode("all");
   }, [sourceConfig, data]);
 
   const [localDate, setLocalDate] = useState("all");
@@ -3895,9 +3900,6 @@ function ProfessionalHourlyCloudSection({
               )}
               <Badge variant="accent">{sectionBadge}</Badge>
             </div>
-            <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-              {sectionDescription}
-            </p>
           </div>
           {target !== "general" ? (
             <Button
@@ -3921,83 +3923,11 @@ function ProfessionalHourlyCloudSection({
         <p className="text-xs leading-5 text-muted-foreground">{sectionDescription}</p>
       )}
 
-      {config?.showBasisSummary !== false ? (
-        <details className="mt-4 rounded-lg border border-border bg-muted p-3 text-xs leading-5 text-muted-foreground">
-          <summary className="cursor-pointer font-semibold">
-            数据口径与覆盖 · {rows.length} / {expectedRowCount} 小时 · {timeStepLabel} ·{" "}
-            {basis.timezone}
-          </summary>
-          <dl className="mt-3 grid gap-3 min-[760px]:grid-cols-4">
-            <CompactDefinition label="目标有效时间" value={targetRangeLabel} />
-            <CompactDefinition label="覆盖率" value={`${rows.length} / ${expectedRowCount} 小时`} />
-            {!coverageComplete ? (
-              <CompactDefinition label="实际显示" value={actualRangeLabel} />
-            ) : null}
-            <CompactDefinition
-              label="有效时间"
-              value={`${formatFullDateTimeForTimezone(
-                basis.startTime,
-                basis.timezone,
-              )} – ${formatFullDateTimeForTimezone(basis.endTime, basis.timezone)}`}
-            />
-            <CompactDefinition label="时间步长" value={timeStepLabel} />
-            <CompactDefinition label="时区" value={basis.timezone} />
-            <CompactDefinition
-              label="温度口径"
-              value={professionalTemperatureBasisLabel(basis.temperatureBasis)}
-            />
-            <CompactDefinition
-              label="云量口径"
-              value={professionalCloudBasisLabel(cloudBasisConsistency, cloudLayerCompleteness)}
-            />
-            {basis.fieldCoverageSummary ? (
-              <CompactDefinition
-                label="分层覆盖"
-                value={professionalCloudCoverageLabel(basis.fieldCoverageSummary)}
-              />
-            ) : null}
-            {missingHeaderNote ? (
-              <CompactDefinition label="缺失说明" value={missingHeaderNote} />
-            ) : null}
-            {showCoverageNote && coverageNote && !coverageNeedsAttention ? (
-              <p className="min-[760px]:col-span-4" data-testid="cloud-layer-coverage-note">
-                {coverageNote}
-              </p>
-            ) : null}
-          </dl>
-        </details>
-      ) : null}
       {selectedDate === undefined && dateOptions.length > 1 ? (
         <div className="mt-3">
           <WeatherDateSelector dates={dateOptions} value={localDate} onChange={setLocalDate} />
         </div>
       ) : null}
-      {missingHeaderNote ? (
-        <p className="mt-3 text-xs leading-5 text-warning-strong">{missingHeaderNote}</p>
-      ) : null}
-      {showCoverageNote &&
-      coverageNeedsAttention &&
-      coverageNote &&
-      coverageNote !== missingHeaderNote &&
-      coverageNote !== incompleteFieldNote ? (
-        <p
-          className={cn(
-            "mt-3 rounded-lg border px-3 py-2 text-xs leading-5 text-muted-foreground",
-            cloudLayerCompleteness.layerCompletenessLevel === "complete"
-              ? "border-border bg-muted"
-              : "border-warning/40 bg-accent/10",
-          )}
-          data-testid="cloud-layer-coverage-note"
-        >
-          {coverageNote}
-        </p>
-      ) : null}
-      {incompleteFieldNote && incompleteFieldNote !== missingHeaderNote ? (
-        <p className="mt-3 rounded-lg border border-warning/40 bg-accent/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
-          {incompleteFieldNote}
-        </p>
-      ) : null}
-
       {!expanded && showCollapsedPreview ? (
         <CloudSeaHourlyFocusPreview
           target={target}
@@ -4009,126 +3939,268 @@ function ProfessionalHourlyCloudSection({
         />
       ) : null}
 
+      {!coverageComplete || basis.partialData ? (
+        <p className="text-xs text-warning-strong">
+          预报覆盖不完整：{rows.length}/{expectedRowCount} 时次，缺测不等于无风险。
+        </p>
+      ) : null}
       {expanded ? (
         <div
-          className={cn("mt-4 grid min-w-0 max-w-full gap-3", !expanded && "hidden")}
+          className="mt-2 grid min-w-0 max-w-full gap-3"
           data-professional-hourly-expanded={expanded ? "true" : "false"}
         >
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex flex-wrap gap-2" role="group" aria-label="专业小时数据筛选">
-              {professionalHourlyFilters.map((filter) => (
-                <button
-                  key={filter.mode}
-                  type="button"
-                  className={cn(
-                    "min-h-11 rounded-lg border px-3 py-2 text-xs font-semibold transition",
-                    filterMode === filter.mode
-                      ? "border-primary bg-secondary text-secondary-foreground"
-                      : "border-border bg-card text-muted-foreground hover:border-primary hover:text-foreground",
-                  )}
-                  aria-pressed={filterMode === filter.mode}
-                  onClick={() => {
-                    setFilterMode(filter.mode);
-                  }}
+          <details className="rounded-lg border border-border px-3 py-2">
+            <summary className="cursor-pointer text-xs font-semibold text-primary">
+              指标设置 · {hourlyColumnGroups.find((group) => group.value === columnGroup)?.label} ·{" "}
+              {matrixMode ? "天气矩阵" : "纵向列表"}
+            </summary>
+            <div className="mt-3 grid gap-3">
+              <label className="flex items-center gap-2 text-sm">
+                阅读方式{" "}
+                <select
+                  aria-label="阅读方式"
+                  className="rounded border border-border bg-card p-2"
+                  value={matrixMode ? "matrix" : "list"}
+                  onChange={(event) => setMatrixMode(event.target.value === "matrix")}
                 >
-                  {filter.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <p className="text-xs leading-5 text-muted-foreground">
-            当前筛选：{activeFilterLabel}，筛选 {filteredRows.length} / {rows.length} 小时；覆盖{" "}
-            {rows.length} / {expectedRowCount} 小时。{professionalUsageText}
-          </p>
-
-          {!sourceConfig?.compactTable ? (
-            <div role="group" aria-label="专业数据指标分组" className="flex flex-wrap gap-2">
-              {hourlyColumnGroups.map((group) => (
-                <button
-                  key={group.value}
-                  type="button"
-                  aria-pressed={columnGroup === group.value}
-                  onClick={() => setColumnGroup(group.value)}
-                  className={cn(
-                    "min-h-11 rounded-lg border px-3 py-2 text-xs font-semibold",
-                    columnGroup === group.value
-                      ? "border-primary bg-secondary text-secondary-foreground"
-                      : "border-border text-muted-foreground hover:bg-muted",
-                  )}
-                >
-                  {group.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <p className="text-xs text-muted-foreground">
-            单位见表头；蓝色深浅只表示云量大小。— 表示缺失。
-          </p>
-          <StickyDataScroller>
-            <table
-              className={cn(
-                "border-separate border-spacing-0 text-left text-[13px] leading-5",
-                target === "general" && (columnGroup === "rain" || columnGroup === "wind")
-                  ? "mx-auto w-full max-w-max min-w-[300px]"
-                  : config?.compactTable || columnGroup !== "all"
-                    ? "mx-auto w-full max-w-max min-w-[560px]"
-                    : "w-full min-w-[1280px]",
-              )}
-              data-professional-hourly-table-layout={
-                config?.compactTable ? "rain-focused" : "mobile-scroll-safe"
-              }
-            >
-              <thead className="bg-muted text-xs text-muted-foreground">
-                <tr>
-                  {hourlyTableHeaders.map((label, index) => (
-                    <th
-                      key={label}
-                      scope="col"
+                  <option value="matrix">天气矩阵</option>
+                  <option value="list">纵向列表</option>
+                </select>
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap gap-2" role="group" aria-label="专业小时数据筛选">
+                  {professionalHourlyFilters.map((filter) => (
+                    <button
+                      key={filter.mode}
+                      type="button"
                       className={cn(
-                        "whitespace-nowrap border-b border-border px-2 py-2 font-semibold",
-                        index === 0 && professionalHourlyDateHeaderClassName(),
-                        index === 1 &&
-                          "professional-time sticky left-0 sm:left-[4.5rem] z-20 w-[5rem] min-w-[5rem] shadow-[2px_0_0_var(--border)]",
-                        index > (config?.showSignalColumn === false ? 2 : 3) && "text-right",
+                        "min-h-11 rounded-lg border px-3 py-2 text-xs font-semibold transition",
+                        filterMode === filter.mode
+                          ? "border-primary bg-secondary text-secondary-foreground"
+                          : "border-border bg-card text-muted-foreground hover:border-primary hover:text-foreground",
+                      )}
+                      aria-pressed={filterMode === filter.mode}
+                      onClick={() => {
+                        setFilterMode(filter.mode);
+                      }}
+                    >
+                      {filter.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground">
+                当前筛选：{activeFilterLabel}，显示 {filteredRows.length} 个时次；覆盖 {rows.length}{" "}
+                / {expectedRowCount} 小时。{professionalUsageText}
+              </p>
+
+              {!sourceConfig?.compactTable ? (
+                <div role="group" aria-label="专业数据指标分组" className="flex flex-wrap gap-2">
+                  {hourlyColumnGroups.map((group) => (
+                    <button
+                      key={group.value}
+                      type="button"
+                      aria-pressed={columnGroup === group.value}
+                      onClick={() => setColumnGroup(group.value)}
+                      className={cn(
+                        "min-h-11 rounded-lg border px-3 py-2 text-xs font-semibold",
+                        columnGroup === group.value
+                          ? "border-primary bg-secondary text-secondary-foreground"
+                          : "border-border text-muted-foreground hover:bg-muted",
                       )}
                     >
-                      {label}
-                    </th>
+                      {group.label}
+                    </button>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.length > 0 ? (
-                  filteredRows.map((row, rowIndex) => (
-                    <CloudSeaProfessionalHourlyRow
-                      key={row.time}
-                      target={target}
-                      row={row}
-                      rowIndex={rowIndex}
-                      selected={row.time === selectedTime}
-                      timezone={basis.timezone}
-                      annotation={rowAnnotations.get(row.time)}
-                      ordinarySignalLabel={config?.ordinarySignalLabel}
-                      cloudBasisRowNote={cloudBasisConsistency.rowNotesByHour?.[row.time]}
-                      showRawTemperatureColumn={showRawTemperatureColumn}
-                      config={config}
-                    />
-                  ))
-                ) : (
-                  <tr>
-                    <td
-                      colSpan={hourlyTableHeaders.length}
-                      className="border-t border-border px-3 py-4 text-center text-sm text-muted-foreground"
-                    >
-                      当前筛选下暂无小时数据，请切换上方筛选复核完整预报。
-                    </td>
-                  </tr>
+                </div>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                单位见表头；蓝色深浅只表示云量大小。— 表示缺失。
+              </p>
+            </div>
+          </details>
+          {matrixMode ? (
+            <HourlyWeatherMatrix
+              rows={filteredRows}
+              timezone={basis.timezone}
+              config={config}
+              temperatureLabel={temperatureColumnLabels.at(-1) ?? "气温 °C"}
+              showRawTemperature={showRawTemperatureColumn}
+              selectedTime={selectedTime}
+              onSelectTime={onSelectTime}
+              annotations={
+                new Map(
+                  filteredRows.map((row) => {
+                    const annotation = rowAnnotations.get(row.time);
+                    const signal = professionalHourlySignalDisplayForTarget(
+                      target,
+                      professionalHourlyDisplaySignal(row),
+                      { annotation, ordinarySignalLabel: config?.ordinarySignalLabel },
+                    );
+                    return [
+                      row.time,
+                      {
+                        label: annotation?.badges?.length
+                          ? annotation.badges.map((badge) => badge.label).join(" / ")
+                          : signal.label,
+                        tone: annotation?.tone,
+                      },
+                    ];
+                  }),
+                )
+              }
+            />
+          ) : null}
+          <div hidden={matrixMode}>
+            <StickyDataScroller>
+              <table
+                className={cn(
+                  "border-separate border-spacing-0 text-left text-[13px] leading-5",
+                  target === "general" && (columnGroup === "rain" || columnGroup === "wind")
+                    ? "mx-auto w-full max-w-max min-w-[300px]"
+                    : config?.compactTable || columnGroup !== "all"
+                      ? "mx-auto w-full max-w-max min-w-[560px]"
+                      : "w-full min-w-[1280px]",
                 )}
-              </tbody>
-            </table>
-          </StickyDataScroller>
+                data-professional-hourly-table-layout={
+                  config?.compactTable ? "rain-focused" : "mobile-scroll-safe"
+                }
+              >
+                <thead className="bg-muted text-xs text-muted-foreground">
+                  <tr>
+                    {hourlyTableHeaders.map((label, index) => (
+                      <th
+                        key={label}
+                        scope="col"
+                        className={cn(
+                          "whitespace-nowrap border-b border-border px-2 py-2 font-semibold",
+                          index === 0 && professionalHourlyDateHeaderClassName(),
+                          index === 1 &&
+                            "professional-time sticky left-0 sm:left-[4.5rem] z-20 w-[5rem] min-w-[5rem] shadow-[2px_0_0_var(--border)]",
+                          index > (config?.showSignalColumn === false ? 2 : 3) && "text-right",
+                        )}
+                      >
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRows.length > 0 ? (
+                    filteredRows.map((row, rowIndex) => (
+                      <CloudSeaProfessionalHourlyRow
+                        key={row.time}
+                        target={target}
+                        row={row}
+                        rowIndex={rowIndex}
+                        selected={row.time === selectedTime}
+                        timezone={basis.timezone}
+                        annotation={rowAnnotations.get(row.time)}
+                        ordinarySignalLabel={config?.ordinarySignalLabel}
+                        cloudBasisRowNote={cloudBasisConsistency.rowNotesByHour?.[row.time]}
+                        showRawTemperatureColumn={showRawTemperatureColumn}
+                        config={config}
+                      />
+                    ))
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={hourlyTableHeaders.length}
+                        className="border-t border-border px-3 py-4 text-center text-sm text-muted-foreground"
+                      >
+                        当前筛选下暂无小时数据，请切换上方筛选复核完整预报。
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </StickyDataScroller>
+          </div>
         </div>
       ) : null}
+      <details className="mt-3 text-xs text-muted-foreground">
+        <summary className="cursor-pointer py-2">
+          数据说明 · {rows.length}/{expectedRowCount} 时次
+          {coverageNeedsAttention ? " · 部分指标需复核" : ""}
+        </summary>
+        <div className="pb-3">
+          {" "}
+          {config?.showBasisSummary !== false ? (
+            <div className="text-xs leading-5 text-muted-foreground">
+              <p className="font-semibold">
+                数据口径与覆盖 · {rows.length} / {expectedRowCount} 小时 · {timeStepLabel} ·{" "}
+                {basis.timezone}
+              </p>
+              <dl className="mt-3 grid gap-3 min-[760px]:grid-cols-4">
+                <CompactDefinition label="目标有效时间" value={targetRangeLabel} />
+                <CompactDefinition
+                  label="覆盖率"
+                  value={`${rows.length} / ${expectedRowCount} 小时`}
+                />
+                {!coverageComplete ? (
+                  <CompactDefinition label="实际显示" value={actualRangeLabel} />
+                ) : null}
+                <CompactDefinition
+                  label="有效时间"
+                  value={`${formatFullDateTimeForTimezone(
+                    basis.startTime,
+                    basis.timezone,
+                  )} – ${formatFullDateTimeForTimezone(basis.endTime, basis.timezone)}`}
+                />
+                <CompactDefinition label="时间步长" value={timeStepLabel} />
+                <CompactDefinition label="时区" value={basis.timezone} />
+                <CompactDefinition
+                  label="温度口径"
+                  value={professionalTemperatureBasisLabel(basis.temperatureBasis)}
+                />
+                <CompactDefinition
+                  label="云量口径"
+                  value={professionalCloudBasisLabel(cloudBasisConsistency, cloudLayerCompleteness)}
+                />
+                {basis.fieldCoverageSummary ? (
+                  <CompactDefinition
+                    label="分层覆盖"
+                    value={professionalCloudCoverageLabel(basis.fieldCoverageSummary)}
+                  />
+                ) : null}
+                {missingHeaderNote ? (
+                  <CompactDefinition label="缺失说明" value={missingHeaderNote} />
+                ) : null}
+                {showCoverageNote && coverageNote && !coverageNeedsAttention ? (
+                  <p className="min-[760px]:col-span-4" data-testid="cloud-layer-coverage-note">
+                    {coverageNote}
+                  </p>
+                ) : null}
+              </dl>
+            </div>
+          ) : null}
+          {missingHeaderNote ? (
+            <p className="mt-3 text-xs leading-5 text-warning-strong">{missingHeaderNote}</p>
+          ) : null}
+          {showCoverageNote &&
+          coverageNeedsAttention &&
+          coverageNote &&
+          coverageNote !== missingHeaderNote &&
+          coverageNote !== incompleteFieldNote ? (
+            <p
+              className={cn(
+                "mt-3 rounded-lg border px-3 py-2 text-xs leading-5 text-muted-foreground",
+                cloudLayerCompleteness.layerCompletenessLevel === "complete"
+                  ? "border-border bg-muted"
+                  : "border-warning/40 bg-accent/10",
+              )}
+              data-testid="cloud-layer-coverage-note"
+            >
+              {coverageNote}
+            </p>
+          ) : null}
+          {incompleteFieldNote && incompleteFieldNote !== missingHeaderNote ? (
+            <p className="mt-3 rounded-lg border border-warning/40 bg-accent/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
+              {incompleteFieldNote}
+            </p>
+          ) : null}
+        </div>
+      </details>
     </>
   );
 
@@ -4166,7 +4238,7 @@ function ProfessionalHourlyCloudSection({
   return (
     <Card
       className={cn(
-        "ProfessionalHourlyCloudSection min-w-0 max-w-full p-5",
+        "ProfessionalHourlyCloudSection min-w-0 max-w-full p-3 sm:p-4",
         config?.cardClassName,
         target === "cloud_sea" &&
           "CloudSeaProfessionalHourlyData cloud-sea-professional-hourly-data",
@@ -4789,17 +4861,6 @@ function ProfessionalHourlyCell({
       {children}
     </td>
   );
-}
-
-function defaultProfessionalHourlyFilter(
-  data: CloudSeaProfessionalHourlyDisplayData,
-  config?: ProfessionalHourlySectionConfig,
-): ProfessionalHourlyFilterMode {
-  if (config?.defaultFilterMode) {
-    return config.defaultFilterMode;
-  }
-  if (config?.showFocusFilter === false) return "all";
-  return professionalHourlyFocusWindows(data).length > 0 ? "cloudSea" : "morning";
 }
 
 function filterProfessionalHourlyRows(
@@ -5586,6 +5647,7 @@ export function ComprehensiveForecastView({
                   selectedDate={effectiveDate}
                   selectedTime={selectedTime}
                   config={generalProfessionalHourlySectionConfig}
+                  onSelectTime={setSelectedTime}
                 />
               </div>
             ) : (

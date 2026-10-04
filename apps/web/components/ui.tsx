@@ -159,12 +159,14 @@ export function Badge({ children, variant = "default", className }: BadgeProps) 
 type ResponsiveDataScrollerProps = HTMLAttributes<HTMLDivElement> & {
   readonly children: ReactNode;
   readonly bare?: boolean;
+  readonly showHint?: boolean;
 };
 
 export function ResponsiveDataScroller({
   children,
   className,
   bare = false,
+  showHint = true,
   ...props
 }: ResponsiveDataScrollerProps) {
   return (
@@ -180,7 +182,7 @@ export function ResponsiveDataScroller({
       aria-label="可横向滚动的数据表格"
       {...props}
     >
-      <DataScrollHint />
+      {showHint ? <DataScrollHint /> : null}
       {children}
     </div>
   );

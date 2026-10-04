@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, type ReactElement } from "react";
+import React, { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ResponsiveDataScroller } from "./ui";
 
@@ -12,10 +12,33 @@ type HeaderPosition = {
   columns: number[];
 };
 
+function mirroredHeader(node: ReactNode): ReactNode {
+  if (
+    !React.isValidElement<{
+      children?: ReactNode;
+      tabIndex?: number;
+      onMouseDown?: React.MouseEventHandler;
+    }>(node)
+  )
+    return node;
+  return React.cloneElement(node, {
+    ...(node.type === "button"
+      ? { tabIndex: -1, onMouseDown: (event: React.MouseEvent) => event.preventDefault() }
+      : {}),
+    children: React.Children.map(node.props.children, mirroredHeader),
+  });
+}
+
 /** Page scrolling and horizontal table scrolling have different scroll parents.
  * Mirror only the header at the viewport edge; the original remains the accessible table header.
  */
-export function StickyDataScroller({ children }: { readonly children: ReactElement }) {
+export function StickyDataScroller({
+  children,
+  showHint = true,
+}: {
+  readonly children: ReactElement;
+  readonly showHint?: boolean;
+}) {
   const root = useRef<HTMLDivElement>(null);
   const floating = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<HeaderPosition | null>(null);
@@ -84,7 +107,11 @@ export function StickyDataScroller({ children }: { readonly children: ReactEleme
   );
   return (
     <div ref={root} className="min-w-0" data-sticky-data-table="true">
-      <ResponsiveDataScroller bare data-cloud-sea-professional-table-scroll="true">
+      <ResponsiveDataScroller
+        bare
+        showHint={showHint}
+        data-cloud-sea-professional-table-scroll="true"
+      >
         {children}
       </ResponsiveDataScroller>
       {position &&
@@ -93,7 +120,7 @@ export function StickyDataScroller({ children }: { readonly children: ReactEleme
             ref={floating}
             aria-hidden="true"
             data-floating-table-header="true"
-            className="pointer-events-none fixed z-20 overflow-hidden border-b border-border bg-muted shadow-sm"
+            className="fixed z-20 overflow-hidden border-b border-border bg-muted shadow-sm"
             style={{ left: position.left, top: position.top, width: position.width }}
           >
             <table
@@ -111,7 +138,7 @@ export function StickyDataScroller({ children }: { readonly children: ReactEleme
                   <col key={index} style={{ width, display: width === 0 ? "none" : undefined }} />
                 ))}
               </colgroup>
-              {header}
+              {mirroredHeader(header)}
             </table>
           </div>,
           document.body,
