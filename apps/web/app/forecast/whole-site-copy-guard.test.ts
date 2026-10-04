@@ -20,6 +20,7 @@ testGlobal.React = React;
 
 const staticPublicSourceFiles = [
   "../page.tsx",
+  "../../components/homepage-workbench.tsx",
   "../scenario-configs.ts",
   "../../components/scenario-module-page.tsx",
 ] as const;
@@ -55,8 +56,8 @@ describe("whole-site static copy guard", () => {
       renderScenarioEntryPages(),
     ].join("\n");
 
-    expect(source).toContain("选择地点和预报范围，查看云层、光线、风、能见度与降水风险。");
-    expect(rendered).toContain("选择地点和预报范围，查看云层、光线、风、能见度与降水风险。");
+    expect(source).toContain("查看目的地的天气与拍摄条件。");
+    expect(rendered).toContain("查看目的地的天气与拍摄条件。");
     expect(rendered).toContain("选择地点后");
 
     for (const forbiddenClaim of forbiddenStaticLiveClaims) {

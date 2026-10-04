@@ -79,6 +79,7 @@ export type SearchQueryInputUiState = {
 };
 
 type PlaceSearchCardProps = {
+  readonly compactEntry?: boolean;
   readonly className?: string;
   readonly title?: string;
   readonly description?: string;
@@ -444,6 +445,7 @@ export function HorizonSelector({
 }
 
 export function PlaceSearchCard({
+  compactEntry = false,
   className,
   title = "选择拍摄地点",
   description = "搜索景区、城市或具体地点",
@@ -795,7 +797,9 @@ export function PlaceSearchCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-base font-bold text-card-foreground">{title}</p>
-          <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{description}</p>
+          {!compactEntry ? (
+            <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{description}</p>
+          ) : null}
         </div>
         {badgeLabel ? <Badge variant="muted">{badgeLabel}</Badge> : null}
       </div>
@@ -816,11 +820,18 @@ export function PlaceSearchCard({
           onUseCurrentLocation={enableCurrentLocation ? handleUseCurrentLocation : undefined}
           loading={isCurrentLocationLoading}
         />
-        <p className="text-xs leading-5 text-muted-foreground">
+        <p className={compactEntry ? "sr-only" : "text-xs leading-5 text-muted-foreground"}>
           输入后会自动搜索，也可按 Enter 立即搜索。
         </p>
         {enableCurrentLocation && currentLocationPrivacyHint ? (
-          <p className="text-xs leading-5 text-muted-foreground">{currentLocationPrivacyHint}</p>
+          compactEntry ? (
+            <details className="text-xs leading-5 text-muted-foreground">
+              <summary className="cursor-pointer py-1">定位说明</summary>
+              <p className="pt-1">{currentLocationPrivacyHint}</p>
+            </details>
+          ) : (
+            <p className="text-xs leading-5 text-muted-foreground">{currentLocationPrivacyHint}</p>
+          )
         ) : null}
       </form>
 
@@ -1010,11 +1021,11 @@ export function PlaceSearchCard({
           disabled={!activeSelectedLocation || fullAccessCtaLocked}
           onClick={handleRunForecast}
         >
-          {fullAccessCtaLocked
-            ? "开通会员后查看完整判断"
-            : activeSelectedLocation
-              ? ctaLabel
-              : ctaDisabledLabel ?? ctaLabel}
+          {!activeSelectedLocation
+            ? ctaDisabledLabel ?? ctaLabel
+            : fullAccessCtaLocked
+              ? "开通会员后查看完整判断"
+              : ctaLabel}
         </Button>
       </div>
     </Card>

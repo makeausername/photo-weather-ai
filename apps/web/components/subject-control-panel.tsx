@@ -30,13 +30,15 @@ export function SubjectControlPanel({
 
   return (
     <aside
-      className="grid content-start gap-4 min-[900px]:sticky min-[900px]:top-[88px]"
+      className="grid min-w-0 content-start gap-4"
       data-subject-control-panel="true"
       data-subject-control-panel-target={config.target}
       data-cloud-sea-section={isCloudSea ? "CloudSeaSearchPanel" : undefined}
     >
       <PlaceSearchCard
-        title="地点搜索与范围选择"
+        title="选择拍摄地点"
+        compactEntry
+        ctaDisabledLabel="选择地点后查看完整报告"
         description={config.description ?? "选择景区、城市或具体地点后进入对应题材判断。"}
         badgeLabel={null}
         defaultHorizon={config.defaultHorizon}

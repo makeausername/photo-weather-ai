@@ -588,7 +588,7 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("未来72小时");
     expect(html).toContain("未来7天");
     expect(html).toContain("选择地点后查看完整报告");
-    expect(html).toContain(homepageTargetHelperText);
+    expect(html).not.toContain(homepageTargetHelperText);
     expect(html).not.toContain("分析目标");
     expect(html).not.toContain("查看拍摄天气分析");
     expect(hasExactButton(html, "综合判断")).toBe(false);
@@ -972,11 +972,13 @@ describe("homepage forecast flow", () => {
   it("keeps the homepage workspace responsive without fixed wide columns", () => {
     const html = renderToStaticMarkup(React.createElement(HomepageWorkbench));
 
-    expect(html).toContain("minmax(0,1fr)");
-    expect(html).toContain('data-homepage-workbench-layout="scenario-two-column"');
-    expect(html).toContain("min-[960px]:grid-cols-[clamp(340px,31vw,420px)_minmax(0,1fr)]");
-    expect(html).toContain("min-[960px]:items-stretch");
-    expect(html).toContain("xl:gap-8");
+    expect(html).toContain('data-homepage-workbench-layout="centered-search"');
+    expect(html).toContain("mx-auto max-w-[760px]");
+    expect(html).not.toContain("min-[960px]:grid-cols-");
+    const help = html.match(/<details[^>]*data-forecast-entry-help="true"[^>]*>/)?.[0];
+    expect(help).toBeDefined();
+    expect(help).not.toMatch(/\sopen(?:=|\s|>)/);
+    expect(html).not.toContain("decision-hero");
     expect(html).toContain('data-homepage-guidance-panel="true"');
     expect(html).toContain("min-w-0");
     expect(html).toContain("overflow-hidden");
@@ -992,7 +994,7 @@ describe("homepage forecast flow", () => {
   it("keeps public homepage copy product-friendly", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
 
-    expect(html).toContain("选择地点和预报范围，查看云层、光线、风、能见度与降水风险。");
+    expect(html).toContain("查看目的地的天气与拍摄条件。");
     expect(html).toContain("拍摄前先看这六项");
     expect(html).toContain("地点与窗口");
     expect(html).not.toContain("云海判断需要关注什么");

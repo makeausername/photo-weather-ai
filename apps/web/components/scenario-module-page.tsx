@@ -24,6 +24,7 @@ import {
 import { SubjectControlPanel } from "./subject-control-panel";
 import { Badge, Card, cn } from "./ui";
 import { DecisionValue } from "./decision-value";
+import { ForecastEntryHeader, ForecastEntryHelp } from "./forecast-entry";
 
 type PopularScenarioSpot = {
   readonly name: string;
@@ -224,23 +225,19 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
   }, [config.target, isAstro, isInlineDecisionTarget, selectedHorizon, selectedLocation]);
 
   return (
-    <PublicShell contentClassName="grid gap-8 pb-16 lg:gap-10">
-      <header className="border-b border-border pb-7">
-        <div className="max-w-4xl">
-          <Badge variant="default">风光摄影天气</Badge>
-          <h1 className="mt-4 text-[34px] font-bold leading-tight tracking-[-0.03em] text-foreground sm:text-[42px]">
-            {config.title}
-          </h1>
-          <p className="mt-4 max-w-3xl text-[15px] leading-7 text-muted-foreground sm:text-base">
-            {config.subtitle}
-          </p>
-        </div>
-      </header>
+    <PublicShell contentClassName="grid gap-6 pb-10">
+      <ForecastEntryHeader
+        title={config.title}
+        description={config.subtitle}
+        centered={!selectedLocation}
+      />
 
       <section
         className={cn(
-          "grid gap-6 min-[960px]:grid-cols-[clamp(340px,31vw,420px)_minmax(0,1fr)] xl:gap-8",
-          isInlineDecisionTarget ? "min-[960px]:items-stretch" : "xl:items-start",
+          "grid w-full min-w-0 gap-5",
+          selectedLocation
+            ? "min-[960px]:grid-cols-[clamp(340px,31vw,420px)_minmax(0,1fr)] min-[960px]:items-stretch xl:gap-8"
+            : "mx-auto max-w-[760px]",
         )}
         data-cloud-sea-page-mode={isCloudSea ? pageMode : undefined}
         data-subject-scenario-page-mode={pageMode}
@@ -275,7 +272,9 @@ function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageCon
             horizon={selectedHorizon}
           />
         ) : (
-          <SubjectKnowledgeGuide config={config} selectedHorizon={selectedHorizon} />
+          <ForecastEntryHelp>
+            <SubjectKnowledgeGuide config={config} selectedHorizon={selectedHorizon} />
+          </ForecastEntryHelp>
         )}
       </section>
     </PublicShell>
