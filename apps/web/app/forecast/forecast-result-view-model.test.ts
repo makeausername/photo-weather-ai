@@ -4810,13 +4810,13 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("只看清晨窗口");
     expect(html).toContain("只看有风险时段");
     expect(html).not.toContain("查看全部小时");
-    expect(html.match(/全部小时/g) ?? []).toHaveLength(1);
+    expect(html.match(/全部小时/g) ?? []).toHaveLength(2);
     expect(html).not.toContain("展开专业数据");
     expect(html).not.toContain('data-cloud-sea-professional-data-toggle="true"');
     expect(html).toContain('data-cloud-sea-professional-data-expanded="true"');
     expect(html).toContain('data-cloud-sea-professional-data-body-expanded="true"');
-    expect(html).toContain("当前筛选：只看云海窗口");
-    expect(html).toContain("筛选 9 / 15 小时；覆盖 15 / 48 小时");
+    expect(html).toContain("当前筛选：全部小时");
+    expect(html).toContain("显示 15 个时次；覆盖 15 / 48 小时");
     expect(html).toContain("总云量 %");
     expect(html).toContain("高云量 %");
     expect(html).toContain("中云量 %");
@@ -4834,7 +4834,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("云海信号");
     expect(html).not.toContain("可拍窗口</span>");
     expect(html).toContain('data-professional-hourly-row="2026-05-20T05:00:00+08:00"');
-    expect(html).not.toContain('data-professional-hourly-row="2026-05-20T13:00:00+08:00"');
+    expect(html).toContain('data-professional-hourly-row="2026-05-20T13:00:00+08:00"');
     expect(html).toContain("w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain");
     expect(html).toContain("[-webkit-overflow-scrolling:touch]");
     expect(html).toContain("min-w-[1280px]");

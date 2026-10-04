@@ -65,47 +65,57 @@ export function GeneralWeatherHeader({ result }: { readonly result: ForecastCalc
   const timezone = result.calendarBasis.timezone;
   return (
     <header
-      className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5"
+      className="grid gap-3 rounded-2xl border border-border bg-card p-4 sm:p-5"
       data-general-weather-header="true"
     >
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge>天气概览</Badge>
-          <span className="text-xs text-muted-foreground">
-            {forecastHorizonLabels[result.horizon]}
-          </span>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-foreground">{result.place.name}</h1>
+          <p className="mt-1 text-xs text-muted-foreground">
+            天气概览 · {forecastHorizonLabels[result.horizon]}
+          </p>
         </div>
-        <h1 className="mt-3 text-3xl font-bold text-foreground">{result.place.name}</h1>
-        {current ? (
-          <p className="mt-2 text-sm text-foreground">
-            {current.dataKind === "observation" ? "实况" : "当前预报参考"}{" "}
-            {weatherTimeLabel(current.observedAt, timezone, true)} · {number(current.temperature)}°C
-            {finiteWeatherValue(current.feelsLike)
-              ? ` · 体感 ${number(current.feelsLike)}°C`
-              : ""}{" "}
-            · 风速 {number(current.windSpeed)} m/s
-          </p>
-        ) : (
-          <p className="mt-2 text-sm text-muted-foreground">当前实况暂缺，请参考下方预报。</p>
-        )}
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">
-          预报：{weatherTimeLabel(result.forecastStart, timezone, true)}–
-          {weatherTimeLabel(result.forecastEnd, timezone, true)} · 更新{" "}
-          {weatherTimeLabel(result.generatedAt, timezone, true)}
-        </p>
-        {result.weatherDataFreshness === "stale" ||
-        result.weatherEvidenceStatus === "insufficient" ? (
-          <p className="mt-2 text-sm text-warning-strong">
-            {result.weatherEvidenceReasonZh || "数据存在缺失或更新延迟，请留意后续预报。"}
-          </p>
-        ) : null}
+        <a
+          href="/"
+          aria-label="更换地点与范围"
+          className="shrink-0 whitespace-nowrap rounded-lg border border-border px-3 py-2 text-xs font-semibold text-primary"
+        >
+          更换地点
+        </a>
       </div>
-      <a
-        href="/"
-        className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold text-primary"
-      >
-        更换地点与范围
-      </a>
+      {current ? (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <strong className="text-4xl font-semibold tracking-tight tabular-nums">
+            {number(current.temperature)}°C
+          </strong>
+          <div className="text-sm leading-6">
+            <p>
+              {current.weatherTextZh || "天气现象暂缺"}
+              {finiteWeatherValue(current.feelsLike)
+                ? ` · 体感 ${number(current.feelsLike)}°C`
+                : ""}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {current.dataKind === "observation" ? "实况" : "当前预报参考"}{" "}
+              {weatherTimeLabel(current.observedAt, timezone, true)} · 风速{" "}
+              {number(current.windSpeed)} m/s
+            </p>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">当前实况暂缺，请参考下方预报。</p>
+      )}
+      <p className="text-[11px] leading-5 text-muted-foreground">
+        预报：{weatherTimeLabel(result.forecastStart, timezone, true)}–
+        {weatherTimeLabel(result.forecastEnd, timezone, true)} · 更新{" "}
+        {weatherTimeLabel(result.generatedAt, timezone, true)}
+      </p>
+      {result.weatherDataFreshness === "stale" ||
+      result.weatherEvidenceStatus === "insufficient" ? (
+        <p className="text-xs text-warning-strong">
+          {result.weatherEvidenceReasonZh || "数据存在缺失或更新延迟，请留意后续预报。"}
+        </p>
+      ) : null}
     </header>
   );
 }
@@ -188,9 +198,9 @@ export function GeneralWeatherOverview({
         </p>
       </Card>
       <section aria-label="天气风险" className="grid gap-3">
-        <h2 className="text-lg font-semibold">
-          天气风险{risks.length ? ` · ${risks.length} 项` : ""}
-        </h2>
+        {risks.length ? (
+          <h2 className="text-lg font-semibold">天气风险 · {risks.length} 项</h2>
+        ) : null}
         {risks.length ? (
           risks.map((risk) => (
             <Card key={risk.key} className="grid gap-2 border-warning/50 p-4">
@@ -231,7 +241,7 @@ export function GeneralWeatherOverview({
             {coverageIncomplete
               ? "数据覆盖不完整，暂不能完整评估天气风险。"
               : "当前预报未识别到主要天气风险。"}{" "}
-            天气预警与预报风险分别展示，出行前留意最新更新。
+            出行前留意最新预警。
           </p>
         )}
       </section>
@@ -249,7 +259,7 @@ export function GeneralWeatherOverview({
                 type="button"
                 key={row.time}
                 onClick={() => onHour(row.time)}
-                className="grid min-w-[88px] shrink-0 gap-2 rounded-lg border border-border px-3 py-3 text-center text-xs hover:bg-muted"
+                className="grid min-w-[68px] shrink-0 gap-2 border-r border-border px-2 py-2 text-center text-xs hover:bg-muted"
               >
                 <span className="text-muted-foreground">
                   {weatherTimeLabel(row.time, timezone)}

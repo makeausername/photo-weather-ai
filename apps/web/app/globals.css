@@ -199,6 +199,22 @@ a {
 .professional-time {
   background: var(--row-surface, var(--muted));
 }
+.weather-matrix .matrix-label {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  width: 88px;
+  box-shadow: 1px 0 0 var(--border);
+}
+.weather-matrix thead .matrix-label {
+  z-index: 20;
+}
+.weather-matrix tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--muted) 35%, var(--card));
+}
+.weather-matrix tbody tr:hover {
+  background: var(--secondary);
+}
 .professional-numeric {
   text-align: right;
   font-variant-numeric: tabular-nums;

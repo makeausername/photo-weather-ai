@@ -3,6 +3,15 @@ import type {
   ProfessionalHourlyDataTimeBasis,
 } from "@photo-weather/shared";
 
+export function providerNeutralProfessionalWeatherText(
+  value: string | null | undefined,
+): string | null {
+  const text = value?.trim();
+  return !text || /meteoblue|open[-_ ]?meteo|qweather|和风天气|和风|provider/i.test(text)
+    ? null
+    : text;
+}
+
 export const finiteWeatherValue = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 export function weatherDateKey(time: string, timezone: string): string {

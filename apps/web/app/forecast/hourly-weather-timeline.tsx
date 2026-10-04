@@ -46,20 +46,26 @@ export function HourlyWeatherTimeline({
 }) {
   const id = useId().replace(/:/g, "");
   const [showCloud, setShowCloud] = useState(false);
+  const [showWind, setShowWind] = useState(false);
   if (points.length === 0) return null;
   const nightRanges = buildNightRanges(points);
+  const dry = points.every(
+    (point) => point.precipitationMm === 0 && point.precipitationProbabilityPercent === 0,
+  );
   const labels = new Map(points.map((point) => [point.key, point.label]));
   const cloudTrack = { key: "cloud", label: "云层", unit: "%", domain: [0, 100] } as const;
   const tracks = [
     ...(!weatherFirst ? [cloudTrack] : []),
-    { key: "rain", label: "降水", unit: "mm", domain: [0, "auto"] },
+    ...(!weatherFirst || !dry
+      ? [{ key: "rain", label: "降水", unit: "mm", domain: [0, "auto"] } as const]
+      : []),
     {
       key: "temperature",
       label: weatherFirst ? "气温与体感" : "气温与露点",
       unit: "°C",
       domain: ["auto", "auto"],
     },
-    ...(weatherFirst
+    ...(weatherFirst && showWind
       ? [{ key: "wind", label: "风速与阵风", unit: "m/s", domain: [0, "auto"] } as const]
       : []),
     ...(weatherFirst && showCloud ? [cloudTrack] : []),
@@ -74,18 +80,36 @@ export function HourlyWeatherTimeline({
           <h2 className="text-lg font-semibold text-card-foreground">{title}</h2>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">{description}</p>
         </div>
-        <span className="text-xs text-muted-foreground">{points.length} 小时</span>
+        <span className="text-xs text-muted-foreground">{points.length} 个时次</span>
       </div>
       {controls ? <div className="mt-4 min-w-0">{controls}</div> : null}
-      {weatherFirst ? (
-        <button
-          type="button"
-          aria-expanded={showCloud}
-          onClick={() => setShowCloud(!showCloud)}
-          className="mt-3 min-h-11 text-sm font-semibold text-primary"
+      {weatherFirst && dry ? (
+        <p
+          className="mt-3 rounded-lg bg-secondary px-3 py-2 text-sm"
+          data-dry-hourly-summary="true"
         >
-          {showCloud ? "收起云量趋势" : "查看云量趋势"}
-        </button>
+          所示时次暂无降水信号 · 雨量 0 mm，小时概率 0%
+        </p>
+      ) : null}
+      {weatherFirst ? (
+        <div className="flex flex-wrap gap-5">
+          <button
+            type="button"
+            aria-expanded={showWind}
+            onClick={() => setShowWind(!showWind)}
+            className="mt-2 min-h-11 text-sm font-semibold text-primary"
+          >
+            {showWind ? "收起风速趋势" : "查看风速与阵风"}
+          </button>
+          <button
+            type="button"
+            aria-expanded={showCloud}
+            onClick={() => setShowCloud(!showCloud)}
+            className="mt-2 min-h-11 text-sm font-semibold text-primary"
+          >
+            {showCloud ? "收起云量趋势" : "查看云量趋势"}
+          </button>
+        </div>
       ) : null}
       <div className="mt-4 grid min-w-0 gap-3" aria-label={title}>
         {tracks.map((track) => (
