@@ -2024,9 +2024,11 @@ function astroWeatherBlockersForStats(stats: WeatherWindowStats): readonly strin
       `降水风险${stats.precipitationRisk === "medium" ? "中" : "高"}，夜间窗口可能被打断`,
     );
   }
-  if (hasRainFogMistText(stats.weatherText) || hasThickCloudText(stats.weatherText)) {
-    blockers.push("天气现象包含雨、雾或厚云信号");
-  }
+  // Do not turn a cloudy weather code into simultaneous rain and fog warnings.
+  if (/雨|雪|rain|snow|shower|drizzle/i.test(stats.weatherText))
+    blockers.push("天气现象有降水信号");
+  if (/雾|霾|fog|mist|haze/i.test(stats.weatherText)) blockers.push("天气现象有雾霾信号");
+  if (hasThickCloudText(stats.weatherText)) blockers.push("天气现象有厚云遮挡");
 
   return [...new Set(blockers)];
 }

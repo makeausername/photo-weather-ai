@@ -286,14 +286,14 @@ describe("homepage forecast flow", () => {
 
     expect(html).toContain('data-homepage-guidance-panel="true"');
     expect(html).toContain('data-homepage-card-grid="true"');
-    expect(html).toContain("拍摄前先看这六项");
-    expect(html).toContain("综合判断");
+    expect(html).toContain("如何查看天气预报");
+    expect(html).toContain("天气概览");
     expect(html).toContain(forecastHorizonLabels[homepageDefaultHorizon]);
     expect(html).toContain("地点与窗口");
-    expect(html).toContain("云层与光线");
+    expect(html).toContain("云层与天气");
     expect(html).toContain("风与湿度");
     expect(html).toContain("能见度与通透");
-    expect(html).toContain("月相与夜景");
+    expect(html).toContain("小时与逐日");
     expect(html).toContain("降水与风险");
     expect(html).toContain("确定拍摄地点和预报范围");
     expect(html).toContain("01");
@@ -322,7 +322,7 @@ describe("homepage forecast flow", () => {
     );
 
     expect(html).toContain("老君山金顶");
-    expect(html).toContain("正在读取该地点的天气与天文数据");
+    expect(html).toContain("正在读取该地点的天气预报");
     expect(html).toContain("加载中");
     expect(html).toContain('data-homepage-card-grid="true"');
     expect(html).toContain("地点与窗口");
@@ -343,22 +343,15 @@ describe("homepage forecast flow", () => {
       }),
     );
 
-    expect(html).toContain("老君山金顶 拍摄条件");
-    expect(html).toContain("指数、窗口、风险和现场准备已更新。");
-    expect(html).toContain("综合指数");
-    expect(html).toContain("82 / 100");
-    expect(html).toContain("推荐等级");
-    expect(html).toContain("值得出发");
-    expect(html).toContain("最佳窗口");
-    expect(html).toContain("05:10 - 06:20");
-    expect(html).toContain("日出/朝霞窗口");
+    expect(html).toContain("老君山金顶 天气概览");
+    expect(html).toContain("降水、温度、风和天气风险已更新。");
+    expect(html).not.toContain("综合指数");
+    expect(html).not.toContain("最佳窗口");
+    expect(html).toContain("降水");
+    expect(html).toContain("预报温度");
+    expect(html).toContain("风速与阵风");
     expect(html).toContain("主要风险");
     expect(html).toContain("山顶强风");
-    expect(html).toContain("云层与风");
-    expect(html).toContain("云层 72% / 风 4.6 m/s 260°");
-    expect(html).toContain("低云 18%，湿度 68%，能见度 18.5 公里。");
-    expect(html).toContain("当前建议");
-    expect(html).toContain("按窗口和风险准备。");
     expect(html).toContain("min-[960px]:grid-rows-[auto_minmax(0,1fr)]");
     expect(html).toContain("min-[960px]:auto-rows-fr");
     expect(html).toContain("min-[960px]:h-full");
@@ -368,7 +361,7 @@ describe("homepage forecast flow", () => {
     expect(html).not.toContain("本地天文服务");
     expect(html).not.toContain('data-homepage-layer-visual="true"');
   });
-  it("skips blocked astronomical references and prioritizes a severe risk", () => {
+  it("keeps photography on specialist pages and prioritizes a severe weather risk", () => {
     const result = {
       ...homepageLayerResult,
       bestWindows: [
@@ -397,7 +390,7 @@ describe("homepage forecast flow", () => {
         horizon: homepageDefaultHorizon,
       }),
     );
-    expect(html).toContain("可拍晚霞");
+    expect(html).not.toContain("可拍晚霞");
     expect(html).not.toContain("银河参考");
     expect(html).toContain("暴雨干扰");
     expect(html).not.toContain(">白墙<");
@@ -414,7 +407,7 @@ describe("homepage forecast flow", () => {
     );
 
     expect(html).toContain("老君山金顶");
-    expect(html).toContain("该地点拍摄条件暂不可用，请稍后重试");
+    expect(html).toContain("该地点天气预报暂不可用，请稍后重试");
     expect(html).toContain("暂不可用");
     expect(html).toContain("地点与窗口");
     expect(html).not.toContain("默认演示图层");
@@ -440,16 +433,16 @@ describe("homepage forecast flow", () => {
   it("renders the homepage guidance cards on the full page before selection", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
 
-    expect(html).toContain("拍摄前先看这六项");
+    expect(html).toContain("如何查看天气预报");
     expect(html).toContain("地点与窗口");
-    expect(html).toContain("云层与光线");
+    expect(html).toContain("云层与天气");
     expect(html).toContain("降水与风险");
     expect(html).not.toContain('data-homepage-layer-visual="true"');
     expect(html).not.toContain('data-homepage-location-marker="true"');
     expect(html).not.toContain('data-homepage-window-cards="true"');
   });
 
-  it("formats cloud, wind, and visibility values for homepage result cards", () => {
+  it("does not substitute current conditions for missing hourly forecast data", () => {
     const location = selectedLocationFromSearchResult(laojunshanPlace);
     const html = renderToStaticMarkup(
       React.createElement(HomepageGuidancePanel, {
@@ -459,13 +452,11 @@ describe("homepage forecast flow", () => {
       }),
     );
 
-    expect(html).toContain("云层 72% / 风 4.6 m/s 260°");
-    expect(html).toContain("低云 18%，湿度 68%，能见度 18.5 公里。");
-    expect(html).toContain("4.6 m/s 260°");
-    expect(html).toContain("湿度");
-    expect(html).toContain("68%");
-    expect(html).toContain("能见度");
-    expect(html).toContain("18.5 公里");
+    expect(html).toContain("降水数据不完整");
+    expect(html).toContain("已知部分 — mm");
+    expect(html).toContain("— / — m/s");
+    expect(html).not.toContain("0 mm");
+    expect(html).not.toContain("暂无降水信号");
   });
 
   it("derives partial layer status from provider source summaries", () => {
@@ -994,8 +985,8 @@ describe("homepage forecast flow", () => {
   it("keeps public homepage copy product-friendly", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
 
-    expect(html).toContain("查看目的地的天气与拍摄条件。");
-    expect(html).toContain("拍摄前先看这六项");
+    expect(html).toContain("查看目的地的降水、温度、风和天气风险。");
+    expect(html).toContain("如何查看天气预报");
     expect(html).toContain("地点与窗口");
     expect(html).not.toContain("云海判断需要关注什么");
     expect(html).not.toContain("朝霞晚霞判断需要看什么");
@@ -1069,6 +1060,6 @@ describe("homepage forecast flow", () => {
     );
 
     expect(html).toContain("分析目标");
-    expect(html).toContain("综合判断");
+    expect(html).toContain("天气概览");
   });
 });

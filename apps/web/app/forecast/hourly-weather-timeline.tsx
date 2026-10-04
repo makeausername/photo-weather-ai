@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import {
   Area,
   Bar,
@@ -24,6 +24,9 @@ export type HourlyTimelinePoint = {
   readonly precipitationMm: number | null;
   readonly precipitationProbabilityPercent: number | null;
   readonly isNight: boolean;
+  readonly windSpeedMs?: number | null;
+  readonly windGustMs?: number | null;
+  readonly feelsLikeC?: number | null;
 };
 
 export function HourlyWeatherTimeline({
@@ -31,20 +34,35 @@ export function HourlyWeatherTimeline({
   title = "逐小时天气趋势",
   description = "同一时间轴对照降水、云量、气温与露点，先看趋势，再按需展开明细。",
   controls,
+  weatherFirst = false,
+  onSelectTime,
 }: {
   readonly points: readonly HourlyTimelinePoint[];
   readonly title?: string;
   readonly description?: string;
   readonly controls?: ReactNode;
+  readonly weatherFirst?: boolean;
+  readonly onSelectTime?: (time: string) => void;
 }) {
   const id = useId().replace(/:/g, "");
+  const [showCloud, setShowCloud] = useState(false);
   if (points.length === 0) return null;
   const nightRanges = buildNightRanges(points);
   const labels = new Map(points.map((point) => [point.key, point.label]));
+  const cloudTrack = { key: "cloud", label: "云层", unit: "%", domain: [0, 100] } as const;
   const tracks = [
-    { key: "cloud", label: "云层", unit: "%", domain: [0, 100] },
+    ...(!weatherFirst ? [cloudTrack] : []),
     { key: "rain", label: "降水", unit: "mm", domain: [0, "auto"] },
-    { key: "temperature", label: "气温与露点", unit: "°C", domain: ["auto", "auto"] },
+    {
+      key: "temperature",
+      label: weatherFirst ? "气温与体感" : "气温与露点",
+      unit: "°C",
+      domain: ["auto", "auto"],
+    },
+    ...(weatherFirst
+      ? [{ key: "wind", label: "风速与阵风", unit: "m/s", domain: [0, "auto"] } as const]
+      : []),
+    ...(weatherFirst && showCloud ? [cloudTrack] : []),
   ] as const;
   return (
     <section
@@ -59,6 +77,16 @@ export function HourlyWeatherTimeline({
         <span className="text-xs text-muted-foreground">{points.length} 小时</span>
       </div>
       {controls ? <div className="mt-4 min-w-0">{controls}</div> : null}
+      {weatherFirst ? (
+        <button
+          type="button"
+          aria-expanded={showCloud}
+          onClick={() => setShowCloud(!showCloud)}
+          className="mt-3 min-h-11 text-sm font-semibold text-primary"
+        >
+          {showCloud ? "收起云量趋势" : "查看云量趋势"}
+        </button>
+      ) : null}
       <div className="mt-4 grid min-w-0 gap-3" aria-label={title}>
         {tracks.map((track) => (
           <div key={track.key} className="min-w-0" data-hourly-track={track.key}>
@@ -76,6 +104,9 @@ export function HourlyWeatherTimeline({
                   syncId={id}
                   margin={{ top: 8, right: 0, bottom: 0, left: 0 }}
                   accessibilityLayer
+                  onClick={(state) => {
+                    if (state?.activeLabel && onSelectTime) onSelectTime(String(state.activeLabel));
+                  }}
                 >
                   <CartesianGrid stroke="var(--border)" vertical={false} />
                   {nightRanges.map((range) => (
@@ -182,11 +213,36 @@ export function HourlyWeatherTimeline({
                       <Line
                         yAxisId="value"
                         type="linear"
-                        dataKey="dewPointC"
-                        name="露点 °C"
+                        dataKey={weatherFirst ? "feelsLikeC" : "dewPointC"}
+                        name={weatherFirst ? "体感 °C" : "露点 °C"}
                         stroke="var(--info)"
                         strokeDasharray="5 4"
                         strokeWidth={2}
+                        dot={false}
+                        connectNulls={false}
+                        isAnimationActive={false}
+                      />
+                    </>
+                  ) : null}
+                  {track.key === "wind" ? (
+                    <>
+                      <Line
+                        yAxisId="value"
+                        type="linear"
+                        dataKey="windSpeedMs"
+                        name="风速 m/s"
+                        stroke="var(--primary)"
+                        dot={false}
+                        connectNulls={false}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        yAxisId="value"
+                        type="linear"
+                        dataKey="windGustMs"
+                        name="阵风 m/s"
+                        stroke="var(--accent-strong)"
+                        strokeDasharray="5 4"
                         dot={false}
                         connectNulls={false}
                         isAnimationActive={false}

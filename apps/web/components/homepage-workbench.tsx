@@ -3,12 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   forecastHorizonLabels,
-  isExecutableForecastWindow,
   prioritizeForecastRisks,
   type ForecastCalculationResult,
   type ForecastHorizon,
   type ForecastTarget,
-  type NormalizedCurrentWeather,
 } from "@photo-weather/shared";
 import {
   HomepageSearchPanel,
@@ -29,6 +27,8 @@ import {
 import { Badge, Card, cn } from "./ui";
 import { DecisionValue } from "./decision-value";
 import { ForecastEntryHeader, ForecastEntryHelp } from "./forecast-entry";
+import { summarizeWeatherHours } from "../app/forecast/general-weather-data";
+import { hourlyTableNumber } from "../app/forecast/professional-hourly-columns";
 
 type LayerStatus = "idle" | "loading" | "ready" | "partial" | "fallback" | "error";
 
@@ -52,8 +52,8 @@ const homepageGuidanceCards = [
     description: "确定拍摄地点和预报范围，先锁定需要评估的日期与时段。",
   },
   {
-    title: "云层与光线",
-    description: "对照总云量、分层云量和日出日落时间，确认光线条件。",
+    title: "云层与天气",
+    description: "查看晴雨变化，按需展开分层云量等专业数据。",
   },
   {
     title: "风与湿度",
@@ -64,8 +64,8 @@ const homepageGuidanceCards = [
     description: "结合能见度与空气通透度，判断远山和城市天际线的清晰度。",
   },
   {
-    title: "月相与夜景",
-    description: "查看月相、月出月落和天文黑夜，为夜景拍摄安排时间。",
+    title: "小时与逐日",
+    description: "先查看每天的天气变化，再按小时核对降水、风和温度。",
   },
   {
     title: "降水与风险",
@@ -149,8 +149,8 @@ export function HomepageWorkbench() {
   return (
     <>
       <ForecastEntryHeader
-        title="拍摄条件"
-        description="查看目的地的天气与拍摄条件。"
+        title="天气概览"
+        description="查看目的地的降水、温度、风和天气风险。"
         centered={!selectedLocation}
       />
       <section
@@ -179,7 +179,7 @@ export function HomepageWorkbench() {
             horizon={forecastOptions.horizon}
           />
         ) : (
-          <ForecastEntryHelp>
+          <ForecastEntryHelp title="如何查看天气预报？">
             <HomepageGuidancePanel
               location={null}
               state={{ status: "idle", result: null }}
@@ -240,13 +240,13 @@ export function HomepageGuidancePanel({
         data-homepage-guidance-intro="true"
       >
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="accent">综合判断</Badge>
+          <Badge variant="accent">天气概览</Badge>
           <Badge variant="muted">{forecastHorizonLabels[horizon]}</Badge>
           {location ? <Badge variant="muted">{location.displayName}</Badge> : null}
           {result && state.status === "partial" ? <Badge variant="warning">部分可用</Badge> : null}
         </div>
         <h2 className="mt-3 text-xl font-bold leading-tight text-card-foreground">
-          {result && location ? `${location.displayName} 拍摄条件` : "拍摄前先看这六项"}
+          {result && location ? `${location.displayName} 天气概览` : "如何查看天气预报"}
         </h2>
         <p className="mt-3 max-w-4xl text-sm leading-6 text-muted-foreground sm:text-[15px] sm:leading-7">
           {homepagePanelDescription(location, state, Boolean(result))}
@@ -256,8 +256,8 @@ export function HomepageGuidancePanel({
       <div className="grid min-w-0 gap-4">
         <div
           className={cn(
-            "grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3",
-            !hasResult && "guide-grid",
+            "grid min-w-0 gap-3 sm:grid-cols-2",
+            !hasResult && "guide-grid xl:grid-cols-3",
             hasResult && "min-[960px]:h-full min-[960px]:auto-rows-fr",
           )}
           data-homepage-card-grid="true"
@@ -343,62 +343,40 @@ function buildHomepageGuidanceCards(
 }
 
 function buildHomepageResultCards(
-  location: SelectedLocation | null,
-  state: ForecastLayerState,
+  _location: SelectedLocation | null,
+  _state: ForecastLayerState,
   result: ForecastCalculationResult,
 ): readonly HomepageInsightCard[] {
-  const current = result.currentWeather;
-  const bestWindow = result.bestWindows.find(isExecutableForecastWindow);
-  const mainRisk = prioritizeForecastRisks(result.riskFlags, bestWindow)[0];
-  const finalResultLabel = result.finalRecommendationLabel ?? result.recommendationLabel;
-  const finalDecisionSummary =
-    result.finalDecisionSummaryZh ?? decisionSummaryText(location, state);
-
+  const summary = summarizeWeatherHours(
+    result.professionalHourlyData ?? [],
+    result.professionalHourlyDataTimeBasis,
+  );
+  const mainRisk = prioritizeForecastRisks(result.riskFlags)[0];
   return [
     {
-      title: "综合指数",
-      value:
-        typeof (result.finalScore ?? result.overallScore) === "number"
-          ? `${Math.round(result.finalScore ?? result.overallScore)} / 100`
-          : "待计算",
-      description: "天气、光线、窗口与风险。",
-      badge: "已生成",
+      title: "降水",
+      value: summary.rainLabel,
+      description: `所示时段${summary.amountComplete ? "累计" : "已知部分"} ${hourlyTableNumber(summary.amount)} mm；小时最高概率${summary.probabilityInconsistent ? "待复核" : ` ${hourlyTableNumber(summary.maxProbability, 0)}%`}。`,
+      badge: "预报",
     },
     {
-      title: "推荐等级",
-      value: finalResultLabel || "待计算",
-      description: finalDecisionSummary,
-      badge: "结论",
+      title: "预报温度",
+      value: `${hourlyTableNumber(summary.minTemperature)}–${hourlyTableNumber(summary.maxTemperature)}°C`,
+      description: "所示时段温度范围，逐小时查看变化。",
+      badge: "温度",
     },
     {
-      title: "最佳窗口",
-      value: bestWindow
-        ? `${formatTime(bestWindow.startTime, result.calendarBasis?.timezone)} - ${formatTime(bestWindow.endTime, result.calendarBasis?.timezone)}`
-        : "暂无推荐窗口",
-      description: bestWindow
-        ? `${new Intl.DateTimeFormat("zh-CN", { timeZone: result.calendarBasis?.timezone ?? "Asia/Shanghai", month: "numeric", day: "numeric" }).format(new Date(bestWindow.startTime))} · ${bestWindow.label}`
-        : "本轮预报没有找到明确的优先拍摄窗口。",
-      badge: bestWindow ? "窗口" : "待观察",
-      tone: bestWindow ? undefined : "muted",
+      title: "风速与阵风",
+      value: `${hourlyTableNumber(summary.maxWind)} / ${hourlyTableNumber(summary.maxGust)} m/s`,
+      description: "所示时段最大风速 / 最大阵风。",
+      badge: "风",
     },
     {
       title: "主要风险",
-      value: mainRisk?.label ?? "暂无高等级风险",
-      description: mainRisk?.description ?? "仍需在出发前复核短临天气和现场通行条件。",
-      badge: mainRisk ? riskLevelLabel(mainRisk.level) : "风险",
-      tone: mainRisk ? "danger" : undefined,
-    },
-    {
-      title: "云层与风",
-      value: formatCloudWindValue(current),
-      description: formatCloudWindDetail(current),
-      badge: "天气",
-    },
-    {
-      title: "当前建议",
-      value: currentAdviceText(location, state, result),
-      description: "穿着与随身装备。",
-      badge: "行动",
+      value: mainRisk?.label ?? "未识别到主要风险",
+      description: mainRisk?.description ?? "仅针对已获取数据，完整报告可查看时段与天气预警。",
+      badge: mainRisk ? riskLevelLabel(mainRisk.level) : "天气",
+      tone: mainRisk ? "danger" : "muted",
     },
   ];
 }
@@ -425,76 +403,21 @@ function homepagePanelDescription(
   hasResult: boolean,
 ): string {
   if (!location) {
-    return "选择地点后，将显示综合指数、推荐时段、主要风险和出行建议。";
+    return "选择地点后，查看天气变化、降水和主要风险。";
   }
   if (state.status === "loading") {
-    return "正在读取该地点的天气与天文数据。";
+    return "正在读取该地点的天气预报。";
   }
   if (state.status === "fallback" || state.status === "error") {
-    return "该地点拍摄条件暂不可用，请稍后重试；已选地点和预报范围会保留在搜索卡片中。";
+    return "该地点天气预报暂不可用，请稍后重试；已选地点和预报范围会保留在搜索卡片中。";
   }
   if (state.status === "partial") {
-    return "拍摄条件已更新，部分数据暂缺。";
+    return "天气预报已更新，部分数据暂缺。";
   }
   if (hasResult) {
-    return "指数、窗口、风险和现场准备已更新。";
+    return "降水、温度、风和天气风险已更新。";
   }
-  return "选择地点后，将显示综合指数、推荐时段、主要风险和出行建议。";
-}
-
-function decisionSummaryText(location: SelectedLocation | null, state: ForecastLayerState): string {
-  if (!location) {
-    return "选择地点后，可查看综合指数、推荐时段、主要风险和题材建议。";
-  }
-  if (state.status === "loading") {
-    return "正在读取天气与天文数据。";
-  }
-  if (state.status === "fallback" || state.status === "error") {
-    return "该地点拍摄条件暂不可用，请稍后重试。";
-  }
-  if (state.status === "partial") {
-    return "部分数据暂缺，结论已保守处理。";
-  }
-  return "先看窗口与风险，再安排到达时间。";
-}
-
-function currentAdviceText(
-  location: SelectedLocation | null,
-  state: ForecastLayerState,
-  result: ForecastCalculationResult | null,
-): string {
-  if (!location) {
-    return "选择地点后生成到达时间、拍摄题材、风险和装备建议。";
-  }
-  if (state.status === "loading") {
-    return "正在整理到达时间、拍摄题材和装备建议。";
-  }
-  if (!result || state.status === "fallback" || state.status === "error") {
-    return "暂时无法生成建议，请稍后重试。";
-  }
-
-  const clothing = result.clothingGuide;
-  const clothingLayers = clothing?.layers.slice(0, 2).join("、") ?? "";
-  const accessories = clothing?.accessories.slice(0, 2).join("、") ?? "";
-  const adviceParts = [
-    clothingLayers ? `穿 ${clothingLayers}` : "",
-    accessories ? `带 ${accessories}` : "",
-  ].filter(Boolean);
-
-  return adviceParts.length > 0 ? adviceParts.join(" · ") : "按窗口和风险准备。";
-}
-
-function formatCloudWindValue(current: NormalizedCurrentWeather | undefined): string {
-  return `云层 ${formatPercent(current?.cloudTotal)} / 风 ${formatWind(
-    current?.windSpeed,
-    current?.windDirection,
-  )}`;
-}
-
-function formatCloudWindDetail(current: NormalizedCurrentWeather | undefined): string {
-  return `低云 ${formatPercent(current?.cloudLow)}，湿度 ${formatPercent(
-    current?.humidity,
-  )}，能见度 ${formatKilometers(current?.visibility)}。`;
+  return "选择地点后，查看天气变化、降水和主要风险。";
 }
 
 function riskLevelLabel(level: ForecastCalculationResult["riskFlags"][number]["level"]): string {
@@ -505,48 +428,4 @@ function riskLevelLabel(level: ForecastCalculationResult["riskFlags"][number]["l
     return "中风险";
   }
   return "风险";
-}
-
-function formatTime(value: string, timezone = "Asia/Shanghai"): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(timestamp));
-}
-
-function formatPercent(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}%` : "暂无";
-}
-
-function formatKilometers(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value)
-    ? `${roundDisplay(value)} 公里`
-    : "暂无";
-}
-
-function formatWind(
-  windSpeed: number | null | undefined,
-  windDirection: number | null | undefined,
-): string {
-  const speed =
-    typeof windSpeed === "number" && Number.isFinite(windSpeed)
-      ? `${roundDisplay(windSpeed)} m/s`
-      : "暂无风速";
-  const direction =
-    typeof windDirection === "number" && Number.isFinite(windDirection)
-      ? `${Math.round(windDirection)}°`
-      : "";
-
-  return direction ? `${speed} ${direction}` : speed;
-}
-
-function roundDisplay(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }

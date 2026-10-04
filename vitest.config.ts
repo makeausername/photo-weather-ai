@@ -6,7 +6,7 @@ const fromRoot = (path: string) => fileURLToPath(new URL(path, import.meta.url))
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts", "app/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}", "app/**/*.test.{ts,tsx}"],
     passWithNoTests: true,
   },
   resolve: {
