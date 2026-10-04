@@ -549,7 +549,7 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("判断指标");
     expect(html).toContain('data-cloud-sea-page-mode="search"');
     expect(html).toContain('data-cloud-sea-section="CloudSeaSearchPanel"');
-    expect(html).toContain("地点搜索与范围选择");
+    expect(html).toContain("选择拍摄地点");
     expect(html).toContain('data-cloud-sea-pre-result="knowledge-guide"');
     expect(html).not.toContain('data-cloud-sea-decision-panel="true"');
     expect(html).toContain("云海判断需要关注什么");
@@ -577,11 +577,14 @@ describe("scenario module pages", () => {
     const guideHtml = html.slice(guideStart);
 
     expect(guideStart).toBeGreaterThanOrEqual(0);
-    expect(html).toContain("min-[960px]:items-stretch");
+    expect(html).toContain("mx-auto max-w-[760px]");
     expect(guideHtml).toContain("guide-grid grid min-w-0 gap-0 sm:grid-cols-2 xl:grid-cols-3");
     expect(guideHtml).toContain("grid min-w-0 content-start gap-3");
     expect(guideHtml).not.toMatch(/min-w-\[[^\]]+\]/);
     expect(guideHtml).not.toContain("overflow-x");
+    const help = html.match(/<details[^>]*data-forecast-entry-help="true"[^>]*>/)?.[0];
+    expect(help).toBeDefined();
+    expect(help).not.toMatch(/\sopen(?:=|\s|>)/);
   });
 
   it("reuses the shared current-location input on homepage, cloud sea, glow, and astro", () => {
@@ -692,7 +695,7 @@ describe("scenario module pages", () => {
     expect(searchCardHtml).toContain("未来72小时");
     expect(searchCardHtml).toContain("未来7天");
     expect(searchCardHtml).not.toContain("分析题材");
-    expect(searchCardHtml).toContain("查看完整云海报告");
+    expect(searchCardHtml).toContain("选择地点后查看完整报告");
     expect(searchCardHtml).not.toContain('data-quick-location-section="true"');
     expect(searchCardHtml).not.toContain("常用机位");
     expect(searchCardHtml).not.toContain("border-t border-border pt-4");
@@ -751,7 +754,7 @@ describe("scenario module pages", () => {
       sharedAstroPanelHtml,
     ]) {
       expect(html).toContain('data-subject-control-panel="true"');
-      expect(html).toContain("地点搜索与范围选择");
+      expect(html).toContain("选择拍摄地点");
       expect(html).toContain('data-location-search-input="true"');
       expect(html).toContain('data-current-location-button="true"');
       expect(html).toContain("预报范围");
@@ -1187,11 +1190,11 @@ describe("scenario module pages", () => {
   it("renders the cloud sea pre-result location search panel without result dashboard chrome", () => {
     const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
 
-    expect(html).toContain("地点搜索与范围选择");
+    expect(html).toContain("选择拍摄地点");
     expect(html).toContain("预报范围");
     expect(html).toContain('aria-label="目的地"');
     expect(html).toContain('data-current-location-button="true"');
-    expect(html).toContain("查看完整云海报告");
+    expect(html).toContain("选择地点后查看完整报告");
     expect(html).not.toContain("CloudSeaResultPage");
     expect(html).not.toContain("CloudSeaTopResultHeader");
     expect(html).not.toContain("CloudSeaScoreCard");
@@ -1322,7 +1325,7 @@ describe("scenario module pages", () => {
     expect(html).toContain("预报范围");
     expect(html).toContain("分析目标");
     expect(html).toContain("云海拍摄判断");
-    expect(html).not.toContain("地点搜索与范围选择");
+    expect(html).not.toContain("选择拍摄地点");
     expect(html).not.toContain("坐标信息");
     expect(html).not.toContain("WGS84");
     expect(html).not.toContain("GCJ-02");
@@ -1338,7 +1341,7 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("热门朝霞晚霞机位");
     expect(html).not.toContain("热门朝霞机位");
     expect(html).not.toContain("热门晚霞机位");
-    expect(html).toContain("地点搜索与范围选择");
+    expect(html).toContain("选择拍摄地点");
     expect(html).toContain('data-subject-control-panel="true"');
     expect(html).toContain('data-subject-control-panel-target="glow"');
     expect(html).toContain('data-subject-knowledge-guide="glow"');
@@ -1355,7 +1358,7 @@ describe("scenario module pages", () => {
     expect(html).toContain("未来72小时");
     expect(html).toContain("未来7天");
     expect(html).not.toContain("分析题材");
-    expect(html).toContain("查看完整霞光报告 →");
+    expect(html).toContain("选择地点后查看完整报告");
     expect(html).toContain("朝霞晚霞判断需要看什么");
     expect(html).toContain("日出日落时间");
     expect(html).toContain("中高云条件");
@@ -1375,8 +1378,8 @@ describe("scenario module pages", () => {
   it("keeps the glow entry layout responsive without fixed wide columns", () => {
     const html = renderToStaticMarkup(React.createElement(GlowPage));
 
-    expect(html).toContain("min-[960px]:grid-cols-[clamp(340px,31vw,420px)_minmax(0,1fr)]");
-    expect(html).toContain("xl:gap-8");
+    expect(html).toContain("mx-auto max-w-[760px]");
+    expect(html).toMatch(/<details[^>]*data-forecast-entry-help="true"[^>]*>/);
     expect(html).toContain("relative min-w-0 w-full");
     expect(html).toContain("pr-12");
     expect(html).toContain('data-subject-control-panel="true"');
@@ -1392,8 +1395,8 @@ describe("scenario module pages", () => {
       footerStart === -1 ? undefined : footerStart,
     );
 
-    expect(html).toContain("min-[960px]:grid-cols-[clamp(340px,31vw,420px)_minmax(0,1fr)]");
-    expect(html).toContain("xl:gap-8");
+    expect(html).toContain("mx-auto max-w-[760px]");
+    expect(html).toMatch(/<details[^>]*data-forecast-entry-help="true"[^>]*>/);
     expect(html).toContain("relative min-w-0 w-full");
     expect(html).toContain("pr-12");
     expect(html).toContain('data-subject-control-panel="true"');
@@ -1512,9 +1515,9 @@ describe("scenario module pages", () => {
       React.createElement(ScenarioSearchPanel, { config: cloudSeaScenarioConfig }),
     );
 
-    expect(searchPanelHtml).toContain("地点搜索与范围选择");
+    expect(searchPanelHtml).toContain("选择拍摄地点");
     expect(searchPanelHtml).toContain("预报范围");
-    expect(searchPanelHtml).toContain("查看完整云海报告 →");
+    expect(searchPanelHtml).toContain("选择地点后查看完整报告");
     expect(searchPanelHtml).not.toContain("分析题材");
     expect(serialized).not.toContain("热门云海机位");
     expect(serialized).toContain("云海判断需要关注什么");
@@ -1556,7 +1559,7 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("热门星空银河机位");
     expect(html).not.toContain("热门星空机位");
     expect(html).not.toContain("热门银河机位");
-    expect(html).toContain("地点搜索与范围选择");
+    expect(html).toContain("选择拍摄地点");
     expect(html).toContain('data-subject-control-panel="true"');
     expect(html).toContain('data-subject-control-panel-target="astro"');
     expect(html).toContain('data-subject-knowledge-guide="astro"');
@@ -1576,7 +1579,7 @@ describe("scenario module pages", () => {
     expect(html).toContain("未来72小时");
     expect(html).toContain("未来7天");
     expect(html).not.toContain("分析题材");
-    expect(html).toContain("查看完整星空报告 →");
+    expect(html).toContain("选择地点后查看完整报告");
     expect(html).toContain("星空银河判断需要看什么");
     expect(html).toContain("天文黑夜");
     expect(html).toContain("月相与月光");

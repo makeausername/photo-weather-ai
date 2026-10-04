@@ -28,6 +28,7 @@ import {
 } from "../app/forecast/forecast-request-client";
 import { Badge, Card, cn } from "./ui";
 import { DecisionValue } from "./decision-value";
+import { ForecastEntryHeader, ForecastEntryHelp } from "./forecast-entry";
 
 type LayerStatus = "idle" | "loading" | "ready" | "partial" | "fallback" | "error";
 
@@ -146,24 +147,48 @@ export function HomepageWorkbench() {
   }, [forecastOptions.horizon, forecastOptions.target, selectedLocation]);
 
   return (
-    <section
-      id="analysis"
-      ref={workspaceRef}
-      tabIndex={-1}
-      className="grid scroll-mt-24 gap-6 outline-none min-[960px]:grid-cols-[clamp(340px,31vw,420px)_minmax(0,1fr)] min-[960px]:items-stretch xl:gap-8"
-      data-homepage-workbench-layout="scenario-two-column"
-    >
-      <HomepageSearchPanel
-        selectedLocation={selectedLocation}
-        onSelectedLocationChange={handleSelectedLocationChange}
-        onForecastOptionsChange={setForecastOptions}
+    <>
+      <ForecastEntryHeader
+        title="拍摄条件"
+        description="查看目的地的天气与拍摄条件。"
+        centered={!selectedLocation}
       />
-      <HomepageGuidancePanel
-        location={selectedLocation}
-        state={layerState}
-        horizon={forecastOptions.horizon}
-      />
-    </section>
+      <section
+        id="analysis"
+        ref={workspaceRef}
+        tabIndex={-1}
+        className={cn(
+          "grid w-full min-w-0 scroll-mt-24 gap-5 outline-none",
+          selectedLocation
+            ? "min-[960px]:grid-cols-[clamp(340px,31vw,420px)_minmax(0,1fr)] min-[960px]:items-stretch xl:gap-8"
+            : "mx-auto max-w-[760px]",
+        )}
+        data-homepage-workbench-layout={
+          selectedLocation ? "scenario-two-column" : "centered-search"
+        }
+      >
+        <HomepageSearchPanel
+          selectedLocation={selectedLocation}
+          onSelectedLocationChange={handleSelectedLocationChange}
+          onForecastOptionsChange={setForecastOptions}
+        />
+        {selectedLocation ? (
+          <HomepageGuidancePanel
+            location={selectedLocation}
+            state={layerState}
+            horizon={forecastOptions.horizon}
+          />
+        ) : (
+          <ForecastEntryHelp>
+            <HomepageGuidancePanel
+              location={null}
+              state={{ status: "idle", result: null }}
+              horizon={forecastOptions.horizon}
+            />
+          </ForecastEntryHelp>
+        )}
+      </section>
+    </>
   );
 }
 
@@ -210,7 +235,10 @@ export function HomepageGuidancePanel({
       )}
       data-homepage-guidance-panel="true"
     >
-      <Card className="decision-hero p-5 sm:p-6" data-homepage-guidance-intro="true">
+      <Card
+        className={cn("p-5 sm:p-6", location && "decision-hero")}
+        data-homepage-guidance-intro="true"
+      >
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="accent">综合判断</Badge>
           <Badge variant="muted">{forecastHorizonLabels[horizon]}</Badge>
