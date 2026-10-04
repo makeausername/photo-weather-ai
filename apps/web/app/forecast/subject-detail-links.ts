@@ -611,6 +611,8 @@ export function buildGeneralForecastReturnUrl(query: ForecastQueryInput): string
   setOptionalParam(params, "elevationConfidence", query.elevationConfidence);
   setOptionalParam(params, "locationId", query.locationId);
   setOptionalParam(params, "photoSpotId", query.photoSpotId);
+  setOptionalParam(params, "timezone", query.timezone);
+  setOptionalParam(params, "coordinateSource", query.coordinateSource);
 
   return `/forecast?${params.toString()}`;
 }

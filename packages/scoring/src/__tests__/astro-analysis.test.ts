@@ -498,6 +498,9 @@ describe("astro analysis", () => {
     );
     expect(result.astroAnalysis.astroPracticalScore).toBeLessThanOrEqual(34);
     expect(result.astroAnalysis.weatherBlockers.join("")).toContain("总云量");
+    expect(result.astroAnalysis.weatherBlockers.join("")).toContain("雾霾信号");
+    expect(result.astroAnalysis.weatherBlockers.join("")).not.toContain("雨、雾或厚云");
+    expect(result.astroAnalysis.weatherBlockers.join("")).not.toContain("降水");
     expect(result.astroAnalysis.travelRecommendations.join("")).toContain("不建议为此熬夜");
     expect(result.astroAnalysis.recommendedMilkyWayWindows).toHaveLength(0);
   });

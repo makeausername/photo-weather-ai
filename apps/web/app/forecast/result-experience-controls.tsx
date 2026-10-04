@@ -18,11 +18,15 @@ export function ResultViewTabs({
   items,
   defaultValue = items[0]?.value,
   className,
+  value,
+  onValueChange,
 }: {
   readonly label: string;
   readonly items: readonly ResultViewTab[];
   readonly defaultValue?: string;
   readonly className?: string;
+  readonly value?: string;
+  readonly onValueChange?: (value: string) => void;
 }) {
   const [activeValue, setActiveValue] = useState(defaultValue ?? "");
 
@@ -32,12 +36,15 @@ export function ResultViewTabs({
 
   return (
     <Tabs.Root
-      value={activeValue}
-      onValueChange={setActiveValue}
+      value={value ?? activeValue}
+      onValueChange={(next) => {
+        setActiveValue(next);
+        onValueChange?.(next);
+      }}
       className={cn("grid min-w-0 max-w-full gap-4", className)}
       data-result-view-tabs="true"
     >
-      <div className="sticky top-[76px] z-30 min-w-0 scroll-mt-[152px] rounded-2xl border border-primary/20 bg-card/95 p-1.5 shadow-lift backdrop-blur">
+      <div className="sticky top-[76px] z-30 min-w-0 scroll-mt-[152px] rounded-2xl border border-primary/20 bg-card p-1 shadow-sm">
         <Tabs.List
           aria-label={label}
           className="grid min-w-0 grid-cols-3 gap-1"
@@ -51,14 +58,11 @@ export function ResultViewTabs({
               data-result-view-tab={item.value}
             >
               <span className="flex min-w-0 items-center justify-center gap-1.5">
-                <ResultViewIcon value={item.value} />
+                <span className="hidden min-[360px]:inline-flex">
+                  <ResultViewIcon value={item.value} />
+                </span>
                 <span className="truncate">{item.label}</span>
               </span>
-              {item.eyebrow ? (
-                <span className="hidden text-xs font-normal opacity-75 min-[760px]:block">
-                  {item.eyebrow}
-                </span>
-              ) : null}
             </Tabs.Trigger>
           ))}
         </Tabs.List>
@@ -72,7 +76,7 @@ export function ResultViewTabs({
           className="min-w-0 max-w-full outline-none data-[state=inactive]:hidden focus-visible:ring-2 focus-visible:ring-ring"
           data-result-view-panel={item.value}
         >
-          {item.deferUntilActive && activeValue !== item.value ? null : item.content}
+          {item.deferUntilActive && (value ?? activeValue) !== item.value ? null : item.content}
         </Tabs.Content>
       ))}
     </Tabs.Root>

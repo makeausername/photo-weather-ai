@@ -101,7 +101,7 @@ describe("responsive safeguards", () => {
     expect(resultControlsSource).toContain("forceMount");
     expect(resultControlsSource).toContain("readonly deferUntilActive?: boolean");
     expect(resultControlsSource).toContain(
-      "item.deferUntilActive && activeValue !== item.value ? null : item.content",
+      "item.deferUntilActive && (value ?? activeValue) !== item.value ? null : item.content",
     );
     expect(resultControlsSource).toContain("data-[state=inactive]:hidden");
     expect(resultControlsSource).not.toContain('from "recharts"');
@@ -116,13 +116,13 @@ describe("responsive safeguards", () => {
     expect(adminSettingsSource).toContain("@radix-ui/react-accordion");
     expect(adminSettingsSource).toContain('data-admin-settings-groups="accordion"');
     expect(adminSettingsSource).toContain("设置：展开或收起`");
-    expect(forecastSource).toContain('data-cloud-sea-professional-table-scroll="true"');
+    expect(forecastSource).toContain("<StickyDataScroller>");
     expect(forecastSource).toContain('data-professional-hourly-table-layout="mobile-scroll-safe"');
     expect(forecastSource).toContain("border-separate border-spacing-0");
     expect(forecastSource).toContain("professional-time sticky left-0");
     expect(forecastSource).not.toContain("bg-inherit");
-    expect(forecastSource).toContain("sticky left-[4.5rem]");
-    expect(forecastSource).toContain("<ResponsiveDataScroller");
+    expect(forecastSource).toContain("sm:left-[4.5rem]");
+    expect(forecastSource).toContain("<StickyDataScroller");
     expect(combinedSource).not.toContain("w-screen");
     expect(combinedSource).not.toContain("w-[100vw]");
     expect(combinedSource).not.toContain("min-w-[100vw]");

@@ -20,11 +20,17 @@ export function ForecastEntryHeader({
   );
 }
 
-export function ForecastEntryHelp({ children }: { readonly children: ReactNode }) {
+export function ForecastEntryHelp({
+  children,
+  title = "如何判断拍摄条件？",
+}: {
+  readonly children: ReactNode;
+  readonly title?: string;
+}) {
   return (
     <details className="min-w-0 border-t border-border" data-forecast-entry-help="true">
       <summary className="cursor-pointer py-4 text-sm font-medium text-muted-foreground hover:text-foreground">
-        如何判断拍摄条件？
+        {title}
       </summary>
       <div className="pb-4">{children}</div>
     </details>

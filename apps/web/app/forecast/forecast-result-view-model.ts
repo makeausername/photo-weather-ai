@@ -1,3 +1,4 @@
+import { weatherBlockerLabels } from "./general-weather-data";
 import {
   applyForecastDecisionToWindows,
   isExecutableForecastWindow,
@@ -952,10 +953,9 @@ type ForecastResultShellCopy = {
 
 const targetShellCopies: Record<ForecastTarget, ForecastResultShellCopy> = {
   general: {
-    pageTitle: "综合拍摄判断",
-    pageSubtitle:
-      "覆盖云海、朝霞晚霞、星空银河、通透度、风险和拍摄建议，适合从首页进行完整出行判断。",
-    badgeLabel: "综合判断",
+    pageTitle: "天气概览",
+    pageSubtitle: "查看降水、温度、风和天气风险，按日期核对逐小时趋势与专业数据。",
+    badgeLabel: "天气预报",
   },
   cloud_sea: {
     pageTitle: "云海拍摄判断",
@@ -11657,14 +11657,7 @@ function astroBlockerSummary(blockers: readonly string[]): string {
     return "云量、低云、降水和通透度暂未构成主要阻断";
   }
 
-  const text = blockers.join(" ");
-  const labels = [
-    /低云/.test(text) ? "低云偏多" : "",
-    /总云|云量|云层|厚云/.test(text) ? "云量偏高" : "",
-    /降水|雨|雪/.test(text) ? "降水干扰" : "",
-    /通透|能见度|霾|雾/.test(text) ? "通透度不足" : "",
-    /露|结露|湿度/.test(text) ? "露水风险" : "",
-  ].filter(Boolean);
+  const labels = weatherBlockerLabels(blockers);
 
   return [
     ...new Set(

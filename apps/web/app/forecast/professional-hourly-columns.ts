@@ -1,9 +1,11 @@
-export type HourlyColumnGroup = "all" | "cloud" | "thermal" | "rain";
+export type HourlyColumnGroup = "common" | "all" | "cloud" | "thermal" | "rain" | "wind";
 export const hourlyColumnGroups = [
+  { value: "common", label: "常用" },
   { value: "all", label: "全部指标" },
   { value: "cloud", label: "云层" },
   { value: "thermal", label: "温湿与风" },
   { value: "rain", label: "降水与能见度" },
+  { value: "wind", label: "风速与阵风" },
 ] as const;
 
 type ColumnVisibility = {
@@ -22,7 +24,17 @@ export function hourlyColumnVisibility(
   config: ColumnVisibility = {},
 ): ColumnVisibility {
   const enabled = (key: keyof ColumnVisibility, category: HourlyColumnGroup) =>
-    config[key] !== false && (group === "all" || group === category);
+    config[key] !== false &&
+    (group === "all" ||
+      group === category ||
+      (group === "common" &&
+        [
+          "showTemperatureColumns",
+          "showPrecipitationColumns",
+          "showWindColumns",
+          "showVisibilityColumn",
+        ].includes(key)) ||
+      (group === "wind" && key === "showWindColumns"));
   return {
     showCloudColumns: enabled("showCloudColumns", "cloud"),
     showTemperatureColumns: enabled("showTemperatureColumns", "thermal"),
