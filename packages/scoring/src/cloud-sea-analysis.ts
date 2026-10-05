@@ -143,6 +143,7 @@ export function analyzeCloudSea(input: ForecastCalculationInput): CloudSeaAnalys
   );
   const confidenceLevel = classifyCloudSeaConfidence(input, evaluations, missingDataNotes);
   const terrainSupport = buildTerrainSupport(input);
+  const mountainBackup = terrainModeUsesMountainSemantics(terrainSupport.terrainMode);
   const confidence = bestEvaluation.confidence;
   const labels = buildAssessmentLabels(
     bestEvaluation,
@@ -184,24 +185,28 @@ export function analyzeCloudSea(input: ForecastCalculationInput): CloudSeaAnalys
     ),
     backupPlans: [
       {
-        condition: "白墙时",
-        action: "转拍雾中树影、山路氛围、延时",
+        condition: mountainBackup ? "白墙时" : "云雾遮住远景时",
+        action: mountainBackup
+          ? "转拍雾中树影、山路氛围、延时"
+          : "转拍近景轮廓、雾中氛围和局部层次",
         detail: "降低远景预期，利用近景层次、人物比例和雾气流动完成素材。",
       },
       {
-        condition: "无云海但通透",
-        action: "转拍层峦、日出、长焦山脊",
-        detail: "能见度较好时，远山层次和日出侧光仍有拍摄价值。",
+        condition: mountainBackup ? "无云海但通透" : "无雾但通透",
+        action: mountainBackup ? "转拍层峦、日出、长焦山脊" : "转拍日出侧光、剪影和长焦细节",
+        detail: "能见度较好时，远景层次和日出侧光仍有拍摄价值。",
       },
       {
         condition: "低云过厚",
-        action: "等待风口或转更高机位",
-        detail: "优先观察谷地方向是否出现云雾边界或短暂开口。",
+        action: mountainBackup ? "等待风口或转更高机位" : "留意云层开口，转拍近景和局部明暗",
+        detail: "优先观察视野内是否出现云雾边界或短暂开口。",
       },
       {
         condition: "风大",
         action: "转拍流云延时",
-        detail: "完整云海边界不稳定时，流云、山脊掠影和延时素材更可控。",
+        detail: mountainBackup
+          ? "完整云海边界不稳定时，流云、山脊掠影和延时素材更可控。"
+          : "在避风的安全位置观察流云，风速允许时再拍延时。",
       },
     ],
     missingDataNotes,
