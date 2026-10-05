@@ -954,7 +954,7 @@ type ForecastResultShellCopy = {
 const targetShellCopies: Record<ForecastTarget, ForecastResultShellCopy> = {
   general: {
     pageTitle: "天气概览",
-    pageSubtitle: "查看降水、温度、风和天气风险，按日期核对逐小时趋势与专业数据。",
+    pageSubtitle: "结合地点、地形和天气，给出逐日拍摄建议、穿衣指南与风险提醒。",
     badgeLabel: "天气预报",
   },
   cloud_sea: {

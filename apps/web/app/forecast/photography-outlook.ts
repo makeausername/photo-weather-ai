@@ -10,6 +10,8 @@ import {
   providerNeutralProfessionalWeatherText,
 } from "./general-weather-data";
 
+import { photographyScene, morningMistOutlook } from "./photography-scene";
+
 const mean = (values: readonly (number | null | undefined)[]) => {
   const known = values.filter(finite);
   return known.length ? known.reduce((a, b) => a + b, 0) / known.length : null;
@@ -100,6 +102,7 @@ function sunChance(rows: readonly Hour[]) {
 }
 
 export function buildPhotographyOutlook(result: ForecastCalculationResult) {
+  const scene = photographyScene(result);
   const timezone =
     result.professionalHourlyDataTimeBasis?.timezone ??
     result.calendarBasis?.timezone ??
@@ -187,6 +190,14 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
         : "不确定";
     const dawn = glow(morning, metric?.sunriseGlow?.score);
     const dusk = glow(evening, metric?.sunsetGlow?.score);
+    const eventNote = (time: string | undefined, label: string) => {
+      const at = Date.parse(time ?? "");
+      if (Number.isFinite(at) && Number.isFinite(start) && at < start)
+        return `${label}已过本次预报起点，不作追溯判断。`;
+      if (Number.isFinite(at) && Number.isFinite(end) && at >= end)
+        return `${label}在本次范围之外，需延长预报范围再确认。`;
+      return undefined;
+    };
     // Select consecutive, known daylight hours; do not bridge gaps or recommend the night.
     const candidates = hours
       .flatMap((r, i) => {
@@ -210,7 +221,6 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       .sort((a, b) => b.rank - a.rank);
     const best = candidates[0];
     const daySevere = noTrip || daily?.riskFlags?.some((r) => r.level === "high");
-    const allowed = !uncertain && !daySevere && best && best.rank >= 60;
     const window = best
       ? `${hourOf(best.start) < 12 ? "上午" : "下午"} ${timeOf(best.start)}–${timeOf(best.end)}`
       : "待确认，暂未找到资料完整的连续白天窗口";
@@ -218,6 +228,26 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       !uncertain && hours.length && hours.every(usable)
         ? daily?.practicalTripScore ?? daily?.score
         : undefined;
+    const restrictedTrip =
+      [
+        "谨慎前往",
+        "谨慎参考",
+        "不建议专程前往",
+        "已在附近可观察",
+        "可等云雾变化",
+        "仅作备选",
+        "等待转机",
+      ].includes(daily?.dedicatedTripRecommendation ?? "") ||
+      result.finalRecommendationLevel === "cautious" ||
+      result.decisionMode === "nearby_watch";
+    const allowed =
+      !uncertain &&
+      !daySevere &&
+      !restrictedTrip &&
+      finite(score) &&
+      score >= 65 &&
+      best &&
+      best.rank >= 60;
     const scoreText = finite(score)
       ? `${Math.round(Math.max(0, Math.min(100, score)))}/100（条件参考）`
       : "待确认";
@@ -241,7 +271,7 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
             : s.cloud >= 80
               ? "云量偏多，适合留意短暂开口"
               : s.cloud < 30
-                ? "整体较晴朗，可以留意山体受光变化"
+                ? `整体较晴朗，可以留意${scene.lightSubject}`
                 : "晴云相间，光影值得等一等";
     const transparency =
       s.visibility === null
@@ -251,20 +281,25 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
           : s.visibility < 15000
             ? "通透一般，近景和层次更稳"
             : "能见度较好，远景可留意；实际通透还看现场";
-    const cloudSea =
-      !uncertain &&
-      morning.length &&
-      morning.every(
-        (r) =>
-          finite(r.relativeHumidityPercent) && finite(r.cloudLowPercent) && finite(r.windSpeedMs),
-      )
+    const cloudMist = scene.mountain
+      ? !uncertain &&
+        morning.length &&
+        morning.every(
+          (r) =>
+            finite(r.relativeHumidityPercent) && finite(r.cloudLowPercent) && finite(r.windSpeedMs),
+        )
         ? grade(metric?.cloudSeaFormation?.score)
-        : "不确定";
+        : "不确定"
+      : uncertain || !scene.known
+        ? "地形或天气资料不足，是否起雾待确认"
+        : morningMistOutlook(morning);
     const recommendation = daySevere
       ? "❌ 不建议专程去，拍摄以安全近景为限"
       : allowed
         ? "✅ 适合安排拍摄，推荐抓住这个窗口"
-        : "⚠️ 适合程度待观察，暂不推荐专程去";
+        : best && finite(score) && score >= 45
+          ? "⚠️ 普通题材可顺带拍，暂不建议为特殊天气专程去"
+          : "⚠️ 拍摄条件仍需观察，暂不推荐专程去";
     const previousHours = index
       ? rows.filter((r) => weatherDateKey(r.time, timezone) === dates[index - 1])
       : [];
@@ -281,17 +316,18 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
               : "当天";
     const lines = [
       `${lead}${sky}；温度 ${temperature}。`,
-      `云海概率：${cloudSea}；${transparency}。`,
-      `日出${sunrise}；朝霞${dawn}。`,
-      `日落${sunset}；晚霞${dusk}。`,
-      `${recommendation}。出片指数 ${scoreText}。${compact ? `建议窗口：${window}。` : ""}`,
-      ...(!compact ? [`建议窗口：${window}；${weatherRisk(s)}。`] : []),
+      `${scene.subject}：${cloudMist}；${transparency}。`,
+      eventNote(astro?.sunrise, "日出和朝霞") ?? `日出${sunrise}；朝霞${dawn}。`,
+      eventNote(astro?.sunset, "日落和晚霞") ?? `日落${sunset}；晚霞${dusk}。`,
+      `${recommendation}。出片指数 ${scoreText}。${compact ? `参考窗口：${window}。` : ""}`,
+      ...(!compact ? [`${allowed ? "建议" : "参考"}窗口：${window}；${weatherRisk(s)}。`] : []),
     ];
     return {
       date,
       label: labelDate(date),
       lines,
       best,
+      score,
       allowed: Boolean(allowed),
       dawn,
       dusk,
@@ -324,7 +360,13 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       ? "❌ 这段时间不建议专程去，先避开不利天气。"
       : !uncertain && bestDay?.allowed
         ? "✅ 这段时间值得择窗去，建议围绕较稳的白天时段安排。"
-        : "⚠️ 这段时间先观望，临近再决定是否专程去。",
+        : !uncertain &&
+            bestDay?.best &&
+            bestDay.best.rank >= 45 &&
+            finite(bestDay.score) &&
+            bestDay.score >= 45
+          ? "⚠️ 这段时间适合就近看天气、顺带拍，不建议为特殊天气专程去。"
+          : "⚠️ 这段时间先观望，临近再决定是否专程去。",
     `${!noTrip && !uncertain && bestDay?.allowed ? "最建议" : "可留意的备选窗口"}：${bestText}。`,
     `日出${overallEvent("sunrise")}，朝霞${overallEvent("dawn")}；日落${overallEvent("sunset")}，晚霞${overallEvent("dusk")}。`,
     `最大风险：${risk}。${uncertain ? "资料不足或更新延迟，以上机会需复核。" : ""}`,
@@ -334,15 +376,17 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
   const poor = (s.visibility !== null && s.visibility < 5000) || (s.low ?? 0) >= 75;
   const shooting = [
     poor
-      ? "先等雾散、云层抬升；远处轮廓重新出现时，再尝试大场景。"
+      ? "先看远处轮廓能否变清楚；有雾才等雾散，有低云才等云层抬升，再尝试大场景。"
       : wet
         ? "等雨势减弱、云裂或边缘透光；风起云退后，再看远景是否变清楚。"
-        : "观察云裂、边缘透光和山体明暗变化，云缝稳定后再定构图。",
+        : s.cloud !== null && s.cloud < 20
+          ? `天空较空时，重点看低角度侧光和${scene.lightSubject}，不必专等霞光铺满天空。`
+          : `先看云缝是否打开、边缘有没有透光，再观察${scene.lightSubject}。`,
     poor
-      ? "优先拍雾中氛围、山路云雾和长焦细节，利用近处轮廓做层次。"
-      : "优先拍山体光影与长焦层次；有霞光再拍金边、剪影，云海出现时抓住云层边缘。",
+      ? `优先拍近景氛围和长焦细节；确有雾气时，用${scene.mountain ? "山路" : "近处景物"}轮廓做层次。`
+      : `优先拍${scene.lightSubject}，用长焦挑局部；有霞光再拍金边、剪影，${scene.mountain ? "云海出现时抓住云层边缘" : "雾气出现时再拍朦胧轮廓"}。`,
     "通透差或低云压顶，就转拍局部、层次和雾感，不要死等大场景。",
-    "如果日出或日落扑空，同一天改拍山路、人文与局部明暗层次，少把时间耗在同一个机位。",
+    `如果日出或日落扑空，同一天改拍${scene.backup}，少把时间耗在同一个机位。`,
   ];
   const clothing = [
     s.min === null
@@ -364,7 +408,7 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       ? `当地预警：${alerts.map((a) => a.title).join("；")}。出发前查看预警详情与现场通行提示。`
       : result.weatherAlertsStatus !== "available"
         ? "当地天气预警待确认，出发前查看最新预警和通行情况。"
-        : "移动途中留意能见度变化，山路或湿滑地面优先稳步通行。",
+        : `移动途中留意能见度变化，${scene.mountain ? "山路或" : ""}湿滑地面优先稳步通行。`,
   ];
   return { conclusion, days, shooting, clothing, risks, compact };
 }
