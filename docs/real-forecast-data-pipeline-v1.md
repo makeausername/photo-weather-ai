@@ -72,8 +72,21 @@ Examples:
 - High humidity cloud sea: damp protection, anti-slip shoes, and lens cloth.
 - Summer heat: light quick-dry clothes, sun protection, and hydration.
 
-
 ## Cache And Cost Control
+
+### Coherent mountain and cloud evidence
+
+- At viewpoints of 800 m or higher, hourly temperature, humidity and dew point prefer a source whose reported elevation is within 150 m of the selected viewpoint. These fields and their elevation metadata move together. A source already downscaled to the viewpoint must not receive a second mountain cooling correction.
+- Temperature disagreement compares matching elevations when available. Unmatched/unknown-elevation source differences remain recorded in the professional summary, instead of being treated as competing forecasts for the same mountain air mass. Genuine disagreement between matching sources still lowers confidence.
+- Total, low, middle and high cloud cover use the same complete-source cohort and median strategy. A source supplying only total cloud does not distort the total of another source's layer column. Partial ICON data yields to a complete fallback column, with the fallback's provenance.
+- Do not clamp provider-native cloud fields merely to force total cover above each layer. Providers can use different layer definitions; retain evidence review where the returned column still disagrees. See [Open-Meteo variable definitions](https://open-meteo.com/en/docs) and [meteoblue weather variables](https://docs.meteoblue.com/en/meteo/variables/weather-variables).
+- A cautious trip decision does not suppress available hourly evidence. Morning mist, low clouds and sunrise can remain assessable while a dedicated trip or its score stays uncertain.
+
+### Slow forecast requests
+
+The web client sends `Prefer: respond-async` to `POST /forecast/calculate`. If work is still running after five seconds, the API returns HTTP 202 with `{ "status": "processing", "retryAfterMs": 1000 }`, `Retry-After: 1` and `Cache-Control: no-store`. Repost the identical authorized query to join the same in-flight work; the finished response is HTTP 200 with the normal forecast result. Pending payloads are never cached as forecasts. Cancellation, entitlement checks and transient-error handling remain active, and frontend polling is bounded to 90 seconds.
+
+Clients without this preference retain the synchronous response contract. Deploy web and API together using `scripts/update.sh`; frontend forecast cache version 6 discards previous result records. `FORECAST_CALCULATE_RESPONSE_WAIT_MS` may shorten the server response wait, but is capped at five seconds. This avoids holding the web request open during slow provider/astro work; it does not claim to fix every possible upstream 502.
 
 The pipeline uses the existing in-memory weather cache in `WeatherIntelligenceService` and provider cache keys. Cache keys include provider, coordinate bucket, horizon, forecast time bucket, target, and data type where available. Current weather uses a shorter TTL, while forecast data can be reused longer.
 

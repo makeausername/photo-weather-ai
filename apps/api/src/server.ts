@@ -469,7 +469,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
   app.addHook("onRequest", async (_request, reply) => {
     reply.header("Access-Control-Allow-Origin", "*");
     reply.header("Access-Control-Allow-Methods", "GET,PATCH,POST,DELETE,OPTIONS");
-    reply.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
+    reply.header("Access-Control-Allow-Headers", "Content-Type,Authorization,Prefer");
     reply.header("Access-Control-Expose-Headers", "Retry-After");
   });
 

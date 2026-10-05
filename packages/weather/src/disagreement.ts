@@ -19,6 +19,7 @@ export type BuildMultiSourceAgreementInput = {
   >[];
   readonly target?: ForecastTarget;
   readonly targetWindow?: MultiSourceAgreementWindow;
+  readonly selectedSpotElevationMeters?: number;
 };
 
 type AgreementField =
@@ -188,13 +189,44 @@ export function buildMultiSourceAgreementContext(
   const effectiveSourceHours = sourceHours.some((source) => source.hours.length > 0)
     ? sourceHours
     : sources.map((source) => ({ source, hours: source.hourly.map(sanitizeAgreementHour) }));
+  const elevation = input.selectedSpotElevationMeters;
+  const usePointThermodynamics =
+    typeof elevation === "number" &&
+    elevation >= 800 &&
+    effectiveSourceHours.some((s) =>
+      s.hours.some(
+        (h) =>
+          typeof h.providerElevationMeters === "number" &&
+          Math.abs(h.providerElevationMeters - elevation) <= 150,
+      ),
+    );
+  const isPointHour = (h: NormalizedHourlyWeather) =>
+    typeof h.providerElevationMeters === "number" &&
+    Math.abs(h.providerElevationMeters - elevation!) <= 150;
+  const pointSourceHours = usePointThermodynamics
+    ? effectiveSourceHours.map((s) => ({ ...s, hours: s.hours.filter(isPointHour) }))
+    : effectiveSourceHours;
+  const excludedTemperatureSources =
+    usePointThermodynamics &&
+    effectiveSourceHours.some((s) => s.hours.some((h) => !isPointHour(h)));
   const comparisons = fieldDefinitions
-    .map((definition) => compareField(definition, effectiveSourceHours))
+    .map((definition) =>
+      compareField(
+        definition,
+        ["temperature", "humidity", "dewPoint", "dewPointSpread"].includes(definition.field)
+          ? pointSourceHours
+          : effectiveSourceHours,
+      ),
+    )
     .filter((comparison): comparison is FieldComparison => comparison !== null);
   const comparableComparisons = comparisons.filter((comparison) => comparison.level !== "unknown");
   const highestLevel = highestDisagreementLevel(comparableComparisons);
   const unknownComparisons = comparisons.filter((comparison) => comparison.level === "unknown");
-  const keyWarningsZh = buildKeyWarnings(comparisons, sources.length);
+  const keyWarningsZh = [...buildKeyWarnings(comparisons, sources.length)];
+  if (excludedTemperatureSources)
+    keyWarningsZh.push(
+      "山地温湿度按机位海拔匹配来源比较；海拔未知或不匹配的来源保留记录，不混入机位温度。",
+    );
   const fieldDisagreements = [...comparisons].sort(compareFieldPriority);
 
   if (comparableComparisons.length === 0) {
@@ -219,7 +251,11 @@ export function buildMultiSourceAgreementContext(
     fieldDisagreements,
     keyWarningsZh,
     userSummaryZh: buildUserSummary(comparisons, highestLevel),
-    professionalSummaryZh: buildProfessionalSummary(comparisons, highestLevel),
+    professionalSummaryZh:
+      buildProfessionalSummary(comparisons, highestLevel) +
+      (excludedTemperatureSources
+        ? ` 未匹配海拔来源的原始气温最大差约 ${compareField(fieldDefinitions.find((f) => f.field === "temperature")!, effectiveSourceHours)?.range ?? "待确认"}°C，不作为同海拔模型分歧。`
+        : ""),
     shouldLowerConfidence: shouldLowerCloudSeaConfidence(comparisons),
     shouldShowReviewWarning: shouldShowReviewWarning(comparisons, keyWarningsZh),
   };

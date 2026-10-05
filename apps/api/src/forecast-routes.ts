@@ -611,7 +611,7 @@ export function registerForecastRoutes(
     });
 
     try {
-      const calculation = await calculateForecastWithRouteResilience({
+      const calculationPromise = calculateForecastWithRouteResilience({
         cacheKey,
         query,
         requestOptions: { timezone, startDateTime },
@@ -621,6 +621,30 @@ export function registerForecastRoutes(
         logger: request.log,
         route: "/forecast/calculate",
       });
+      // Finish each HTTP exchange before a short gateway timeout. The shared
+      // in-flight calculation continues; subsequent requests join the same work.
+      const asyncPreferred = request.headers.prefer?.includes("respond-async");
+      let responseTimer: ReturnType<typeof setTimeout> | undefined;
+      const calculation = await (asyncPreferred
+        ? Promise.race([
+            calculationPromise,
+            new Promise<null>((resolve) => {
+              responseTimer = setTimeout(
+                () => resolve(null),
+                readPositiveIntegerEnv(env, "FORECAST_CALCULATE_RESPONSE_WAIT_MS", 5000, {
+                  min: 1,
+                  max: 5000,
+                }),
+              );
+            }),
+          ]).finally(() => clearTimeout(responseTimer))
+        : calculationPromise);
+      if (!calculation) {
+        return reply.code(202).header("Retry-After", "1").header("Cache-Control", "no-store").send({
+          status: "processing",
+          retryAfterMs: 1000,
+        });
+      }
       if (calculation.servedStale) {
         reply.header("X-Forecast-Stale", "1");
       }

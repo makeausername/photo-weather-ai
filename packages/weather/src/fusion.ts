@@ -44,6 +44,7 @@ export type WeatherFusionInput = {
   readonly forecastEnd: string;
   readonly requestedForecastHours?: number;
   readonly terrainSummary?: TerrainProfileSummary;
+  readonly selectedSpotElevationMeters?: number;
   readonly astroSummary?: unknown;
 };
 
@@ -143,6 +144,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
   const baseConflictFlags = detectConflicts(providerFamilyBundles);
   const multiSourceAgreementContext = buildMultiSourceAgreementContext({
     providerBundles: providerFamilyBundles,
+    selectedSpotElevationMeters: input.selectedSpotElevationMeters,
     target: input.target,
     targetWindow: {
       startTime: input.forecastStart,
@@ -150,7 +152,15 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
     },
   });
   const baseFusedHourly = hourlyTimes
-    .map((time) => fuseHourlyAt(time, providerFamilyBundles, primaryBundle, input.target))
+    .map((time) =>
+      fuseHourlyAt(
+        time,
+        providerFamilyBundles,
+        primaryBundle,
+        input.target,
+        input.selectedSpotElevationMeters,
+      ),
+    )
     .filter((hour): hour is NormalizedHourlyWeather => hour !== null);
   const providerFamilyCloudLayerCoverage = resolveCloudLayerHourlyCoverage({
     providerBundles: providerFamilyBundles,
@@ -183,7 +193,14 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
   const conflictFlags = [...baseConflictFlags, ...multiModelConflictFlags, ...aerosolConflictFlags];
   const aerosolDiagnostics = buildAerosolDiagnostics(fusedHourly);
   const transparencyPenaltyByTarget = buildTransparencyPenaltyByTarget(fusedHourly, input);
-  const fusedDaily = fuseDailyByDate(providerFamilyBundles, primaryBundle);
+  const temperatureBundle =
+    selectTemperatureCandidate(
+      providerFamilyBundles.flatMap((bundle) =>
+        bundle.hourly[0] ? [{ bundle, hour: bundle.hourly[0] }] : [],
+      ),
+      input.selectedSpotElevationMeters,
+    )?.bundle ?? primaryBundle;
+  const fusedDaily = fuseDailyByDate(providerFamilyBundles, temperatureBundle);
   const sourceSummaries = annotateSourceSummariesWithCoverage(
     usableBundles.map(sourceSummary),
     cloudLayerCoverage,
@@ -252,7 +269,7 @@ export function fuseWeatherSources(input: WeatherFusionInput): WeatherFusionResu
   return {
     current: fuseCurrent(
       usableBundles.find((bundle) => bundle.currentWeather?.dataKind === "observation") ??
-        primaryBundle,
+        temperatureBundle,
       fusedHourly[0],
     ),
     fusedHourly,
@@ -715,6 +732,7 @@ function fuseHourlyAt(
   bundles: readonly WeatherDataBundle[],
   primaryBundle: WeatherDataBundle,
   target: ForecastTarget,
+  selectedSpotElevationMeters?: number,
 ): NormalizedHourlyWeather | null {
   const candidates = bundles
     .map((bundle) => ({
@@ -787,20 +805,33 @@ function fuseHourlyAt(
 
   // Temperature, humidity and dew point describe one air mass at one elevation.
   // Never combine a point temperature with another model's grid dew point.
-  const thermodynamics = coherentThermodynamics(primaryHour);
+  const temperatureHour =
+    selectTemperatureCandidate(candidates, selectedSpotElevationMeters)?.hour ?? primaryHour;
+  const thermodynamics = coherentThermodynamics(temperatureHour);
   Object.assign(next, thermodynamics.values);
+  for (const field of [
+    "feelsLike",
+    "providerElevationMeters",
+    "selectedSpotElevationMeters",
+    "elevationDifferenceMeters",
+    "temperatureAdjustment",
+    "terrainAdjustmentApplied",
+    "terrainAdjustmentReason",
+  ] as const) {
+    next[field] = temperatureHour[field];
+  }
   for (const field of ["temperature", "humidity", "dewPoint", "dewPointSpread"] as const) {
     missingFields.delete(field);
     const estimated = field.startsWith("dewPoint") && thermodynamics.derived;
     if (estimated) estimatedFields.add(field);
-    else if (!primaryHour.estimatedFields?.includes(field)) estimatedFields.delete(field);
+    else if (!temperatureHour.estimatedFields?.includes(field)) estimatedFields.delete(field);
     fieldMetadata[field] = {
-      ...primaryHour.fieldMetadata?.[field],
+      ...temperatureHour.fieldMetadata?.[field],
       value: thermodynamics.values[field],
-      providerCode: primaryHour.providerCode,
-      providerLabelZh: primaryHour.providerLabelZh,
-      providerElevationMeters: primaryHour.providerElevationMeters,
-      estimated: estimated || Boolean(primaryHour.estimatedFields?.includes(field)),
+      providerCode: temperatureHour.providerCode,
+      providerLabelZh: temperatureHour.providerLabelZh,
+      providerElevationMeters: temperatureHour.providerElevationMeters,
+      estimated: estimated || Boolean(temperatureHour.estimatedFields?.includes(field)),
     };
   }
 
@@ -826,6 +857,24 @@ function fuseHourlyAt(
     estimatedFields: estimatedFields.size > 0 ? [...estimatedFields] : undefined,
     fieldMetadata,
   };
+}
+
+/** Prefer a source actually representing the mountain viewpoint, not an unknown valley grid. */
+function selectTemperatureCandidate(candidates: readonly HourlyCandidate[], elevation?: number) {
+  if (!Number.isFinite(elevation) || elevation! < 800) return undefined;
+  return candidates
+    .filter(
+      (c) =>
+        Number.isFinite(c.hour.providerElevationMeters) &&
+        Math.abs(c.hour.providerElevationMeters! - elevation!) <= 150 &&
+        !isNormalizedFieldMissing(c.hour, "temperature") &&
+        !isNormalizedFieldMissing(c.hour, "humidity"),
+    )
+    .sort(
+      (a, b) =>
+        Math.abs(a.hour.providerElevationMeters! - elevation!) -
+        Math.abs(b.hour.providerElevationMeters! - elevation!),
+    )[0];
 }
 
 function coherentThermodynamics(
@@ -989,7 +1038,13 @@ function selectConsensusFieldValue(
     return undefined;
   }
 
-  const values = candidates
+  // Use the same complete source set for all four cloud fields. A total from
+  // QWeather must not be mixed with layers only supplied by other models.
+  const completeCloudCandidates = isCloudLayerGroupField(field)
+    ? candidates.filter((c) => hasCompleteCloudLayerGroup(c.hour))
+    : [];
+  const fieldCandidates = completeCloudCandidates.length ? completeCloudCandidates : candidates;
+  const values = fieldCandidates
     .map((candidate) => {
       const value = consensusValueForField(candidate.hour, field);
       if (value === null || !isConsensusCandidateUsable(candidate)) {
@@ -1112,17 +1167,14 @@ function consensusStrategyForField(
   target: ForecastTarget,
   spread: number,
 ): FieldConsensusStrategy {
+  // Risk belongs in scoring. Different quantiles per layer create a cloud
+  // column that no model predicted (e.g. low cloud above total cloud).
+  if (isCloudLayerGroupField(field)) return "median";
   const highSpread = spread >= consensusSpreadThreshold(field);
   if (!highSpread) {
     return "median";
   }
 
-  if (field === "cloudLow") {
-    return target === "cloud_sea" ? "lower_percentile" : "upper_percentile";
-  }
-  if (field === "cloudTotal" && target === "astro") {
-    return "upper_percentile";
-  }
   if (
     field === "visibility" &&
     (target === "cloud_sea" || target === "glow" || target === "astro")

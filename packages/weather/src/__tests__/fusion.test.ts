@@ -16,6 +16,110 @@ const coordinates = {
 } as const;
 
 describe("weather source fusion", () => {
+  it.each([3, 9, 379, 1542, 1620, 1860, 3605])(
+    "selects thermodynamics at the actual viewpoint (%i m)",
+    (elevation) => {
+      const result = fuseWeatherSources({
+        providerBundles: [
+          bundle(
+            "qweather",
+            "QWeather",
+            hour({
+              providerCode: "qweather",
+              temperature: 28,
+              humidity: 60,
+              providerElevationMeters: undefined,
+            }),
+          ),
+          bundle(
+            "open_meteo",
+            "Open-Meteo",
+            hour({
+              temperature: 4,
+              humidity: 95,
+              dewPoint: 3.3,
+              providerElevationMeters: elevation,
+            }),
+          ),
+          bundle(
+            "meteoblue",
+            "meteoblue",
+            hour({
+              providerCode: "meteoblue",
+              temperature: 5,
+              humidity: 94,
+              dewPoint: 4.1,
+              providerElevationMeters: elevation,
+            }),
+          ),
+        ],
+        selectedSpotElevationMeters: elevation,
+        target: "general",
+        location: { coordinates },
+        forecastStart: "2026-05-22T00:00:00+08:00",
+        forecastEnd: "2026-05-23T00:00:00+08:00",
+      });
+      const h = result.fusedHourly[0]!;
+      if (elevation >= 800) {
+        expect(h.temperature).toBeLessThanOrEqual(5);
+        expect(h.humidity).toBeGreaterThanOrEqual(94);
+        expect(h.providerElevationMeters).toBe(elevation);
+        expect(h.dewPointSpread).toBeLessThan(1);
+        expect(
+          result.summary.multiSourceAgreementContext?.fieldDisagreements.find(
+            (f) => f.field === "temperature",
+          )?.range,
+        ).toBe(1);
+        expect(result.summary.multiSourceAgreementContext?.professionalSummaryZh).toContain("24°C");
+      } else expect(h.temperature).toBe(28);
+    },
+  );
+
+  it.each(["general", "cloud_sea", "astro", "glow"] as const)(
+    "does not invent a conflicting cloud column for %s",
+    (target) => {
+      const result = fuseWeatherSources({
+        providerBundles: [
+          bundle(
+            "qweather",
+            "QWeather",
+            hour({
+              providerCode: "qweather",
+              cloudTotal: 0,
+              cloudLow: null,
+              cloudMid: null,
+              cloudHigh: null,
+            }),
+          ),
+          ...[20, 100].map((cover, i) =>
+            bundle(
+              "open_meteo",
+              "Open-Meteo",
+              hour({ cloudTotal: cover, cloudLow: cover, cloudMid: 0, cloudHigh: 0 }),
+              { providerId: `model-${i}`, modelName: `model-${i}` },
+            ),
+          ),
+        ],
+        target,
+        location: { coordinates },
+        forecastStart: "2026-05-22T00:00:00+08:00",
+        forecastEnd: "2026-05-23T00:00:00+08:00",
+      });
+      expect(result.fusedHourly[0]).toMatchObject({
+        cloudTotal: 60,
+        cloudLow: 60,
+        cloudMid: 0,
+        cloudHigh: 0,
+      });
+      expect(result.fusedHourly[0]?.fieldMetadata?.cloudLow).toMatchObject({
+        minValue: 20,
+        maxValue: 100,
+        spread: 80,
+      });
+      expect(result.conflictFlags.length).toBeGreaterThan(0);
+    },
+  );
+
   it("keeps thermodynamics at one source elevation and clears replaced estimates", () => {
     const result = fuseWeatherSources({
       providerBundles: [
@@ -178,7 +282,7 @@ describe("weather source fusion", () => {
     expect(result.confidenceByTarget.general).toBeGreaterThanOrEqual(0.55);
   });
 
-  it("uses multi-model consensus for cloud totals while preserving single-source layer fields", () => {
+  it("keeps a complete cloud column instead of mixing a total-only source", () => {
     const result = fuseWeatherSources({
       providerBundles: [
         bundle(
@@ -213,21 +317,14 @@ describe("weather source fusion", () => {
     });
 
     expect(result.fusedHourly[0]).toMatchObject({
-      cloudTotal: 71.5,
+      cloudTotal: 55,
       cloudLow: 24,
       cloudMid: 38,
       cloudHigh: 48,
     });
     expect(result.fusedHourly[0]?.fieldMetadata?.cloudTotal).toMatchObject({
-      providerCode: "multi_model",
-      providerLabelZh: "多模型融合",
-      modelCount: 1,
-      providerCount: 2,
-      minValue: 55,
-      maxValue: 55,
-      medianValue: 55,
-      spread: 0,
-      consensusStrategy: "median",
+      providerCode: "open_meteo",
+      value: 55,
       estimated: false,
     });
     for (const field of ["cloudLow", "cloudMid", "cloudHigh"] as const) {
@@ -248,7 +345,7 @@ describe("weather source fusion", () => {
     expect(result.confidenceByField.cloudLow).toBeGreaterThan(0.45);
   });
 
-  it("uses Open-Meteo model consensus where two cloud layer model values exist", () => {
+  it("uses the complete fallback column when ICON has partial layers", () => {
     const result = fuseWeatherSources({
       providerBundles: [
         bundle(
@@ -294,44 +391,17 @@ describe("weather source fusion", () => {
     });
 
     expect(result.fusedHourly[0]).toMatchObject({
-      cloudTotal: 60,
+      cloudTotal: 58,
       cloudLow: 22,
-      cloudMid: 38,
+      cloudMid: 40,
       cloudHigh: 51,
     });
-    expect(result.fusedHourly[0]?.fieldMetadata?.cloudTotal).toMatchObject({
-      providerCode: "multi_model",
-      modelCount: 2,
-      providerCount: 1,
-      minValue: 58,
-      maxValue: 62,
-      medianValue: 60,
-      spread: 4,
-      consensusStrategy: "median",
-    });
-    expect(result.fusedHourly[0]?.fieldMetadata?.cloudMid).toMatchObject({
-      providerCode: "multi_model",
-      modelCount: 2,
-      providerCount: 1,
-      minValue: 36,
-      maxValue: 40,
-      medianValue: 38,
-      spread: 4,
-      consensusStrategy: "median",
-    });
-    expect(result.fusedHourly[0]?.fieldMetadata?.cloudLow).toMatchObject({
-      sourceId: openMeteoForecastCloudLayerProviderName,
-      basis: "fallback_same_field",
-      value: 22,
-    });
-    expect(result.fusedHourly[0]?.fieldMetadata?.cloudHigh).toMatchObject({
-      sourceId: openMeteoForecastCloudLayerProviderName,
-      basis: "fallback_same_field",
-      value: 51,
-    });
-    expect(result.summary.cloudLayerCoverage?.fallbackSourcesUsed).toContain(
-      openMeteoForecastCloudLayerProviderName,
-    );
+    for (const field of ["cloudTotal", "cloudLow", "cloudMid", "cloudHigh"] as const) {
+      expect(result.fusedHourly[0]?.fieldMetadata?.[field]).toMatchObject({
+        sourceId: openMeteoForecastCloudLayerProviderName,
+        providerCode: "open_meteo",
+      });
+    }
     expect(result.summary.cloudLayerCoverage?.fieldCoverageSummary).toMatchObject({
       cloudLowCoverage: 1,
       cloudMidCoverage: 1,
@@ -339,7 +409,7 @@ describe("weather source fusion", () => {
     });
   });
 
-  it("uses conservative low-cloud obstruction consensus for astro when models diverge", () => {
+  it("keeps cloud quantiles consistent while lowering astro confidence on divergence", () => {
     const result = fuseWeatherSources({
       providerBundles: [
         bundle(
@@ -383,7 +453,7 @@ describe("weather source fusion", () => {
       forecastEnd: "2026-05-23T00:00:00+08:00",
     });
 
-    expect(result.fusedHourly[0]?.cloudLow).toBe(82);
+    expect(result.fusedHourly[0]?.cloudLow).toBe(46);
     expect(result.fusedHourly[0]?.fieldMetadata?.cloudLow).toMatchObject({
       providerCode: "multi_model",
       modelCount: 2,
@@ -392,7 +462,7 @@ describe("weather source fusion", () => {
       maxValue: 82,
       medianValue: 46,
       spread: 72,
-      consensusStrategy: "upper_percentile",
+      consensusStrategy: "median",
     });
     expect(result.conflictFlags.map((flag) => flag.field)).toEqual(
       expect.arrayContaining([

@@ -737,6 +737,49 @@ function buildDedupeWeatherProvider(calls: { current: number }): WeatherProvider
 describe("forecast query validation route", () => {
   let app: FastifyInstance | undefined;
 
+  it("returns 202 for slow calculations and polling joins the same in-flight work", async () => {
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const calculate = vi.fn(async (input: AstroServiceCalculateInput) => {
+      await gate;
+      return buildAstroServiceResponse(input);
+    });
+    app = buildApiServer({
+      authConfig: forecastTestAuthConfig,
+      astroServiceClient: { calculate },
+      logger: false,
+      env: {
+        ...process.env,
+        ENABLE_ASTRO_SERVICE: "1",
+        ASTRO_SERVICE_URL: "http://127.0.0.1:4100",
+        FORECAST_CALCULATE_RESPONSE_WAIT_MS: "10",
+      },
+    });
+    const request = {
+      method: "POST" as const,
+      url: "/forecast/calculate",
+      headers: { prefer: "respond-async" },
+      payload: { ...validPayload, target: "astro" },
+    };
+    const first = await app.inject(request);
+    expect(first.statusCode).toBe(202);
+    expect(first.json()).toEqual({ status: "processing", retryAfterMs: 1000 });
+    expect(first.headers["cache-control"]).toBe("no-store");
+    const second = await app.inject(request);
+    expect(second.statusCode).toBe(202);
+    expect(calculate).toHaveBeenCalledTimes(1);
+    finish();
+    // Let the scoring tail finish even on a busy CI host, then verify the
+    // polling caller receives the cached result without another calculation.
+    const completed = await app.inject({ ...request, headers: {} });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({ target: "astro" });
+    expect((await app.inject(request)).statusCode).toBe(200);
+    expect(calculate).toHaveBeenCalledTimes(1);
+  });
+
   afterEach(async () => {
     if (app) {
       await app.close();

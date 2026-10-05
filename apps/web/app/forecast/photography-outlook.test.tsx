@@ -65,6 +65,15 @@ function forecast(count = 2): ForecastCalculationResult {
   };
 }
 describe("photography conclusion", () => {
+  it("keeps usable weather conclusions when only the trip decision needs an update", () => {
+    const result = forecast(3);
+    const model = buildPhotographyOutlook({ ...result, decisionMode: "wait_for_update" });
+    expect(model.days[0]!.sunrise).toContain("有望露面");
+    expect(model.days[0]!.lines.join(" ")).not.toContain("天气资料不足");
+    expect(model.days.every((d) => !d.allowed)).toBe(true);
+    expect(model.conclusion[0]).toContain("观望");
+    expect(model.days.every((d) => d.lines.length <= 6)).toBe(true);
+  });
   it("keeps every selected window inside an exact non-hour forecast boundary", () => {
     const result = forecast(1);
     const model = buildPhotographyOutlook({

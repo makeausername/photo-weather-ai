@@ -14,7 +14,7 @@ const defaultRetryCount = 2;
 const defaultRetryDelayMs = [600, 1200, 2400] as const;
 const defaultSuccessCacheTtlMs = 5 * 60 * 1000;
 const defaultStaleCacheTtlMs = 30 * 60 * 1000;
-const forecastCacheVersion = 5 as const;
+const forecastCacheVersion = 6 as const;
 const sessionCachePrefix = `photo_weather_forecast_calculation:v${forecastCacheVersion}:`;
 const maxSessionCachePayloadChars = 2_000_000;
 
@@ -145,22 +145,48 @@ export async function requestForecastCalculation(
   }
 
   const controller = new AbortController();
+  const calculationDeadline = Date.now() + 90_000;
+  let deadlineExpired = false;
+  const deadlineTimer = setTimeout(() => {
+    deadlineExpired = true;
+    controller.abort();
+  }, 90_000);
   const requestPromise = retryWithBackoff(
     async () => {
       throwIfAborted(controller.signal);
-      const result = await optionalAuthApiFetch<ForecastCalculationResult>(
-        "/forecast/calculate",
-        {
-          method: "POST",
-          body: JSON.stringify(query),
-          signal: controller.signal,
-        },
-        {
-          baseUrl: options.baseUrl ?? apiBaseUrl,
-          fetcher: options.fetcher,
-          fallbackMessage: forecastCalculationGenericFailureMessage,
-        },
-      );
+      let result: ForecastCalculationResult;
+      for (let poll = 0; ; poll++) {
+        const response = await optionalAuthApiFetch<
+          ForecastCalculationResult | { status: "processing"; retryAfterMs: number }
+        >(
+          "/forecast/calculate",
+          {
+            method: "POST",
+            headers: { Prefer: "respond-async" },
+            body: JSON.stringify(query),
+            signal: controller.signal,
+          },
+          {
+            baseUrl: options.baseUrl ?? apiBaseUrl,
+            fetcher: options.fetcher,
+            fallbackMessage: forecastCalculationGenericFailureMessage,
+          },
+        );
+        if (!("status" in response && response.status === "processing")) {
+          result = response as ForecastCalculationResult;
+          break;
+        }
+        if (poll >= 89 || Date.now() >= calculationDeadline) {
+          throw new ForecastRequestError(forecastCalculationTransientFailureMessage, {
+            code: "calculation_pending_timeout",
+            status: 504,
+          });
+        }
+        await sleepWithAbort(
+          Math.max(1, Math.min(5000, response.retryAfterMs || 1000)),
+          controller.signal,
+        );
+      }
       if (cacheable) {
         writeCachedForecastResult(queryKey, result, options);
       }
@@ -173,6 +199,12 @@ export async function requestForecastCalculation(
       shouldRetry: isTransientForecastError,
     },
   ).catch((error) => {
+    if (deadlineExpired) {
+      throw new ForecastRequestError(forecastCalculationTransientFailureMessage, {
+        code: "calculation_pending_timeout",
+        status: 504,
+      });
+    }
     if (isForecastRequestAbortError(error)) throw error;
     if (cacheable && isTransientForecastError(error)) {
       const stale = readCachedForecastResult(queryKey, {
@@ -189,6 +221,7 @@ export async function requestForecastCalculation(
   const record: ForecastInFlightRecord = { promise: requestPromise, controller, consumers: 0 };
   forecastInFlightRequests.set(queryKey, record);
   const cleanup = () => {
+    clearTimeout(deadlineTimer);
     const current = forecastInFlightRequests.get(queryKey);
     if (current?.promise === requestPromise) {
       forecastInFlightRequests.delete(queryKey);
@@ -275,6 +308,8 @@ export async function normalizeForecastApiError(response: Response): Promise<For
 }
 
 export function isTransientForecastError(error: unknown): boolean {
+  if (error instanceof ForecastRequestError && error.code === "calculation_pending_timeout")
+    return false;
   if (isRecord(error) && (error.status === 429 || error.statusCode === 429)) {
     // Do not send immediate retries during the server's rate-limit cooldown.
     return false;

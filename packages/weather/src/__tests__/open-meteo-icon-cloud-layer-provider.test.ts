@@ -299,7 +299,7 @@ describe("OpenMeteoIconCloudLayerProvider", () => {
       cloudHigh: 51,
     });
     expect(bundle.hourly[1]?.fieldMetadata?.cloudLow).toMatchObject({
-      basis: "fallback_same_field",
+      basis: "explicit_layer",
     });
     expect(bundle.fusionSummary?.cloudLayerCoverage?.fieldCoverageSummary).toMatchObject({
       totalHours: 72,
