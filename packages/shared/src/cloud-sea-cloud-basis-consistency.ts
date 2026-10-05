@@ -377,7 +377,7 @@ function cloudBasisSummariesZh(
 ): Pick<CloudSeaCloudBasisConsistencyContext, "userSummaryZh" | "professionalSummaryZh"> {
   if (level === "consistent") {
     return {
-      userSummaryZh: "云量口径一致：总云量与低/中/高云分层较一致，可用于复核云海。",
+      userSummaryZh: "云量口径一致：总云量与低/中/高云分层较一致，可用于复核云层变化。",
       professionalSummaryZh: "云量口径：总云量与低/中/高云分层口径较一致。",
     };
   }
@@ -390,15 +390,15 @@ function cloudBasisSummariesZh(
   }
   if (level === "mixed_basis") {
     return {
-      userSummaryZh: "云量口径不一致，云海判断需以低云、地形和临近预报复核为主。",
+      userSummaryZh: "云量口径不一致，云层判断需以低云、地形和临近预报复核为主。",
       professionalSummaryZh:
-        "云量口径：总云量与分层云量存在口径差异，分层云量仅作趋势复核，云海判断以低云、地形和临近预报复核为主。",
+        "云量口径：总云量与分层云量存在口径差异，分层云量仅作趋势复核，云层判断以低云、地形和临近预报复核为主。",
     };
   }
   if (level === "partial_layers") {
     return {
       userSummaryZh: context.weakPartialLayers
-        ? "分层云量不完整，云海与白墙判断需临近复核。"
+        ? "分层云量不完整，云层分布与遮挡情况需临近复核。"
         : "部分时段分层云量不完整，缺失值不会用总云量回填。",
       professionalSummaryZh: context.hasLayerOnlyHours
         ? "云量口径：部分时段缺少总云量或低/中/高云分层，缺失值以 “—” 显示，分层云量仅作趋势复核。"
@@ -407,14 +407,14 @@ function cloudBasisSummariesZh(
   }
   if (level === "total_only") {
     return {
-      userSummaryZh: "仅总云量，低云分层缺失，不能独立判断云海和白墙风险。",
+      userSummaryZh: "仅总云量，低云分层缺失，不能独立判断云层分布和遮挡风险。",
       professionalSummaryZh:
-        "云量口径：当前仅有总云量，缺少低/中/高云分层，不足以完整判断云海和白墙风险；缺失值以 “—” 显示，不使用总云量回填。",
+        "云量口径：当前仅有总云量，缺少低/中/高云分层，不足以完整判断云层分布和遮挡风险；缺失值以 “—” 显示，不使用总云量回填。",
     };
   }
   return {
-    userSummaryZh: "云量字段不足，云海和白墙判断需临近复核。",
-    professionalSummaryZh: "云量口径：当前云量字段不足，云海和白墙判断需临近复核。",
+    userSummaryZh: "云量字段不足，云层分布和遮挡情况需临近复核。",
+    professionalSummaryZh: "云量口径：当前云量字段不足，云层分布和遮挡情况需临近复核。",
   };
 }
 

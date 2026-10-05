@@ -255,11 +255,21 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       })
       .sort((a, b) => b.rank - a.rank);
     const best = candidates[0];
+    const dailyRisks =
+      daily?.riskFlags?.filter((r) => overlapsDate(date, r.startTime, r.endTime)) ?? [];
     const daySevere = Boolean(
-      daily?.riskFlags?.some(
-        (r) => r.level === "high" && overlapsDate(date, r.startTime, r.endTime),
-      ) ||
-        flags.some((r) => r.level === "high" && overlapsDate(date, r.startTime, r.endTime)) ||
+      dailyRisks.some((r) => r.level === "high") ||
+        flags.some((r) => {
+          if (r.level !== "high" || !overlapsDate(date, r.startTime, r.endTime)) return false;
+          // A continuous event can cross midnight with a different severity each day.
+          // Prefer that day's assessment of the same risk, not the event's peak grade.
+          // Unscoped or malformed aggregate risks still require a cautious fallback.
+          const timed =
+            Number.isFinite(Date.parse(r.startTime ?? "")) &&
+            Number.isFinite(Date.parse(r.endTime ?? "")) &&
+            Date.parse(r.endTime!) > Date.parse(r.startTime!);
+          return !timed || !dailyRisks.some((d) => d.key === r.key);
+        }) ||
         (result.weatherAlerts ?? []).some(
           (a) =>
             (a.level === "red" || a.level === "orange") && overlapsDate(date, a.startsAt, a.endsAt),

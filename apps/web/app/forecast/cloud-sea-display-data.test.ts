@@ -20,6 +20,93 @@ const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
 describe("Cloud Sea display data rolling horizon", () => {
+  it.each([false, true])("adapts cached daily calibration wording, fallback=%s", (fallback) => {
+    for (const name of [
+      "genericLowElevationWeakCloudSeaCase",
+      "genericHighMountainGoodCloudSeaCase",
+    ] as const) {
+      const fixture = cloudSeaRegressionFixture(name);
+      const text = "云海形成或可拍证据不足，不建议专程。";
+      const calibration = {
+        ...fixture.result.cloudSeaAnalysis.scoreCalibration,
+        capApplied: true,
+        capReasons: [text],
+        recommendationExplanationZh: text,
+      };
+      const result: ForecastCalculationResult = {
+        ...fixture.result,
+        cloudSeaAnalysis: {
+          ...fixture.result.cloudSeaAnalysis,
+          scoreCalibration: calibration,
+          dailyCloudSea: fallback
+            ? []
+            : fixture.result.cloudSeaAnalysis.dailyCloudSea.map((day) => ({
+                ...day,
+                scoreCalibration: calibration,
+              })),
+        },
+      };
+      const model = buildCloudSeaForecastViewModel(result);
+      expect(model.dailyTrend.length).toBeGreaterThan(0);
+      for (const day of model.dailyTrend) {
+        if (name === "genericHighMountainGoodCloudSeaCase") {
+          expect(day.decisionReason).toBe(text);
+        } else {
+          expect(day.decisionReason).toContain("低云/晨雾");
+          expect(
+            [
+              day.decisionReason,
+              day.keyReason,
+              day.actionSuggestion,
+              day.layerCompletenessNote,
+            ].join(" "),
+          ).not.toMatch(/云海|白墙/);
+        }
+      }
+    }
+  });
+  it.each(["consistent", "mixed", "partial", "total-only", "missing"])(
+    "keeps cloud data-quality notes terrain-neutral for %s evidence",
+    (kind) => {
+      for (const name of [
+        "genericLowElevationWeakCloudSeaCase",
+        "genericHighMountainGoodCloudSeaCase",
+      ] as const) {
+        const fixture = cloudSeaRegressionFixture(name);
+        const result: ForecastCalculationResult = {
+          ...fixture.result,
+          professionalHourlyData: fixture.result.professionalHourlyData!.map((row, index) => ({
+            ...row,
+            cloudTotalPercent: kind === "missing" ? null : kind === "mixed" ? 10 : 90,
+            cloudHighPercent: ["total-only", "missing"].includes(kind) ? null : 20,
+            cloudMidPercent: ["total-only", "missing"].includes(kind) ? null : 30,
+            cloudLowPercent:
+              ["total-only", "missing"].includes(kind) || (kind === "partial" && index % 2 === 0)
+                ? null
+                : 65,
+            missingFields: [],
+          })),
+        };
+        const model = buildCloudSeaForecastViewModel(result);
+        const card = model.displayData.currentNearTermWeather.cards.find(
+          (c) => c.key === "cloud_visibility",
+        )!;
+        expect(card.detail).toContain("云量");
+        expect(card.detail).not.toMatch(/云海|白墙/);
+        const html = renderToStaticMarkup(
+          React.createElement(CloudSeaResultPage, {
+            query: fixture.query,
+            result,
+            viewModel: model,
+          }),
+        );
+        expect(html).toContain(card.detail);
+        if (kind === "consistent") expect(card.detail).toContain("可用于复核云层变化");
+        if (name === "genericHighMountainGoodCloudSeaCase")
+          expect(model.displayData.header.heroBadgeLabel).toBe("云海判断");
+      }
+    },
+  );
   it("rebuilds missing risk context for each window instead of borrowing another window's rain", () => {
     const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
     const morning = {

@@ -1062,7 +1062,7 @@ export function CloudSeaResultPage({
         >
           <CloudSeaTopResultHeader query={query} displayData={viewModel.displayData} />
           <ResultViewTabs
-            label="云海结果视图"
+            label={`${viewModel.terrainContext.vocabulary.subjectLabel}结果视图`}
             items={[
               {
                 value: "overview",

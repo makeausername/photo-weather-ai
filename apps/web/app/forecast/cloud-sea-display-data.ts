@@ -1331,7 +1331,7 @@ function dewPointDisplayAdvice(
   result: ForecastCalculationResult,
 ): string {
   if (context.humidityDewPointStatus === "conflict") {
-    return "水汽指标存在口径差异，湿度与露点差需结合临近预报复核，不宜仅凭湿度判断云海。";
+    return "水汽指标存在口径差异，湿度与露点差需结合临近预报复核，不宜仅凭湿度判断成云或起雾。";
   }
   const auxiliaryNotice =
     result.weatherMissingFields.length > 0 || result.weatherMissingDataNotes.length > 0

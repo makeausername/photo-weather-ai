@@ -65,6 +65,105 @@ function forecast(count = 2): ForecastCalculationResult {
   };
 }
 describe("photography conclusion", () => {
+  it.each([2, 3, 7])(
+    "uses each day's rain grade during an overnight event over %i days",
+    (count) => {
+      const result = forecast(count);
+      const rain = {
+        key: "precipitation",
+        label: "降水干扰",
+        level: "high" as const,
+        description: "",
+        startTime: "2026-05-20T15:00:00Z",
+        endTime: "2026-05-20T23:00:00Z",
+      };
+      const model = buildPhotographyOutlook({
+        ...result,
+        riskFlags: [rain],
+        dailySummaries: result.dailySummaries.map((d, i) => ({
+          ...d,
+          practicalTripScore: i === 1 ? 34 : d.practicalTripScore,
+          dedicatedTripRecommendation: i === 1 ? "仅作备选" : d.dedicatedTripRecommendation,
+          riskFlags:
+            i > 1
+              ? []
+              : [
+                  {
+                    ...rain,
+                    level: i === 0 ? "high" : "medium",
+                    startTime: i === 0 ? rain.startTime : "2026-05-20T16:00:00Z",
+                    endTime: i === 0 ? "2026-05-20T16:00:00Z" : rain.endTime,
+                  },
+                ],
+        })),
+      });
+      expect(model.days.map((d) => d.blocked)).toEqual([true, ...Array(count - 1).fill(false)]);
+      expect(model.days[1]!.lines.join(" ")).toContain("⚠️");
+      expect(model.days[1]!.lines.join(" ")).not.toContain("安全近景");
+      expect(model.days[1]!.score).toBe(34);
+    },
+  );
+  it.each([
+    "other-risk",
+    "missing-day-risk",
+    "expired-day-risk",
+    "untimed",
+    "invalid-time",
+    "alert",
+  ])("preserves independent severe evidence when daily rain is medium: %s", (kind) => {
+    const result = forecast(2);
+    const rain = {
+      key: "precipitation",
+      label: "降水干扰",
+      level: "medium" as const,
+      description: "",
+      startTime: "2026-05-21T00:00:00+08:00",
+      endTime: "2026-05-21T07:00:00+08:00",
+    };
+    const model = buildPhotographyOutlook({
+      ...result,
+      dailySummaries: result.dailySummaries.map((d) => ({
+        ...d,
+        riskFlags:
+          kind === "missing-day-risk"
+            ? []
+            : [
+                {
+                  ...rain,
+                  ...(kind === "expired-day-risk"
+                    ? {
+                        startTime: "2026-05-20T00:00:00+08:00",
+                        endTime: "2026-05-21T00:00:00+08:00",
+                      }
+                    : {}),
+                },
+              ],
+      })),
+      riskFlags: [
+        {
+          ...rain,
+          level: "high",
+          key: kind === "other-risk" ? "wind" : rain.key,
+          ...(kind === "untimed" ? { startTime: undefined, endTime: undefined } : {}),
+          ...(kind === "invalid-time" ? { endTime: rain.startTime } : {}),
+        },
+      ],
+      weatherAlerts:
+        kind === "alert"
+          ? [
+              {
+                id: "rain",
+                title: "暴雨橙色预警",
+                level: "orange",
+                description: "",
+                startsAt: rain.startTime,
+                endsAt: rain.endTime,
+              },
+            ]
+          : [],
+    });
+    expect(model.days[1]!.blocked).toBe(true);
+  });
   it.each([1, 2, 3, 7])("scopes timed rain to its date across %i forecast days", (count) => {
     const result = forecast(count);
     const model = buildPhotographyOutlook({
