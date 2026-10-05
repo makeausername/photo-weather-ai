@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ForecastQueryInput } from "@photo-weather/shared";
 import {
   buildMockForecastInput,
+  buildForecastInputFromNormalizedWeather,
   calculateForecast,
   generateLocalAstroSummaries,
   generateMockDailyWeather,
@@ -35,6 +36,34 @@ function expectWindowsWithinRange(result: ReturnType<typeof calculateForecast>):
 }
 
 describe("mock forecast input builder", () => {
+  it("does not copy demo place identity or administrative areas into real weather", () => {
+    const generic = {
+      ...query,
+      name: "外滩观景台",
+      latitudeWgs84: 31.239,
+      longitudeWgs84: 121.486,
+      photoSpotId: undefined,
+      locationId: undefined,
+    };
+    const weather = {
+      hourlyWeather: [],
+      dailyWeather: [],
+      isMock: false,
+      weatherDataMode: "real" as const,
+      dataSourceLabel: "真实天气",
+    };
+    const input = buildForecastInputFromNormalizedWeather(generic, weather, { now: fixedNow });
+    expect(input.place.id).toBe("coordinate-31.239-121.486");
+    expect(input.place.name).toBe(generic.name);
+    expect(input.place.coordinates.latitude).toBe(31.239);
+    expect(input.place.adminArea).toBeUndefined();
+    expect(input.place.locality).toBeUndefined();
+    const identified = buildForecastInputFromNormalizedWeather(query, weather, { now: fixedNow });
+    expect(identified.place.id).toBe(query.photoSpotId);
+    const demo = buildMockForecastInput(query, { now: fixedNow });
+    expect(demo.place.adminArea).toBe("安徽省");
+    expect(demo.place.locality).toBe("黄山市");
+  });
   it("builds deterministic normalized calculation input", () => {
     const first = buildMockForecastInput(query, { now: fixedNow });
     const second = buildMockForecastInput(query, { now: fixedNow });

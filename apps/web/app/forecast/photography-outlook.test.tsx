@@ -65,12 +65,169 @@ function forecast(count = 2): ForecastCalculationResult {
   };
 }
 describe("photography conclusion", () => {
+  it("keeps every selected window inside an exact non-hour forecast boundary", () => {
+    const result = forecast(1);
+    const model = buildPhotographyOutlook({
+      ...result,
+      forecastEnd: "2026-05-20T09:04:19+08:00",
+      professionalHourlyData: result.professionalHourlyData!.map((r) => ({
+        ...r,
+        cloudTotalPercent: r.time.includes("T09:") ? 0 : 30,
+      })),
+    });
+    expect(model.days[0]!.best).toBeDefined();
+    expect(Date.parse(model.days[0]!.best!.end)).toBeLessThanOrEqual(
+      Date.parse("2026-05-20T09:04:19+08:00"),
+    );
+  });
+  it("does not present a poor-weather day as a usable fallback window", () => {
+    const result = forecast(1);
+    const model = buildPhotographyOutlook({
+      ...result,
+      professionalHourlyData: result.professionalHourlyData!.map((r) => ({
+        ...r,
+        cloudTotalPercent: 100,
+        cloudLowPercent: 95,
+        precipitationAmountMm: 2,
+        precipitationProbabilityPercent: 100,
+        visibilityMeters: 2000,
+      })),
+    });
+    expect(model.days[0]!.best).toBeUndefined();
+    expect(model.days[0]!.lines.join(" ")).toContain("暂无值得守候");
+    expect(model.conclusion[1]).not.toMatch(/\d\d:\d\d/);
+  });
+  it("excludes out-of-range events from the overall assessment", () => {
+    const result = forecast(2);
+    const model = buildPhotographyOutlook({
+      ...result,
+      forecastStart: "2026-05-20T09:00:00+08:00",
+      forecastEnd: "2026-05-21T09:00:00+08:00",
+      professionalHourlyData: result.professionalHourlyData!.map((r) => ({
+        ...r,
+        cloudLowPercent: 100,
+        cloudTotalPercent: 100,
+      })),
+    });
+    expect(model.conclusion[2]).toBe(
+      "日出整体机会偏低，朝霞整体机会偏低；日落整体机会偏低，晚霞整体机会偏低。",
+    );
+  });
+  it("checks pre-dawn mist separately from daytime low cloud, without claiming confirmed fog", () => {
+    const result = forecast(1);
+    const terrainAnalysis = {
+      ...result.terrainAnalysis,
+      terrainProfile: {
+        ...result.terrainAnalysis.terrainProfile,
+        terrainType: "city" as const,
+        elevationMeters: 5,
+        locationElevation: 5,
+        localReliefMeters: 0,
+      },
+    };
+    const model = buildPhotographyOutlook({
+      ...result,
+      terrainAnalysis,
+      professionalHourlyData: result.professionalHourlyData!.map((r) => ({
+        ...r,
+        relativeHumidityPercent: r.time.includes("T04:") ? 96 : 50,
+        dewPointSpreadC: r.time.includes("T04:") ? 0.6 : 8,
+        windSpeedMs: 1.5,
+        visibilityMeters: r.time.includes("T04:") ? 10000 : 20000,
+        cloudLowPercent: r.time.includes("T14:") ? 95 : 0,
+        cloudTotalPercent: r.time.includes("T14:") ? 95 : 30,
+      })),
+    });
+    expect(model.days[0]!.lines[1]).toContain("有近地雾气形成条件");
+    expect(model.days[0]!.lines[1]).toContain("临近日出信号减弱");
+    expect(model.days[0]!.lines[1]).toContain("部分时段低云较多");
+    expect(model.days[0]!.lines[1]).not.toMatch(/确认有雾|云海/);
+  });
+  it("keeps a high-altitude viewpoint with missing relief in an uncertain cloud-mist context", () => {
+    const result = forecast(1);
+    const model = buildPhotographyOutlook({
+      ...result,
+      terrainAnalysis: {
+        ...result.terrainAnalysis,
+        terrainProfile: {
+          ...result.terrainAnalysis.terrainProfile,
+          terrainType: "unknown",
+          elevationMeters: 3605,
+          locationElevation: 3605,
+          localReliefMeters: null,
+          elevationDiff5km: null,
+        },
+      },
+    });
+    expect(model.days[0]!.lines[1]).toContain("云雾：");
+    expect(model.days[0]!.lines[1]).toContain("地形高差与云层高度待确认");
+    expect(model.days[0]!.lines[1]).not.toContain("云海：");
+  });
+  it("carries temperature, cloud and visibility disagreement through the decision and clothing", () => {
+    const result = forecast(1);
+    const model = buildPhotographyOutlook({
+      ...result,
+      weatherFusionSummary: {
+        primarySource: "test",
+        auxiliarySources: [],
+        professionalSourceStatus: "available",
+        confidenceLevel: "low",
+        conflictStatusZh: "存在分歧",
+        conflictFlagsCount: 3,
+        aerosolConflictFlagsCount: 0,
+        dataStatusZh: "real",
+        sourceSummaries: [],
+        missingDataNotes: [],
+        multiSourceAgreementContext: {
+          agreementLevel: "low",
+          disagreementLevel: "high",
+          shouldLowerConfidence: true,
+          shouldShowReviewWarning: true,
+          keyWarningsZh: [],
+          userSummaryZh: "存在分歧",
+          professionalSummaryZh: "存在分歧",
+          fieldDisagreements: ["temperature", "cloudLow", "visibility"].map((field) => ({
+            field,
+            level: "high",
+            range: field === "temperature" ? 18.1 : 50,
+            sourcesAvailable: 3,
+            messageZh: "分歧",
+          })),
+        },
+      },
+    });
+    expect(model.days[0]!.allowed).toBe(false);
+    expect(model.conclusion.join(" ")).toContain("分歧");
+    expect(model.days[0]!.lines[0]).toContain("温度");
+    expect(model.days[0]!.lines[0]).toContain("需复核");
+    expect(model.days[0]!.lines[2]).toContain("通透待确认");
+    expect(model.days[0]!.dawn).toContain("需复核");
+    expect(model.clothing.join(" ")).toContain("18.1°C");
+    expect(model.clothing.join(" ")).toContain("手套");
+  });
+  it("identifies the actual limitation of a dry clear-sky forecast", () => {
+    const result = forecast(1);
+    const model = buildPhotographyOutlook({
+      ...result,
+      professionalHourlyData: result.professionalHourlyData!.map((r) => ({
+        ...r,
+        displayedTemperatureC: 20,
+        cloudTotalPercent: 0,
+        cloudLowPercent: 0,
+        cloudMidPercent: 0,
+        cloudHighPercent: 0,
+      })),
+    });
+    expect(model.conclusion[3]).toContain("天空少云");
+    expect(model.conclusion[3]).not.toContain("云层开合");
+    expect(model.risks[1]).not.toContain("云缝一直不开");
+  });
   it("covers the five requested sections, all days and short/long reading budgets", () => {
     for (const count of [1, 2, 3, 7]) {
       const model = buildPhotographyOutlook(forecast(count));
       expect(model.days).toHaveLength(count);
       expect(model.conclusion).toHaveLength(4);
-      expect(model.days.every((day) => day.lines.length === (count <= 2 ? 6 : 5))).toBe(true);
+      expect(model.days.every((day) => day.lines.length === (count <= 2 ? 7 : 6))).toBe(true);
       expect(model.shooting).toHaveLength(4);
       expect(model.clothing).toHaveLength(2);
       expect(model.risks).toHaveLength(3);
@@ -179,12 +336,12 @@ describe("photography conclusion", () => {
   });
   it("uses mist and local subjects for lowlands, hills, lakes and valleys", () => {
     for (const [type, elevation, relief, subject, detail] of [
-      ["city", 0, 0, "晨雾 / 低云", "建筑"],
-      ["lake", 15, 10, "晨雾 / 低云", "水面"],
+      ["city", 0, 0, "晨雾", "建筑"],
+      ["lake", 15, 10, "晨雾", "水面"],
       ["valley", 250, 500, "云雾", "谷地"],
       ["slope", 400, 200, "云雾", "坡地"],
-      ["lake", 2500, 0, "晨雾 / 低云", "水面"],
-      ["unknown", 0, 0, "晨雾 / 低云", "近景"],
+      ["lake", 2500, 0, "晨雾", "水面"],
+      ["unknown", 0, 0, "晨雾", "近景"],
     ] as const) {
       const result = forecast();
       const profile = {
@@ -262,7 +419,7 @@ describe("photography conclusion", () => {
         dewPointSpreadC: 8,
       })),
     };
-    expect(buildPhotographyOutlook(dry).days[0]!.lines[1]).toContain("晨雾机会偏低");
+    expect(buildPhotographyOutlook(dry).days[0]!.lines[1]).toContain("晨雾：机会偏低");
     const rain = {
       ...mist,
       professionalHourlyData: mist.professionalHourlyData.map((r) => ({
@@ -295,7 +452,7 @@ describe("photography conclusion", () => {
       forecastStart: "2026-05-20T09:00:00+08:00",
       forecastEnd: "2026-05-20T17:00:00+08:00",
     });
-    expect(model.days[0]!.lines[2]).toContain("已过本次预报起点");
-    expect(model.days[0]!.lines[3]).toContain("本次范围之外");
+    expect(model.days[0]!.lines[3]).toContain("已过本次预报起点");
+    expect(model.days[0]!.lines[4]).toContain("本次范围之外");
   });
 });
