@@ -121,15 +121,72 @@ function adminSession(accessToken = "paid-access-token"): AdminAuthSession {
 }
 
 describe("forecast request client", () => {
-  it("shows Retry-After in Chinese without immediately retrying a rate-limited query", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ error: "rate_limited", message: "Too many requests" }), {
-          status: 429,
-          headers: { "Content-Type": "application/json", "Retry-After": "120" },
-        }),
+  it("ends a stalled network request at the deadline with a visible timeout error", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetcher = vi.fn(
+        (_url: unknown, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true },
+            );
+          }),
       );
+      const checked = expect(
+        requestForecastCalculation(baseQuery, { fetcher }),
+      ).rejects.toMatchObject({ code: "calculation_pending_timeout", status: 504 });
+      await vi.advanceTimersByTimeAsync(90_000);
+      await checked;
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("polls pending calculations without caching the pending payload or spending error retries", async () => {
+    const expected = resultForTarget("general");
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "processing", retryAfterMs: 1 }, 202))
+      .mockResolvedValueOnce(jsonResponse({ status: "processing", retryAfterMs: 1 }, 202))
+      .mockResolvedValue(jsonResponse(expected));
+    expect(await requestForecastCalculation(baseQuery, { fetcher, retryCount: 0 })).toEqual(
+      expected,
+    );
+    expect(await requestForecastCalculation(baseQuery, { fetcher, retryCount: 0 })).toEqual(
+      expected,
+    );
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher.mock.calls[0]?.[1].headers).toMatchObject({ Prefer: "respond-async" });
+  });
+
+  it("allows cancellation while waiting for a pending calculation", async () => {
+    const controller = new AbortController();
+    const fetcher = vi.fn(async () => {
+      controller.abort();
+      return jsonResponse({ status: "processing", retryAfterMs: 1000 }, 202);
+    });
+    await expect(
+      requestForecastCalculation(baseQuery, { fetcher, signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds polling when a calculation never completes", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ status: "processing", retryAfterMs: 1 }, 202));
+    await expect(
+      requestForecastCalculation(baseQuery, { fetcher, retryCount: 2 }),
+    ).rejects.toMatchObject({ code: "calculation_pending_timeout" });
+    expect(fetcher).toHaveBeenCalledTimes(90);
+  });
+  it("shows Retry-After in Chinese without immediately retrying a rate-limited query", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "rate_limited", message: "Too many requests" }), {
+        status: 429,
+        headers: { "Content-Type": "application/json", "Retry-After": "120" },
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     await expect(requestForecastCalculation(baseQuery)).rejects.toMatchObject({
       status: 429,
@@ -500,13 +557,13 @@ describe("forecast request client", () => {
 
     const currentKey = sessionStorage
       .dumpKeys()
-      .find((key) => key.startsWith("photo_weather_forecast_calculation:v5:"));
+      .find((key) => key.startsWith("photo_weather_forecast_calculation:v6:"));
     expect(currentKey).toBeDefined();
     const currentRecord = sessionStorage.getItem(currentKey!);
     expect(currentRecord).not.toBeNull();
     sessionStorage.removeItem(currentKey!);
     sessionStorage.setItem(
-      currentKey!.replace(":v5:", ":v4:"),
+      currentKey!.replace(":v6:", ":v5:"),
       currentRecord!.replace('"version":5', '"version":4'),
     );
     clearForecastRequestClientCachesForTest();

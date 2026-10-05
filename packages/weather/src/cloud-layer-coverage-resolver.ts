@@ -184,7 +184,7 @@ function selectPrimaryCloudLayerCandidate(
   const iconCandidate = ordered.find(
     (candidate) =>
       candidate.sourceId === openMeteoIconCloudLayerProviderName &&
-      (hasFiniteNumber(candidate.hour.cloudTotal) || hasAnyExplicitCloudLayer(candidate.hour)),
+      hasCompleteCloudLayerGroup(candidate.hour),
   );
   if (iconCandidate) {
     return iconCandidate;
@@ -247,6 +247,8 @@ function applySelectedNumberField(input: {
   const estimated = selected.candidate?.hour.estimatedFields?.includes(field) ?? false;
   if (estimated) {
     input.estimatedFields.add(field);
+  } else {
+    input.estimatedFields.delete(field);
   }
 
   if (selected.value === null || selected.value === undefined || estimated) {
@@ -259,9 +261,9 @@ function applySelectedNumberField(input: {
     input.fallbackSourcesUsed.add(selected.candidate.sourceId);
   }
 
-  const existingMetadata = input.base.fieldMetadata?.[field];
   const candidateMetadata = selected.candidate?.hour.fieldMetadata?.[field];
-  const preservedMetadata = existingMetadata ?? candidateMetadata;
+  // The value's provenance follows the selected source, not the overwritten base.
+  const preservedMetadata = candidateMetadata;
   input.fieldMetadata[field] = {
     ...preservedMetadata,
     value: selected.value ?? null,
@@ -278,7 +280,7 @@ function applySelectedNumberField(input: {
     basis:
       selected.basis === "fallback_same_field"
         ? selected.basis
-        : (preservedMetadata?.basis ?? selected.basis),
+        : preservedMetadata?.basis ?? selected.basis,
     estimated,
     missingReason:
       selected.value === null || selected.value === undefined || estimated

@@ -165,6 +165,7 @@ export class WeatherIntelligenceService {
 
     const fusion = fuseWeatherSources({
       providerBundles: usableBundles,
+      selectedSpotElevationMeters: input.elevationMeters,
       target: input.target ?? "general",
       location: {
         coordinates: input.coordinates,

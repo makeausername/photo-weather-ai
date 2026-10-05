@@ -151,8 +151,11 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
     !real ||
     result.weatherEvidenceStatus === "insufficient" ||
     result.weatherEvidenceStatus === "stale" ||
-    result.weatherDataFreshness === "stale" ||
-    ["wait_for_update", "data_insufficient"].includes(result.decisionMode ?? "");
+    result.weatherDataFreshness === "stale";
+  // A cautious trip decision (e.g. missing terrain confidence) does not erase
+  // available hourly weather evidence for sunrise, low clouds or morning mist.
+  const tripUncertain =
+    uncertain || ["wait_for_update", "data_insufficient"].includes(result.decisionMode ?? "");
   const noTrip =
     severe ||
     result.decisionMode === "not_recommended" ||
@@ -247,7 +250,7 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       ? `${hourOf(best.start) < 12 ? "上午" : "下午"} ${timeOf(best.start)}–${timeOf(best.end)}`
       : "暂无值得守候且资料完整的连续白天窗口";
     const score =
-      !uncertain && hours.length && hours.every(usable)
+      !tripUncertain && hours.length && hours.every(usable)
         ? daily?.practicalTripScore ?? daily?.score
         : undefined;
     const restrictedTrip =
@@ -263,7 +266,7 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       result.finalRecommendationLevel === "cautious" ||
       result.decisionMode === "nearby_watch";
     const allowed =
-      !uncertain &&
+      !tripUncertain &&
       !daySevere &&
       !restrictedTrip &&
       !evidence.review &&
@@ -433,7 +436,7 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       : wet
         ? "等雨势减弱、云裂或边缘透光；风起云退后，再看远景是否变清楚。"
         : s.cloud !== null && s.cloud < 20
-          ? `天空较空时，重点看低角度侧光和${scene.lightSubject}，不必专等霞光铺满天空。`
+          ? `天空较空时，用低角度侧光表现${scene.lightSubject}，不必专等霞光铺满天空。`
           : `先看云缝是否打开、边缘有没有透光，再观察${scene.lightSubject}。`,
     poor
       ? `优先拍近景氛围和长焦细节；确有雾气时，用${scene.mountain ? "山路" : "近处景物"}轮廓做层次。`
