@@ -3348,7 +3348,7 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.hiddenModuleKeys).toHaveLength(0);
   });
 
-  it("defers the general result chart and opens the professional table without a second toggle", () => {
+  it("replaces general result charts and professional tables with photography conclusions", () => {
     const hourlyRange = resultWithGlowHourlyRange("48h", 48);
     const result: ForecastCalculationResult = {
       ...resultForTarget("general"),
@@ -3382,17 +3382,13 @@ describe("forecast result target-aware view model", () => {
       }),
     );
 
-    expect(html).toContain('data-general-section="GeneralHourlyWeatherSection"');
-    expect(html).not.toContain('data-general-rain-row="');
+    expect(html).toContain('data-photography-outlook="true"');
+    expect(html).toContain("按日期看");
+    expect(html).toContain("穿衣指南");
+    expect(html).not.toContain('data-result-view-tab="professional"');
+    expect(html).not.toContain('data-result-view-tab="hourly"');
+    expect(html).not.toContain('data-professional-hourly-target="general"');
     expect(html).not.toContain("正在加载逐小时趋势图");
-    expect(html).toContain('data-result-view-tab="professional"');
-    expect(html).toContain('data-result-view-panel="professional"');
-    expect(html).toContain('data-professional-hourly-target="general"');
-    expect(html).toContain('data-professional-hourly-expanded="true"');
-    expect(html).not.toContain('data-professional-hourly-toggle="true"');
-
-    expect(html).toContain('data-result-view-tab="hourly"');
-    expect(html).toContain('data-result-view-panel="hourly"');
   });
 
   it("keeps the expanded general hourly rainfall panel free of cloud-sea diagnostics", () => {
@@ -5947,6 +5943,8 @@ describe("forecast result target-aware view model", () => {
     const result: ForecastCalculationResult = {
       ...base,
       target: "general",
+      weatherDataMode: "real",
+      isMock: false,
       professionalHourlyData: base.professionalHourlyData!.map((row) => ({
         ...row,
         displayedTemperatureC: 24,

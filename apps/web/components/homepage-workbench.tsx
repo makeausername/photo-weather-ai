@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   forecastHorizonLabels,
-  prioritizeForecastRisks,
   type ForecastCalculationResult,
   type ForecastHorizon,
   type ForecastTarget,
@@ -27,8 +26,7 @@ import {
 import { Badge, Card, cn } from "./ui";
 import { DecisionValue } from "./decision-value";
 import { ForecastEntryHeader, ForecastEntryHelp } from "./forecast-entry";
-import { summarizeWeatherHours } from "../app/forecast/general-weather-data";
-import { hourlyTableNumber } from "../app/forecast/professional-hourly-columns";
+import { PhotographyOutlook } from "../app/forecast/photography-outlook-view";
 
 type LayerStatus = "idle" | "loading" | "ready" | "partial" | "fallback" | "error";
 
@@ -53,7 +51,7 @@ const homepageGuidanceCards = [
   },
   {
     title: "云层与天气",
-    description: "查看晴雨变化，按需展开分层云量等专业数据。",
+    description: "看晴雨和云层变化，判断等光还是转拍氛围。",
   },
   {
     title: "风与湿度",
@@ -65,7 +63,7 @@ const homepageGuidanceCards = [
   },
   {
     title: "小时与逐日",
-    description: "先查看每天的天气变化，再按小时核对降水、风和温度。",
+    description: "按日期比较拍摄机会，找到更值得等待的时段。",
   },
   {
     title: "降水与风险",
@@ -150,7 +148,7 @@ export function HomepageWorkbench() {
     <>
       <ForecastEntryHeader
         title="天气概览"
-        description="查看目的地的降水、温度、风和天气风险。"
+        description="先看值不值得去，再选拍摄日期、时段和题材。"
         centered={!selectedLocation}
       />
       <section
@@ -223,9 +221,19 @@ export function HomepageGuidancePanel({
 }) {
   const result = state.result;
   const hasResult = Boolean(result);
-  const cards = result
-    ? buildHomepageResultCards(location, state, result)
-    : buildHomepageGuidanceCards(location, state);
+  const cards = buildHomepageGuidanceCards(location, state);
+  if (result) {
+    return (
+      <section className="grid min-w-0 content-start gap-4" data-homepage-guidance-panel="true">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="accent">{location?.displayName ?? result.place?.name} · 拍摄建议</Badge>
+          <Badge variant="muted">{forecastHorizonLabels[horizon]}</Badge>
+          {state.status === "partial" ? <Badge variant="warning">部分资料待确认</Badge> : null}
+        </div>
+        <PhotographyOutlook result={result} />
+      </section>
+    );
+  }
 
   return (
     <section
@@ -342,45 +350,6 @@ function buildHomepageGuidanceCards(
   }));
 }
 
-function buildHomepageResultCards(
-  _location: SelectedLocation | null,
-  _state: ForecastLayerState,
-  result: ForecastCalculationResult,
-): readonly HomepageInsightCard[] {
-  const summary = summarizeWeatherHours(
-    result.professionalHourlyData ?? [],
-    result.professionalHourlyDataTimeBasis,
-  );
-  const mainRisk = prioritizeForecastRisks(result.riskFlags)[0];
-  return [
-    {
-      title: "降水",
-      value: summary.rainLabel,
-      description: `所示时段${summary.amountComplete ? "累计" : "已知部分"} ${hourlyTableNumber(summary.amount)} mm；小时最高概率${summary.probabilityInconsistent ? "待复核" : ` ${hourlyTableNumber(summary.maxProbability, 0)}%`}。`,
-      badge: "预报",
-    },
-    {
-      title: "预报温度",
-      value: `${hourlyTableNumber(summary.minTemperature)}–${hourlyTableNumber(summary.maxTemperature)}°C`,
-      description: "所示时段温度范围，逐小时查看变化。",
-      badge: "温度",
-    },
-    {
-      title: "风速与阵风",
-      value: `${hourlyTableNumber(summary.maxWind)} / ${hourlyTableNumber(summary.maxGust)} m/s`,
-      description: "所示时段最大风速 / 最大阵风。",
-      badge: "风",
-    },
-    {
-      title: "主要风险",
-      value: mainRisk?.label ?? "未识别到主要风险",
-      description: mainRisk?.description ?? "仅针对已获取数据，完整报告可查看时段与天气预警。",
-      badge: mainRisk ? riskLevelLabel(mainRisk.level) : "天气",
-      tone: mainRisk ? "danger" : "muted",
-    },
-  ];
-}
-
 function homepagePendingCardBadge(
   location: SelectedLocation | null,
   state: ForecastLayerState,
@@ -418,14 +387,4 @@ function homepagePanelDescription(
     return "降水、温度、风和天气风险已更新。";
   }
   return "选择地点后，查看天气变化、降水和主要风险。";
-}
-
-function riskLevelLabel(level: ForecastCalculationResult["riskFlags"][number]["level"]): string {
-  if (level === "high") {
-    return "高风险";
-  }
-  if (level === "medium") {
-    return "中风险";
-  }
-  return "风险";
 }
