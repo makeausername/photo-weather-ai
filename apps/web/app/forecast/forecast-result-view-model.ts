@@ -1435,7 +1435,19 @@ export function buildCloudSeaForecastViewModel(
     weatherVariableConsistencyContext,
     cloudBasisConsistency,
     precipitationSignalContext,
-  );
+  ).map((day) => ({
+    ...day,
+    // Calibration and cached backend explanations use mountain vocabulary too.
+    // Apply terrain wording after selecting the final daily explanation source.
+    decisionReason: day.decisionReason
+      ? cloudSeaTerrainAwareText(day.decisionReason, terrainContext)
+      : undefined,
+    keyReason: cloudSeaTerrainAwareText(day.keyReason, terrainContext),
+    actionSuggestion: cloudSeaTerrainAwareText(day.actionSuggestion, terrainContext),
+    layerCompletenessNote: day.layerCompletenessNote
+      ? cloudSeaTerrainAwareText(day.layerCompletenessNote, terrainContext)
+      : undefined,
+  }));
   const weatherEvidence = buildCloudSeaWeatherEvidence(
     result,
     terrainContext,
