@@ -12,7 +12,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import dynamic from "next/dynamic";
 import {
-  applyForecastDecisionToWindows,
   buildCloudLayerCompletenessContext,
   buildCloudSeaCloudBasisConsistencyContext,
   formatLocalDateLabel,
@@ -76,17 +75,13 @@ import {
   ResultMeter,
   type ResultMeterTone,
 } from "./result-dashboard-components";
+import { PhotographyOutlook } from "./photography-outlook-view";
 import { ResultViewTabs } from "./result-experience-controls";
 import { WeatherAlerts } from "./weather-alerts";
 import { HourlyWeatherMatrix } from "./hourly-weather-matrix";
 import { StickyDataScroller } from "../../components/sticky-data-scroller";
-import {
-  GeneralWeatherHeader,
-  GeneralWeatherOverview,
-  SelectedWeatherHour,
-  WeatherDateSelector,
-} from "./general-weather-overview";
-import { weatherDates, weatherRowsForDate, weatherDateKey } from "./general-weather-data";
+import { WeatherDateSelector } from "./general-weather-overview";
+import { weatherDates, weatherRowsForDate } from "./general-weather-data";
 import type { HourlyTimelinePoint } from "./hourly-weather-timeline";
 import {
   isForecastRequestAbortError,
@@ -5546,133 +5541,32 @@ function CloudSeaInlineDefinition({
 }
 
 export function ComprehensiveForecastView({
-  query,
-  result: suppliedResult,
-  viewModel,
+  result,
 }: {
   readonly query: ForecastQueryInput;
   readonly result: ForecastCalculationResult;
   readonly viewModel: ForecastResultViewModel;
 }) {
-  const result = useMemo(
-    () => ({
-      ...suppliedResult,
-      bestWindows: applyForecastDecisionToWindows(suppliedResult.bestWindows, suppliedResult),
-    }),
-    [suppliedResult],
-  );
-  const data = viewModel.professionalHourlyData;
-  const timezone = data?.timeBasis?.timezone ?? result.calendarBasis.timezone;
-  const dates = weatherDates(data?.rows ?? [], timezone);
-  const [selectedDate, setSelectedDate] = useState(dates[0] ?? "all");
-  const [selectedTime, setSelectedTime] = useState("");
-  const [activeTab, setActiveTab] = useState("overview");
-  const effectiveDate =
-    selectedDate === "all" || dates.includes(selectedDate) ? selectedDate : dates[0] ?? "all";
-  const rows = weatherRowsForDate(data?.rows ?? [], effectiveDate, timezone);
-  const selectHour = (time: string) => {
-    setSelectedDate(weatherDateKey(time, timezone));
-    setSelectedTime(time);
-    setActiveTab("hourly");
-  };
-  const selectDate = (date: string) => {
-    setSelectedDate(date);
-    setActiveTab("hourly");
-  };
   return (
     <DecisionResultTemplate
       target="general"
-      className="GeneralResultPage general-result-page grid gap-4"
+      className="GeneralResultPage general-result-page mx-auto grid w-full max-w-4xl gap-4"
     >
-      <GeneralWeatherHeader result={result} />
-      <ResultViewTabs
-        label="综合结果视图"
-        value={activeTab}
-        onValueChange={setActiveTab}
-        items={[
-          {
-            value: "overview",
-            label: "天气概览",
-            content: (
-              <GeneralWeatherOverview
-                result={result}
-                query={query}
-                data={data}
-                onHour={selectHour}
-                onDate={selectDate}
-              />
-            ),
-          },
-          {
-            value: "hourly",
-            label: "逐小时",
-            deferUntilActive: true,
-            content: data ? (
-              <div className="grid min-w-0 gap-4">
-                <WeatherDateSelector
-                  dates={dates}
-                  value={effectiveDate}
-                  onChange={setSelectedDate}
-                />
-                <SelectedWeatherHour
-                  rows={rows}
-                  selectedTime={selectedTime}
-                  onChange={setSelectedTime}
-                  timezone={timezone}
-                />
-                <HourlyWeatherTimeline
-                  points={buildHourlyTimelinePoints(rows, timezone)}
-                  weatherFirst
-                  onSelectTime={setSelectedTime}
-                  description="按同一时间轴对照降水、温度和风；点击图表或选择时次查看数值。"
-                />
-              </div>
-            ) : (
-              <ResultUnavailablePanel message="当前结果没有可用的逐小时数据。" />
-            ),
-          },
-          {
-            value: "professional",
-            label: "专业数据",
-            content: data ? (
-              <div className="grid min-w-0 gap-4">
-                <WeatherDateSelector
-                  dates={dates}
-                  value={effectiveDate}
-                  onChange={setSelectedDate}
-                />
-                <CloudSeaProfessionalHourlyDataPanel
-                  target="general"
-                  data={data}
-                  selectedDate={effectiveDate}
-                  selectedTime={selectedTime}
-                  config={generalProfessionalHourlySectionConfig}
-                  onSelectTime={setSelectedTime}
-                />
-              </div>
-            ) : (
-              <ResultUnavailablePanel message="当前结果没有可用的专业小时数据。" />
-            ),
-          },
-        ]}
-      />
+      <header className="mx-auto flex w-full max-w-4xl flex-wrap items-center justify-between gap-3 px-1">
+        <div>
+          <h1 className="text-xl font-bold">{result.place.name} · 拍摄建议</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            天气概览 · {forecastHorizonLabels[result.horizon]}
+          </p>
+        </div>
+        <a href="/" className="rounded-lg border border-border px-3 py-2 text-sm text-primary">
+          更换地点与范围
+        </a>
+      </header>
+      <PhotographyOutlook result={result} />
     </DecisionResultTemplate>
   );
 }
-
-const generalProfessionalHourlySectionConfig: ProfessionalHourlySectionConfig = {
-  sectionTitle: "逐小时完整数据",
-  sectionBadge: "专业数据",
-  sectionDescription: "按需选择指标；上下滚动保留表头，左右滑动保留时间。",
-  usageText: "",
-  allFilterLabel: "全部小时",
-  showFocusFilter: false,
-  defaultFilterMode: "all",
-  showMorningFilter: false,
-  showRainFilter: true,
-  showSignalColumn: false,
-  initiallyExpanded: true,
-};
 
 function ResultUnavailablePanel({ message }: { readonly message: string }) {
   return (

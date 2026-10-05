@@ -333,7 +333,7 @@ describe("homepage forecast flow", () => {
     expect(html).not.toContain("黄山光明顶");
   });
 
-  it("renders compact result cards from the forecast result", () => {
+  it("renders the five-part photography conclusion from the forecast result", () => {
     const location = selectedLocationFromSearchResult(laojunshanPlace);
     const html = renderToStaticMarkup(
       React.createElement(HomepageGuidancePanel, {
@@ -343,25 +343,21 @@ describe("homepage forecast flow", () => {
       }),
     );
 
-    expect(html).toContain("老君山金顶 天气概览");
-    expect(html).toContain("降水、温度、风和天气风险已更新。");
-    expect(html).not.toContain("综合指数");
-    expect(html).not.toContain("最佳窗口");
-    expect(html).toContain("降水");
-    expect(html).toContain("预报温度");
-    expect(html).toContain("风速与阵风");
-    expect(html).toContain("主要风险");
+    expect(html).toContain("老君山金顶 · 拍摄建议");
+    for (const heading of ["先说结论", "按日期看", "怎么拍 / 怎么选", "穿衣指南", "风险提醒"]) {
+      expect(html).toContain(heading);
+    }
     expect(html).toContain("山顶强风");
-    expect(html).toContain("min-[960px]:grid-rows-[auto_minmax(0,1fr)]");
-    expect(html).toContain("min-[960px]:auto-rows-fr");
-    expect(html).toContain("min-[960px]:h-full");
+    expect(html).toContain('data-photography-outlook="true"');
+    expect(html).not.toContain("专业数据");
+    expect(html).not.toContain("<table");
     expect(html).not.toContain("和风天气");
     expect(html).not.toContain("Open-Meteo");
     expect(html).not.toContain("meteoblue");
     expect(html).not.toContain("本地天文服务");
     expect(html).not.toContain('data-homepage-layer-visual="true"');
   });
-  it("keeps photography on specialist pages and prioritizes a severe weather risk", () => {
+  it("prioritizes severe weather over candidate photography windows", () => {
     const result = {
       ...homepageLayerResult,
       bestWindows: [
@@ -452,9 +448,9 @@ describe("homepage forecast flow", () => {
       }),
     );
 
-    expect(html).toContain("降水数据不完整");
-    expect(html).toContain("已知部分 — mm");
-    expect(html).toContain("— / — m/s");
+    expect(html).toContain("降水待确认");
+    expect(html).toContain("温度待确认");
+    expect(html).toContain("风况待确认");
     expect(html).not.toContain("0 mm");
     expect(html).not.toContain("暂无降水信号");
   });
@@ -985,7 +981,7 @@ describe("homepage forecast flow", () => {
   it("keeps public homepage copy product-friendly", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
 
-    expect(html).toContain("查看目的地的降水、温度、风和天气风险。");
+    expect(html).toContain("先看值不值得去，再选拍摄日期、时段和题材。");
     expect(html).toContain("如何查看天气预报");
     expect(html).toContain("地点与窗口");
     expect(html).not.toContain("云海判断需要关注什么");

@@ -56,8 +56,8 @@ describe("whole-site static copy guard", () => {
       renderScenarioEntryPages(),
     ].join("\n");
 
-    expect(source).toContain("查看目的地的降水、温度、风和天气风险。");
-    expect(rendered).toContain("查看目的地的降水、温度、风和天气风险。");
+    expect(source).toContain("先看值不值得去，再选拍摄日期、时段和题材。");
+    expect(rendered).toContain("先看值不值得去，再选拍摄日期、时段和题材。");
     expect(rendered).toContain("选择地点后");
 
     for (const forbiddenClaim of forbiddenStaticLiveClaims) {
