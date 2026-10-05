@@ -1,6 +1,6 @@
 import {
   classifyTerrainMode,
-  terrainModeUsesMountainSemantics,
+  terrainCloudSubject,
   type ForecastCalculationResult,
   type ProfessionalHourlyDataPoint as Hour,
 } from "@photo-weather/shared";
@@ -14,22 +14,9 @@ export function photographyScene(result: ForecastCalculationResult) {
   const mode = classifyTerrainMode(profile ?? {});
   const type = profile?.terrainType ?? "unknown";
   const relief = profile?.localReliefMeters ?? profile?.elevationDiff5km;
-  const elevatedView =
-    ["summit", "ridge", "mountain_platform"].includes(type) || (finite(relief) && relief >= 300);
-  const mountain =
-    terrainModeUsesMountainSemantics(mode) &&
-    elevatedView &&
-    !["city", "lake", "valley"].includes(type);
+  const subject = terrainCloudSubject(profile ?? {});
+  const mountain = subject === "云海";
   const known = mode !== "unknown";
-  const subject = mountain
-    ? "云海"
-    : (terrainModeUsesMountainSemantics(mode) && !["city", "lake"].includes(type)) ||
-        mode === "hill" ||
-        type === "valley"
-      ? "云雾"
-      : known
-        ? "晨雾"
-        : "云雾";
   const lightSubject = mountain
     ? "山体光影"
     : type === "city"

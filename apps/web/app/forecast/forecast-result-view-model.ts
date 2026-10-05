@@ -81,7 +81,11 @@ import {
   buildForecastPrimarySummary,
   normalizeForecastPublicCopyText,
 } from "./forecast-copy-polish";
-import { cloudSeaTerrainAwareText, type CloudSeaTerrainContext } from "./cloud-sea-terrain-context";
+import {
+  cloudSeaTerrainAwareText,
+  cloudSeaMistCopy,
+  type CloudSeaTerrainContext,
+} from "./cloud-sea-terrain-context";
 import {
   buildCloudSeaRecommendationGuardForRuleContext,
   buildCloudSeaRuleContext,
@@ -1336,26 +1340,29 @@ export function buildCloudSeaForecastViewModel(
     displayTemperatureContext,
     terrainContext,
   });
-  const recommendationExplanation = buildCloudSeaRecommendationExplanation({
-    finalRecommendationLabel: recommendationGuard.finalRecommendationLabel,
-    cloudSeaScore: analysis.scoreCalibration.finalCloudSeaScore,
-    formationScore: analysis.formationScore,
-    shootabilityScore: analysis.scoreCalibration.calibratedShootabilityScore,
-    whiteoutRiskScore: analysis.whiteoutRiskScore,
-    terrainContext: {
-      shouldDowngradeCloudSeaWording: terrainContext.shouldDowngradeCloudSeaWording,
-      isClassicCloudSeaEligible: terrainContext.isClassicCloudSeaEligible,
-      terrainClass: terrainContext.terrainClass,
-      terrainNoteZh: terrainContext.terrainNoteZh,
-    },
-    cloudLayerCoverageContext: cloudLayerCompleteness,
-    cloudBasisConsistencyContext: cloudBasisConsistency,
-    weatherVariableConsistencyContext,
-    precipitationSignalContext,
-    multiSourceAgreementContext,
-    bestWindow: explanationBestWindow,
-    recommendationGuardContext: recommendationGuard,
-  });
+  const recommendationExplanation = cloudSeaMistCopy(
+    buildCloudSeaRecommendationExplanation({
+      finalRecommendationLabel: recommendationGuard.finalRecommendationLabel,
+      cloudSeaScore: analysis.scoreCalibration.finalCloudSeaScore,
+      formationScore: analysis.formationScore,
+      shootabilityScore: analysis.scoreCalibration.calibratedShootabilityScore,
+      whiteoutRiskScore: analysis.whiteoutRiskScore,
+      terrainContext: {
+        shouldDowngradeCloudSeaWording: terrainContext.shouldDowngradeCloudSeaWording,
+        isClassicCloudSeaEligible: terrainContext.isClassicCloudSeaEligible,
+        terrainClass: terrainContext.terrainClass,
+        terrainNoteZh: terrainContext.terrainNoteZh,
+      },
+      cloudLayerCoverageContext: cloudLayerCompleteness,
+      cloudBasisConsistencyContext: cloudBasisConsistency,
+      weatherVariableConsistencyContext,
+      precipitationSignalContext,
+      multiSourceAgreementContext,
+      bestWindow: explanationBestWindow,
+      recommendationGuardContext: recommendationGuard,
+    }),
+    terrainContext,
+  );
   const hero = buildCloudSeaHeroConclusion(
     result,
     cloudSeaWindows,

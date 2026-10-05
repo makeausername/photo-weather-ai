@@ -14,7 +14,7 @@ const defaultRetryCount = 2;
 const defaultRetryDelayMs = [600, 1200, 2400] as const;
 const defaultSuccessCacheTtlMs = 5 * 60 * 1000;
 const defaultStaleCacheTtlMs = 30 * 60 * 1000;
-const forecastCacheVersion = 7 as const;
+const forecastCacheVersion = 8 as const;
 const sessionCachePrefix = `photo_weather_forecast_calculation:v${forecastCacheVersion}:`;
 const maxSessionCachePayloadChars = 2_000_000;
 
@@ -145,17 +145,20 @@ export async function requestForecastCalculation(
   }
 
   const controller = new AbortController();
-  const calculationDeadline = Date.now() + 90_000;
+  // Seven-day requests include more astronomical windows and DEM directions.
+  // Keep waiting on the same server calculation instead of exhausting an arbitrary poll count.
+  const timeoutMs = query.horizon === "7d" ? 180_000 : query.horizon === "72h" ? 120_000 : 90_000;
+  const calculationDeadline = Date.now() + timeoutMs;
   let deadlineExpired = false;
   const deadlineTimer = setTimeout(() => {
     deadlineExpired = true;
     controller.abort();
-  }, 90_000);
+  }, timeoutMs);
   const requestPromise = retryWithBackoff(
     async () => {
       throwIfAborted(controller.signal);
       let result: ForecastCalculationResult;
-      for (let poll = 0; ; poll++) {
+      for (;;) {
         const response = await optionalAuthApiFetch<
           ForecastCalculationResult | { status: "processing"; retryAfterMs: number }
         >(
@@ -176,14 +179,14 @@ export async function requestForecastCalculation(
           result = response as ForecastCalculationResult;
           break;
         }
-        if (poll >= 89 || Date.now() >= calculationDeadline) {
+        if (Date.now() >= calculationDeadline) {
           throw new ForecastRequestError(forecastCalculationTransientFailureMessage, {
             code: "calculation_pending_timeout",
             status: 504,
           });
         }
         await sleepWithAbort(
-          Math.max(1, Math.min(5000, response.retryAfterMs || 1000)),
+          Math.max(1000, Math.min(5000, response.retryAfterMs || 1000)),
           controller.signal,
         );
       }

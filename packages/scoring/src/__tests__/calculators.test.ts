@@ -154,6 +154,47 @@ function pad2(value: number): string {
 }
 
 describe("forecast score calculators", () => {
+  it("exposes cloud disagreement consistently in professional text and code while preserving raw weather", () => {
+    const input = buildMockForecastInput(baseQuery, { now: fixedNow });
+    const hourlyWeather = input.hourlyWeather.map((hour) => ({
+      ...hour,
+      weatherTextZh: "晴",
+      weatherCode: "100",
+      cloudTotal: 100,
+      cloudHigh: 100,
+      cloudMid: 100,
+      cloudLow: 0,
+    }));
+    const result = calculateForecast({ ...input, hourlyWeather });
+    expect(
+      result.professionalHourlyData!.every(
+        (h) => h.weatherText === "云量预报有分歧" && h.weatherCode === null,
+      ),
+    ).toBe(true);
+    expect(hourlyWeather.every((h) => h.weatherTextZh === "晴" && h.weatherCode === "100")).toBe(
+      true,
+    );
+  });
+  it.each([3041, 3433, 3723])(
+    "does not label altitude alone as cloud sea at %i m",
+    (elevationMeters) => {
+      const input = buildMockForecastInput(baseQuery, { now: fixedNow });
+      const terrainAnalysis = {
+        ...input.terrainAnalysis,
+        isMock: false,
+        terrainProfile: {
+          ...input.terrainAnalysis.terrainProfile,
+          elevationMeters,
+          locationElevation: elevationMeters,
+          localReliefMeters: null,
+          elevationDiff5km: null,
+          nearbyValleyElevationMeters: null,
+          terrainType: "unknown" as const,
+        },
+      };
+      expect(calculateCloudSeaScore({ ...input, terrainAnalysis }).label).toBe("云雾");
+    },
+  );
   it("calculates each major photography score with Chinese labels", () => {
     const input = buildMockForecastInput(baseQuery, { now: fixedNow });
 

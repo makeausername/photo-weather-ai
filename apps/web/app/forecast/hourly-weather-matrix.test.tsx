@@ -11,6 +11,13 @@ const row = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase").res
   .professionalHourlyData![0]!;
 
 describe("weather matrix data and reading order", () => {
+  it("also reconciles clear text from older cached payloads with the displayed clouds", () => {
+    const metric = weatherMatrixMetrics({}, "气温", false).find((m) => m.key === "weather")!;
+    expect(metric.value({ ...row, weatherText: "晴", cloudTotalPercent: 100 })).toBe(
+      "云量预报有分歧",
+    );
+    expect(metric.value({ ...row, weatherText: "雨夹雪", cloudTotalPercent: 100 })).toBe("雨夹雪");
+  });
   it("renders time across columns and metrics down rows across local midnight", () => {
     const rows = [
       { ...row, time: "2026-10-04T15:00:00Z" },

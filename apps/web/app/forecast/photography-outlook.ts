@@ -116,6 +116,7 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
   const real = result.weatherDataMode === "real" && !result.isMock;
   const start = Date.parse(result.forecastStart);
   const end = Date.parse(result.forecastEnd);
+  const firstFullHour = Math.ceil(start / step) * step;
   const rows = real
     ? [
         ...new Map(
@@ -268,6 +269,35 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
             Number.isFinite(Date.parse(r.startTime ?? "")) &&
             Number.isFinite(Date.parse(r.endTime ?? "")) &&
             Date.parse(r.endTime!) > Date.parse(r.startTime!);
+          // An explicit empty daily assessment is different from missing daily data.
+          // Only a cross-date rain event with complete, light local rainfall evidence
+          // can be cleared here; independent hazards and missing evidence remain conservative.
+          const lightLocalRain =
+            r.key === "precipitation" &&
+            timed &&
+            weatherDateKey(r.startTime!, timezone) < date &&
+            Array.isArray(daily?.riskFlags) &&
+            daily.riskFlags.length === 0 &&
+            Number.isFinite(start) &&
+            Number.isFinite(end) &&
+            Array.from(
+              { length: Math.ceil((end - firstFullHour) / step) },
+              (_, i) => firstFullHour + i * step,
+            )
+              .filter((at) => weatherDateKey(new Date(at).toISOString(), timezone) === date)
+              .every((at) => hours.some((h) => Date.parse(h.time) === at)) &&
+            hours.length > 0 &&
+            hours.every(
+              (h, i) =>
+                finite(h.precipitationAmountMm) &&
+                finite(h.precipitationProbabilityPercent) &&
+                h.precipitationAmountMm >= 0 &&
+                h.precipitationAmountMm < 0.5 &&
+                !(h.precipitationAmountMm > 0 && h.precipitationProbabilityPercent === 0) &&
+                (i === 0 || Date.parse(h.time) - Date.parse(hours[i - 1]!.time) === step),
+            ) &&
+            hours.reduce((sum, h) => sum + h.precipitationAmountMm!, 0) < 1;
+          if (lightLocalRain) return false;
           return !timed || !dailyRisks.some((d) => d.key === r.key);
         }) ||
         (result.weatherAlerts ?? []).some(
