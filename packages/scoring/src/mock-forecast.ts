@@ -259,11 +259,15 @@ export function buildForecastInputFromNormalizedWeather(
   const profile = resolveProfile(query.name);
   const forecastRange = resolveForecastRange(query.horizon, options);
   const place: Place = {
-    id: query.photoSpotId ?? query.locationId ?? `mock-${profile.key}`,
+    id:
+      query.photoSpotId ??
+      query.locationId ??
+      (weather.isMock
+        ? `mock-${profile.key}`
+        : `coordinate-${query.latitudeWgs84}-${query.longitudeWgs84}`),
     name: query.name,
     countryCode: "CN",
-    adminArea: profile.adminArea,
-    locality: profile.locality,
+    ...(weather.isMock ? { adminArea: profile.adminArea, locality: profile.locality } : {}),
     coordinates: {
       latitude: query.latitudeWgs84,
       longitude: query.longitudeWgs84,

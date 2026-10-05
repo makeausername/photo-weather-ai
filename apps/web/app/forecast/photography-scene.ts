@@ -23,10 +23,12 @@ export function photographyScene(result: ForecastCalculationResult) {
   const known = mode !== "unknown";
   const subject = mountain
     ? "云海"
-    : mode === "hill" || type === "valley"
+    : (terrainModeUsesMountainSemantics(mode) && !["city", "lake"].includes(type)) ||
+        mode === "hill" ||
+        type === "valley"
       ? "云雾"
       : known
-        ? "晨雾 / 低云"
+        ? "晨雾"
         : "云雾";
   const lightSubject = mountain
     ? "山体光影"
@@ -48,7 +50,8 @@ export function photographyScene(result: ForecastCalculationResult) {
         : type === "valley"
           ? "谷地近景、树林和局部光影"
           : "近景、人文与局部明暗层次";
-  return { mountain, known, subject, lightSubject, backup };
+  const terrainIncomplete = subject === "云雾" && type === "unknown" && !finite(relief);
+  return { mountain, known, subject, lightSubject, backup, terrainIncomplete };
 }
 
 /** Lowland mist is not the mountain formation score with a different label. */
@@ -81,9 +84,19 @@ export function morningMistOutlook(rows: readonly Hour[]) {
     if (row.relativeHumidityPercent! < 80 || spread! > 4 || row.windSpeedMs! > 5) return "weak";
     return "uncertain";
   });
-  if (signals.includes("mist")) return "有近地雾气形成条件，是否起雾还看现场";
+  if (signals.includes("mist"))
+    return `部分时段有近地雾气形成条件${signals.at(-1) === "weak" ? "，临近日出信号减弱" : "，是否起雾待确认"}`;
   if (signals.includes("unknown")) return "资料不全，是否起雾待确认";
   if (signals.includes("rain")) return "降水可能压低能见度，不能直接当作起雾信号";
-  if (signals.every((signal) => signal === "weak")) return "晨雾机会偏低，可留意低云变化";
-  return "晨雾信号尚不明确，低云是否贴地待确认";
+  if (signals.every((signal) => signal === "weak")) return "晨雾机会偏低";
+  return "近地雾气信号尚不明确";
+}
+
+/** Cloud cover describes cloud amount, not whether the viewpoint sits inside it. */
+export function lowCloudOutlook(rows: readonly Hour[]) {
+  const amounts = rows.map((r) => r.cloudLowPercent).filter(finite);
+  if (!amounts.length) return "低云资料待确认";
+  if (amounts.some((v) => v >= 75)) return "部分时段低云较多，是否贴近机位待确认";
+  if (amounts.some((v) => v >= 40)) return "有低云变化，是否贴地待确认";
+  return amounts.length < rows.length ? "低云资料不全" : "低云信号偏弱";
 }
