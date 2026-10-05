@@ -1,5 +1,6 @@
 import {
   forecastRecommendationLabels,
+  terrainModeAllowsDefaultCloudSea,
   type AstroAnalysisResult,
   type CloudSeaAnalysisResult,
   type ForecastCalculationInput,
@@ -303,15 +304,23 @@ function applyTargetSpecificCaps(options: {
   } = options;
 
   if (target === "cloud_sea") {
-    if (
-      cloudSeaAnalysis.whiteoutRiskScore >= 76 ||
-      cloudSeaAnalysis.scoreCalibration.shouldBlockStrongRecommendation
-    ) {
+    const mountain = terrainModeAllowsDefaultCloudSea(cloudSeaAnalysis.terrainSupport.terrainMode);
+    const subject = mountain ? "云海" : "低云/云雾";
+    const obstruction = mountain ? "白墙" : "低云遮挡";
+    if (cloudSeaAnalysis.whiteoutRiskScore >= 76) {
       addCap(caps, riskReasonsZh, {
         key: "cloud_sea_whiteout",
         maxScore: cloudSeaAnalysis.whiteoutRiskScore >= 82 ? 46 : 54,
         mode: cloudSeaAnalysis.whiteoutRiskScore >= 82 ? "not_recommended" : "nearby_watch",
-        reasonZh: "白墙或安全风险偏高，云海形成信号不能直接转成专程推荐。",
+        reasonZh: `${obstruction}风险偏高，${subject}形成信号不能直接转成专程推荐。`,
+      });
+    }
+    if (cloudSeaAnalysis.scoreCalibration.shouldBlockStrongRecommendation) {
+      addCap(caps, uncertaintyReasonsZh, {
+        key: "cloud_sea_evidence_restriction",
+        maxScore: 54,
+        mode: "nearby_watch",
+        reasonZh: `当前形成或可拍证据不足以支持专程推荐。${cloudSeaAnalysis.scoreCalibration.capReasons.join(" ").replaceAll("云海", subject).replaceAll("白墙", obstruction)}`,
       });
     }
     if (cloudSeaAnalysis.confidenceLevel === "low") {
@@ -320,7 +329,7 @@ function applyTargetSpecificCaps(options: {
         maxScore: 64,
         mode: "wait_for_update",
         confidenceFloor: "low",
-        reasonZh: "云海关键字段置信度偏低，需要临近复核。",
+        reasonZh: `${subject}关键字段置信度偏低，需要临近复核。`,
       });
     }
     return;

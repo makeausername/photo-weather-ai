@@ -144,9 +144,6 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
   const compact =
     Number.isFinite(start) && Number.isFinite(end) ? end - start > 48 * 3600_000 : dates.length > 2;
   const flags = prioritizeForecastRisks(real ? result.riskFlags ?? [] : []);
-  const severe =
-    flags.some((r) => r.level === "high") ||
-    (result.weatherAlerts ?? []).some((a) => a.level === "red" || a.level === "orange");
   const uncertain =
     !real ||
     result.weatherEvidenceStatus === "insufficient" ||
@@ -156,10 +153,23 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
   // available hourly weather evidence for sunrise, low clouds or morning mist.
   const tripUncertain =
     uncertain || ["wait_for_update", "data_insufficient"].includes(result.decisionMode ?? "");
-  const noTrip =
-    severe ||
+  const globalTripRestricted =
     result.decisionMode === "not_recommended" ||
     result.finalRecommendationLevel === "not_recommended";
+  // Timed risks affect their local dates only. Missing timing stays conservative;
+  // a whole-range decision is not evidence of dangerous weather on every day.
+  const overlapsDate = (date: string, from?: string, to?: string) => {
+    const fromMs = Date.parse(from ?? "");
+    const toMs = Date.parse(to ?? "");
+    if (Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs <= fromMs) return true;
+    const first = Number.isFinite(fromMs) ? fromMs : start;
+    const last = Number.isFinite(toMs) ? toMs : end;
+    return (
+      (!Number.isFinite(first) ||
+        weatherDateKey(new Date(first).toISOString(), timezone) <= date) &&
+      (!Number.isFinite(last) || weatherDateKey(new Date(last - 1).toISOString(), timezone) >= date)
+    );
+  };
   const hourOf = (time: string) =>
     Number(
       new Intl.DateTimeFormat("en-GB", {
@@ -245,12 +255,22 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       })
       .sort((a, b) => b.rank - a.rank);
     const best = candidates[0];
-    const daySevere = noTrip || daily?.riskFlags?.some((r) => r.level === "high");
+    const daySevere = Boolean(
+      daily?.riskFlags?.some(
+        (r) => r.level === "high" && overlapsDate(date, r.startTime, r.endTime),
+      ) ||
+        flags.some((r) => r.level === "high" && overlapsDate(date, r.startTime, r.endTime)) ||
+        (result.weatherAlerts ?? []).some(
+          (a) =>
+            (a.level === "red" || a.level === "orange") && overlapsDate(date, a.startsAt, a.endsAt),
+        ),
+    );
+    const dayRejected = daily?.dedicatedTripRecommendation === "不建议专程前往";
     const window = best
       ? `${hourOf(best.start) < 12 ? "上午" : "下午"} ${timeOf(best.start)}–${timeOf(best.end)}`
       : "暂无值得守候且资料完整的连续白天窗口";
     const score =
-      !tripUncertain && hours.length && hours.every(usable)
+      !uncertain && hours.length && hours.every(usable)
         ? daily?.practicalTripScore ?? daily?.score
         : undefined;
     const restrictedTrip =
@@ -267,6 +287,7 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       result.decisionMode === "nearby_watch";
     const allowed =
       !tripUncertain &&
+      !globalTripRestricted &&
       !daySevere &&
       !restrictedTrip &&
       !evidence.review &&
@@ -332,11 +353,13 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       !scene.mountain && (evidence.moisture || evidence.cloud) ? "（云雾信号有分歧，需复核）" : "";
     const recommendation = daySevere
       ? "❌ 不建议专程去，拍摄以安全近景为限"
-      : allowed
-        ? "✅ 适合安排拍摄，推荐抓住这个窗口"
-        : best && finite(score) && score >= 45
-          ? "⚠️ 普通题材可顺带拍，暂不建议为特殊天气专程去"
-          : "⚠️ 拍摄条件仍需观察，暂不推荐专程去";
+      : dayRejected
+        ? "❌ 当天条件不适合专程拍摄，可考虑其他日期"
+        : allowed
+          ? "✅ 适合安排拍摄，推荐抓住这个窗口"
+          : best && finite(score) && score >= 45
+            ? "⚠️ 普通题材可顺带拍，暂不建议为特殊天气专程去"
+            : "⚠️ 拍摄条件仍需观察，暂不推荐专程去";
     const previousHours = index
       ? rows.filter((r) => weatherDateKey(r.time, timezone) === dates[index - 1])
       : [];
@@ -367,6 +390,7 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       best,
       score,
       allowed: Boolean(allowed),
+      blocked: daySevere || dayRejected,
       dawn,
       dusk,
       sunrise,
@@ -380,7 +404,10 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       sunsetTimeKnown: Number.isFinite(Date.parse(astro?.sunset ?? "")),
     };
   });
-  const ranked = [...days].filter((d) => d.best).sort((a, b) => b.best!.rank - a.best!.rank);
+  const noTrip = days.length > 0 && days.every((d) => d.blocked);
+  const ranked = [...days]
+    .filter((d) => d.best && !d.blocked)
+    .sort((a, b) => b.best!.rank - a.best!.rank);
   const bestDay = ranked.find((d) => d.allowed) ?? ranked[0];
   const s = statistics(rows);
   const risk =

@@ -101,8 +101,8 @@ describe("Cloud Sea display data rolling horizon", () => {
 
   it("surfaces score calibration caps in score card, window card, action plan,", () => {
     const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
-    const capReason = "厚实多层云覆盖下开口稳定性不足，最终分数不按近满分处理。";
-    const capPhrase = "厚实多层云覆盖下开口稳定性不足，最终分数不按近满分处理";
+    const capReason = "开口稳定性中等，云层、能见度或降水资料仍有复核项，最终分数不按近满分处理。";
+    const capPhrase = capReason.replace(/。$/, "");
     const scoreCalibration: ForecastCalculationResult["cloudSeaAnalysis"]["scoreCalibration"] = {
       ...fixture.result.cloudSeaAnalysis.scoreCalibration,
       rawFormationScore: 92,

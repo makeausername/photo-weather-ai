@@ -281,6 +281,26 @@ describe("professional cloud sea and whiteout analysis V2", () => {
     expect(strongTerrain.terrainSupport.score).toBeGreaterThan(weakTerrain.terrainSupport.score);
   });
 
+  it("keeps lowland backup subjects free of invented mountain scenes", () => {
+    const result = analyzeCloudSea({
+      ...baseInput(),
+      terrainAnalysis: {
+        ...lowTerrainAnalysis,
+        terrainProfile: {
+          ...lowTerrainAnalysis.terrainProfile,
+          terrainType: "city",
+          elevationMeters: 3,
+          locationElevation: 3,
+          localReliefMeters: 10,
+          elevationDiff5km: 10,
+        },
+      },
+    });
+    expect(result.terrainSupport.terrainMode).toBe("urban_or_plain");
+    expect(JSON.stringify(result.backupPlans)).not.toMatch(/山路|山脊|层峦|无云海|谷地/);
+    expect(JSON.stringify(result.backupPlans)).toContain("近景");
+  });
+
   it("lowers confidence instead of faking precision when terrain is unknown", () => {
     const result = analyzeCloudSea(
       withCloudSeaWeather(

@@ -314,6 +314,48 @@ describe("forecast decision convergence", () => {
     expect(result.finalScore).toBeLessThanOrEqual(46);
   });
 
+  it("keeps the evidence cap without inventing high whiteout risk", () => {
+    const base = calculateForecast(
+      reliableInput(buildMockForecastInput({ ...query, target: "cloud_sea" }, { now: fixedNow })),
+    );
+    const result = convergeForTarget("cloud_sea", {
+      cloudSeaAnalysis: {
+        whiteoutRiskScore: 24,
+        scoreCalibration: {
+          ...base.cloudSeaAnalysis!.scoreCalibration,
+          shouldBlockStrongRecommendation: true,
+          capReasons: ["多源低云或降水判断存在分歧，推荐强度下调。"],
+        },
+      },
+    });
+    expect(result.appliedCaps).not.toContain("cloud_sea_whiteout");
+    expect(result.appliedCaps).toContain("cloud_sea_evidence_restriction");
+    expect(result.riskReasonsZh.join(" ")).not.toContain("白墙或安全风险偏高");
+    expect(result.uncertaintyReasonsZh.join(" ")).toContain("多源低云或降水判断存在分歧");
+    expect(result.finalScore).toBeLessThanOrEqual(54);
+    expect(result.decisionMode).not.toBe("strong_go");
+  });
+
+  it("uses lowland terms in the final evidence explanation", () => {
+    const base = calculateForecast(
+      reliableInput(buildMockForecastInput({ ...query, target: "cloud_sea" }, { now: fixedNow })),
+    );
+    const result = convergeForTarget("cloud_sea", {
+      cloudSeaAnalysis: {
+        whiteoutRiskScore: 24,
+        confidenceLevel: "low",
+        terrainSupport: { ...base.cloudSeaAnalysis!.terrainSupport, terrainMode: "urban_or_plain" },
+        scoreCalibration: {
+          ...base.cloudSeaAnalysis!.scoreCalibration,
+          shouldBlockStrongRecommendation: true,
+          capReasons: ["云海形成证据不足。"],
+        },
+      },
+    });
+    expect(result.uncertaintyReasonsZh.join(" ")).toContain("低云/云雾形成证据不足");
+    expect(result.uncertaintyReasonsZh.join(" ")).not.toMatch(/云海|白墙/);
+  });
+
   it("treats missing terrain clearance as uncertainty, not as clear sky", () => {
     const result = convergeForTarget("astro", {
       astroAnalysis: {

@@ -76,6 +76,58 @@ function buildContext(rows: readonly CloudSeaWindowRiskHourlyRow[]) {
 }
 
 describe("buildCloudSeaWindowCenteredRiskContext", () => {
+  it.each([
+    ["03", "preWindowRainImpact"],
+    ["05", "duringWindowRainImpact"],
+    ["08", "postWindowRainImpact"],
+    ["12", "outsideWindowRainImpact"],
+  ] as const)("keeps missing and probability-only rain distinct at %s", (hour, key) => {
+    const time = `2026-06-05T${hour}:00:00+08:00`;
+    for (const [amount, probability] of [
+      [null, null],
+      [0, null],
+      [null, 0],
+    ] as const) {
+      const context = buildContext([
+        row({ time, precipitationAmountMm: amount, precipitationProbabilityPercent: probability }),
+      ]);
+      const impact = context[key];
+      expect(impact.impactLevel).toBe("unknown");
+      expect(impact.shouldCapScore).toBe(false);
+      expect(impact.riskLabelZh).toContain("待确认");
+      expect(impact.summaryZh + impact.actionAdviceZh).not.toMatch(
+        /有小雨|有降水概率信号|可带来水汽|降水主要在/,
+      );
+    }
+    const zero = buildContext([
+      row({ time, precipitationAmountMm: 0, precipitationProbabilityPercent: 0 }),
+    ])[key];
+    expect(zero.impactLevel).toBe("none");
+    const probability = buildContext([
+      row({ time, precipitationAmountMm: 0, precipitationProbabilityPercent: 80 }),
+    ])[key];
+    expect(probability.riskLabelZh).toContain("概率");
+    expect(probability.actionAdviceZh).not.toMatch(/有小雨|带来水汽|轻微降水扰动/);
+    const rain = buildContext([
+      row({ time, precipitationAmountMm: 3, precipitationProbabilityPercent: 90 }),
+    ])[key];
+    expect(rain.impactLevel).toBe("high");
+    expect(rain.shouldCapScore).toBe(key === "duringWindowRainImpact");
+  });
+  it("does not use one dry hour to declare a partially missing window dry", () => {
+    const context = buildContext([
+      row(),
+      row({
+        time: "2026-06-05T06:00:00+08:00",
+        precipitationAmountMm: null,
+        precipitationProbabilityPercent: null,
+      }),
+    ]);
+    expect(context.duringWindowRainImpact.impactLevel).toBe("unknown");
+    expect(context.windowOpeningConfidence).not.toBe("high");
+    expect(context.openingConfidenceReasonZh).toContain("资料不足");
+    expect(context.actionAdviceZh).toContain("待确认");
+  });
   it("distinguishes a probability signal with zero rain from measurable rainfall", () => {
     const context = buildContext([
       row({ precipitationAmountMm: 0, precipitationProbabilityPercent: 80 }),

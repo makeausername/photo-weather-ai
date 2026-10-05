@@ -97,6 +97,7 @@ type WindowRows = {
 };
 
 type RainStats = {
+  readonly complete: boolean;
   readonly hasAmountData: boolean;
   readonly hasProbabilityData: boolean;
   readonly maxProbabilityPercent?: number;
@@ -186,6 +187,7 @@ export function buildCloudSeaWindowCenteredRiskContext(
   const temperaturePreparationLevel = classifyTemperaturePreparation(input);
   const displayTemperatureBasisValue = resolveDisplayTemperatureBasis(input);
   const scoreCapReasons = buildScoreCapReasons({
+    thickMultiLayerOvercast: cloudStats.thickMultiLayerOvercast,
     windowOpeningConfidence,
     duringWindowRainImpact,
     whiteoutReviewLevel,
@@ -324,13 +326,13 @@ function buildRainImpact(
     return emptyRainImpact(timing, noRainLabelForTiming(timing));
   }
   const scoreCap = scoreCapForRain(timing, impactLevel);
-  const riskLabelZh = rainRiskLabel(timing, impactLevel);
+  const riskLabelZh = rainRiskLabel(timing, impactLevel, stats);
   return {
     timing,
     impactLevel,
     riskLabelZh,
     summaryZh: rainSummary(timing, impactLevel, stats),
-    actionAdviceZh: rainActionAdvice(timing, impactLevel),
+    actionAdviceZh: rainActionAdvice(timing, impactLevel, stats),
     equipmentAdviceZh: rainEquipmentAdvice(timing, impactLevel),
     maxProbabilityPercent: stats.maxProbabilityPercent ?? null,
     maxAmountMm: stats.maxAmountMm ?? null,
@@ -363,6 +365,10 @@ function summarizeRainRows(rows: readonly CloudSeaWindowRiskHourlyRow[]): RainSt
       : undefined;
 
   return {
+    complete:
+      rows.length > 0 &&
+      amountValues.length === rows.length &&
+      probabilityValues.length === rows.length,
     hasAmountData: amountValues.length > 0,
     hasProbabilityData: probabilityValues.length > 0,
     maxProbabilityPercent:
@@ -382,7 +388,7 @@ function classifyRainImpactLevel(stats: RainStats): CloudSeaWindowRainImpactLeve
   const total = stats.totalAmountMm ?? 0;
   const maxHourly = stats.maxHourlyAmountMm ?? 0;
   if (total <= 0 && maxHourly <= 0 && probability < 30) {
-    return "none";
+    return stats.complete ? "none" : "unknown";
   }
   if (
     total >= 3 ||
@@ -491,7 +497,8 @@ function classifyOpeningConfidence(input: {
     layerWeak ||
     basisWeak ||
     input.duringWindowRainImpact.impactLevel === "low" ||
-    input.duringWindowRainImpact.impactLevel === "trace"
+    input.duringWindowRainImpact.impactLevel === "trace" ||
+    input.duringWindowRainImpact.impactLevel === "unknown"
   ) {
     return "medium";
   }
@@ -582,6 +589,7 @@ function classifyTemperaturePreparation(
 }
 
 function buildScoreCapReasons(input: {
+  readonly thickMultiLayerOvercast: boolean;
   readonly windowOpeningConfidence: CloudSeaConfidenceLevel;
   readonly duringWindowRainImpact: CloudSeaWindowRainImpact;
   readonly whiteoutReviewLevel: CloudSeaWhiteoutReviewLevel;
@@ -592,7 +600,11 @@ function buildScoreCapReasons(input: {
   const reasons: string[] = [];
   const mediumUncertainties: string[] = [];
   if (input.windowOpeningConfidence === "medium") {
-    reasons.push("开口稳定性中等。厚实多层云覆盖下开口稳定性不足，最终分数不按近满分处理。");
+    reasons.push(
+      input.thickMultiLayerOvercast
+        ? "开口稳定性中等。厚实多层云覆盖下开口稳定性不足，最终分数不按近满分处理。"
+        : "开口稳定性中等，云层、能见度或降水资料仍有复核项，最终分数不按近满分处理。",
+    );
     mediumUncertainties.push("opening");
   }
   if (input.windowOpeningConfidence === "low") {
@@ -671,6 +683,12 @@ function rainSummary(
     ? `概率 ${Math.round(stats.maxProbabilityPercent ?? 0)}%`
     : "概率缺测";
   const levelText = rainImpactLevelLabel(impactLevel);
+  if (impactLevel === "unknown") {
+    return `${rainTimingLabel(timing)}降水待确认（${probabilityText}，${amountText}），资料不足，不能判断有雨或无雨。`;
+  }
+  if ((stats.maxAmountMm ?? 0) <= 0) {
+    return `${rainTimingLabel(timing)}有降水概率信号（${probabilityText}，${amountText}），尚未确认可计量雨量，需复核短临预报。`;
+  }
   if (timing === "pre_window") {
     return (stats.maxAmountMm ?? 0) >= 0.1
       ? `窗口前有${levelText}降水信号（${probabilityText}，${amountText}），可补充水汽，但需复核是否转弱和开口。`
@@ -693,9 +711,14 @@ function rainSummary(
 function rainActionAdvice(
   timing: CloudSeaWindowPrecipitationTiming,
   impactLevel: CloudSeaWindowRainImpactLevel,
+  stats: RainStats,
 ): string {
+  if (impactLevel === "unknown")
+    return `${rainTimingLabel(timing)}降水待确认，先补查短临预报，暂不据此判断水汽补充或雨势变化。`;
+  if ((stats.maxAmountMm ?? 0) <= 0)
+    return `${rainTimingLabel(timing)}仅有降水概率信号，雨量尚未确认，先复核雷达再决定是否等待。`;
   if (timing === "pre_window") {
-    return "窗口前有小雨或局地扰动，可带来水汽，但需复核是否转弱和开口。";
+    return "窗口前有降水信号，可补充水汽，但需复核雨势和开口，不能据此保证起雾。";
   }
   if (timing === "during_window") {
     return rainImpactRank(impactLevel) >= 4
@@ -715,6 +738,8 @@ function rainEquipmentAdvice(
   timing: CloudSeaWindowPrecipitationTiming,
   impactLevel: CloudSeaWindowRainImpactLevel,
 ): string {
+  if (impactLevel === "unknown")
+    return "降水待确认，轻便雨具和镜头布备用，出发前复核后再调整装备。";
   const strong = rainImpactRank(impactLevel) >= 4;
   if (timing === "during_window" && strong) {
     return "准备防雨、防滑、镜头防水和备用题材。";
@@ -737,6 +762,9 @@ function windowActionAdvice(input: {
   readonly whiteoutReviewLevel: CloudSeaWhiteoutReviewLevel;
   readonly cloudTopReviewNeed: boolean;
 }): string {
+  if (input.duringWindowRainImpact.impactLevel === "unknown") {
+    return `${input.duringWindowRainImpact.actionAdviceZh} ${openingFollowup(input.windowOpeningConfidence, input.cloudTopReviewNeed)}`;
+  }
   if (input.duringWindowRainImpact.impactLevel === "high") {
     return `${input.duringWindowRainImpact.actionAdviceZh} 同时复核开口稳定性和白墙风险。`;
   }
@@ -780,6 +808,9 @@ function openingReason(input: {
   readonly duringWindowRainImpact: CloudSeaWindowRainImpact;
   readonly whiteoutReviewLabelZh: string;
 }): string {
+  if (input.duringWindowRainImpact.impactLevel === "unknown") {
+    return "主窗口降水资料不足，开口稳定性仍需复核。";
+  }
   if (input.windowOpeningConfidence === "high") {
     return "主窗口开口信号较好，总云未完全饱和，且降水未直接覆盖窗口。";
   }
@@ -863,7 +894,10 @@ function rowHasRainSignal(row: CloudSeaWindowRiskHourlyRow): boolean {
 function rainRiskLabel(
   timing: CloudSeaWindowPrecipitationTiming,
   impactLevel: CloudSeaWindowRainImpactLevel,
+  stats: RainStats,
 ): string {
+  if (impactLevel === "unknown") return `${rainTimingLabel(timing)}降水待确认`;
+  if ((stats.maxAmountMm ?? 0) <= 0) return `${rainTimingLabel(timing)}降水概率待复核`;
   if (timing === "pre_window") {
     return rainImpactRank(impactLevel) >= 4 ? "窗口前明显降水" : "窗口前局地扰动";
   }
@@ -881,6 +915,18 @@ function rainRiskLabel(
     return "窗口外降水";
   }
   return "降水待复核";
+}
+
+function rainTimingLabel(timing: CloudSeaWindowPrecipitationTiming): string {
+  return timing === "pre_window"
+    ? "窗口前"
+    : timing === "during_window"
+      ? "主窗口内"
+      : timing === "post_window"
+        ? "窗口后"
+        : timing === "outside_window"
+          ? "窗口外"
+          : "当前时段";
 }
 
 function noRainLabelForTiming(timing: CloudSeaWindowPrecipitationTiming): string {

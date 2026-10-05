@@ -65,13 +65,84 @@ function forecast(count = 2): ForecastCalculationResult {
   };
 }
 describe("photography conclusion", () => {
+  it.each([1, 2, 3, 7])("scopes timed rain to its date across %i forecast days", (count) => {
+    const result = forecast(count);
+    const model = buildPhotographyOutlook({
+      ...result,
+      decisionMode: "not_recommended",
+      finalRecommendationLevel: "not_recommended",
+      riskFlags: [
+        {
+          key: "precipitation",
+          label: "强降水",
+          level: "high",
+          description: "",
+          startTime: "2026-05-20T03:00:00Z",
+          endTime: "2026-05-20T16:00:00Z",
+        },
+      ],
+    });
+    expect(model.days[0]!.blocked).toBe(true);
+    expect(model.days.slice(1).every((d) => !d.blocked)).toBe(true);
+    expect(model.days.every((d) => !d.allowed)).toBe(true);
+    expect(model.conclusion[0]).toContain(count === 1 ? "❌" : "⚠️");
+    if (count > 1) expect(model.conclusion[1]).not.toContain("5月20日");
+  });
+  it("keeps overnight alerts on both affected dates but lets an expired alert end", () => {
+    const result = forecast(3);
+    const model = buildPhotographyOutlook({
+      ...result,
+      weatherAlerts: [
+        {
+          id: "rain",
+          title: "暴雨橙色预警",
+          description: "",
+          level: "orange",
+          startsAt: "2026-05-20T23:00:00+08:00",
+          endsAt: "2026-05-21T01:00:00+08:00",
+        },
+      ],
+    });
+    expect(model.days.map((d) => d.blocked)).toEqual([true, true, false]);
+    expect(model.conclusion[1]).toContain("5月22日");
+  });
+  it("does not call a daily trip rejection a physical safety emergency", () => {
+    const result = forecast(1);
+    const model = buildPhotographyOutlook({
+      ...result,
+      dailySummaries: result.dailySummaries.map((d) => ({
+        ...d,
+        dedicatedTripRecommendation: "不建议专程前往",
+      })),
+    });
+    expect(model.days[0]!.lines.join(" ")).toContain("当天条件不适合");
+    expect(model.days[0]!.lines.join(" ")).not.toContain("安全近景");
+  });
+  it.each([1, 2, 3, 7])(
+    "preserves valid daily scores during trip uncertainty over %i days",
+    (count) => {
+      const result = forecast(count);
+      const model = buildPhotographyOutlook({
+        ...result,
+        decisionMode: "wait_for_update",
+        professionalHourlyData: result.professionalHourlyData!.map((r) => ({
+          ...r,
+          visibilityMeters: r.time.includes("2026-05-20") ? null : r.visibilityMeters,
+        })),
+      });
+      expect(model.days[0]!.score).toBeUndefined();
+      expect(model.days.slice(1).every((d) => d.score === 78)).toBe(true);
+      expect(model.days.every((d) => !d.allowed)).toBe(true);
+    },
+  );
   it("keeps usable weather conclusions when only the trip decision needs an update", () => {
     const result = forecast(3);
     const model = buildPhotographyOutlook({ ...result, decisionMode: "wait_for_update" });
     expect(model.days[0]!.sunrise).toContain("有望露面");
     expect(model.days[0]!.lines.join(" ")).not.toContain("天气资料不足");
     expect(model.days.every((d) => !d.allowed)).toBe(true);
-    expect(model.conclusion[0]).toContain("观望");
+    expect(model.conclusion[0]).toContain("⚠️");
+    expect(model.days.every((d) => d.score === 78)).toBe(true);
     expect(model.days.every((d) => d.lines.length <= 6)).toBe(true);
   });
   it("keeps every selected window inside an exact non-hour forecast boundary", () => {
@@ -449,7 +520,9 @@ describe("photography conclusion", () => {
       })),
     ]) {
       const model = buildPhotographyOutlook({ ...result, dailySummaries: daily });
-      expect(model.conclusion[0]).toContain("⚠️");
+      expect(model.conclusion[0]).toContain(
+        daily.every((d) => d.dedicatedTripRecommendation === "不建议专程前往") ? "❌" : "⚠️",
+      );
       expect(model.days.every((d) => !d.allowed && !d.lines.join(" ").includes("✅"))).toBe(true);
       expect(model.days[0]!.lines.join(" ")).toContain("参考窗口");
     }
