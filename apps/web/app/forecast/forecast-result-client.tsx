@@ -439,7 +439,7 @@ export function ForecastDecisionLoadingState({
       }}
       info={{
         title: "分析基础",
-        description: "先看降水与风险，再按日期查看逐小时天气和完整指标。",
+        description: "先看是否值得去，再按日期选择拍摄题材与时段。",
       }}
     />
   );
@@ -540,7 +540,7 @@ export function ForecastDecisionErrorState({
       }}
       info={{
         title: "分析基础",
-        description: "先看降水与风险，再按日期查看逐小时天气和完整指标。",
+        description: "先看是否值得去，再按日期选择拍摄题材与时段。",
       }}
     />
   );

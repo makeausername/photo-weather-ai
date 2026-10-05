@@ -5,6 +5,7 @@ import type { ForecastCalculationResult } from "@photo-weather/shared";
 import { cloudSeaRegressionFixture } from "./__tests__/fixtures/cloudSeaRegressionFixtures";
 import { buildPhotographyOutlook } from "./photography-outlook";
 import { PhotographyOutlook } from "./photography-outlook-view";
+import { photographyScene } from "./photography-scene";
 
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
 
@@ -82,7 +83,7 @@ describe("photography conclusion", () => {
     const model = buildPhotographyOutlook(forecast());
     expect(model.days[0]!.sunrise).toContain("有望露面");
     expect(model.days[0]!.dusk).toBe("机会偏低");
-    expect(model.days[0]!.lines.join(" ")).toContain("云海概率：机会较好");
+    expect(model.days[0]!.lines.join(" ")).toContain("云海：机会较好");
     expect(model.days[0]!.lines.join(" ")).not.toContain("75%");
   });
   it("leaves uncovered sunrise and missing weather uncertain despite high scores", () => {
@@ -114,6 +115,7 @@ describe("photography conclusion", () => {
     const result = forecast();
     const stale = buildPhotographyOutlook({ ...result, weatherDataFreshness: "stale" });
     expect(stale.conclusion[0]).toContain("⚠️");
+    expect(stale.conclusion[0]).not.toContain("适合就近");
     expect(stale.days.every((d) => !d.allowed)).toBe(true);
     const demo = buildPhotographyOutlook({ ...result, isMock: true });
     expect(demo.days[0]!.sunrise).toBe("不确定");
@@ -152,7 +154,7 @@ describe("photography conclusion", () => {
     expect(model.clothing.join(" ")).toContain("雨具");
     expect(model.clothing.join(" ")).toContain("袖口");
     expect(model.shooting[0]).toContain("雾散");
-    expect(model.shooting[1]).toContain("雾中氛围");
+    expect(model.shooting[1]).toContain("确有雾气时");
     expect(model.conclusion[0]).not.toContain("✅");
   });
   it("groups UTC hours into the destination local date and preserves missing dates", () => {
@@ -174,5 +176,126 @@ describe("photography conclusion", () => {
     for (const heading of ["先说结论", "按日期看", "怎么拍 / 怎么选", "穿衣指南", "风险提醒"])
       expect(html).toContain(heading);
     expect(html).not.toMatch(/<table|role="tab"|专业数据|总云量|露点/);
+  });
+  it("uses mist and local subjects for lowlands, hills, lakes and valleys", () => {
+    for (const [type, elevation, relief, subject, detail] of [
+      ["city", 0, 0, "晨雾 / 低云", "建筑"],
+      ["lake", 15, 10, "晨雾 / 低云", "水面"],
+      ["valley", 250, 500, "云雾", "谷地"],
+      ["slope", 400, 200, "云雾", "坡地"],
+      ["lake", 2500, 0, "晨雾 / 低云", "水面"],
+      ["unknown", 0, 0, "晨雾 / 低云", "近景"],
+    ] as const) {
+      const result = forecast();
+      const profile = {
+        ...result.terrainAnalysis.terrainProfile,
+        terrainType: type,
+        locationElevation: elevation,
+        elevationMeters: elevation,
+        localReliefMeters: relief,
+        elevationDiff5km: relief,
+      };
+      const model = buildPhotographyOutlook({
+        ...result,
+        terrainAnalysis: { ...result.terrainAnalysis, terrainProfile: profile },
+      });
+      const text = [...model.days.flatMap((d) => d.lines), ...model.shooting, ...model.risks].join(
+        " ",
+      );
+      expect(text).toContain(subject);
+      expect(text).toContain(detail);
+      expect(text).not.toMatch(/云海|山体|山路/);
+    }
+  });
+  it("does not infer a mountain scene from a high place name or missing terrain", () => {
+    const result = forecast();
+    const profile = {
+      ...result.terrainAnalysis.terrainProfile,
+      terrainType: "unknown" as const,
+      elevationMeters: null,
+      locationElevation: null,
+      localReliefMeters: null,
+      elevationDiff5km: null,
+      nearbyValleyElevationMeters: null,
+    };
+    const unknown = {
+      ...result,
+      place: { ...result.place, name: "云海山顶" },
+      terrainAnalysis: { ...result.terrainAnalysis, terrainProfile: profile },
+    };
+    expect(photographyScene(unknown).mountain).toBe(false);
+    expect(buildPhotographyOutlook(unknown).days[0]!.lines[1]).toContain("待确认");
+    expect(
+      photographyScene({ ...result, terrainAnalysis: { ...result.terrainAnalysis, isMock: true } })
+        .mountain,
+    ).toBe(false);
+  });
+  it("derives lowland mist from actual morning conditions, not the cloud-sea score", () => {
+    const result = forecast();
+    const terrain = {
+      ...result.terrainAnalysis,
+      terrainProfile: {
+        ...result.terrainAnalysis.terrainProfile,
+        terrainType: "city" as const,
+        elevationMeters: 5,
+        locationElevation: 5,
+        localReliefMeters: 0,
+      },
+    };
+    const mist = {
+      ...result,
+      terrainAnalysis: terrain,
+      professionalHourlyData: result.professionalHourlyData!.map((r) => ({
+        ...r,
+        relativeHumidityPercent: 96,
+        dewPointSpreadC: 1,
+        windSpeedMs: 1,
+        visibilityMeters: 3000,
+      })),
+    };
+    expect(buildPhotographyOutlook(mist).days[0]!.lines[1]).toContain("有近地雾气形成条件");
+    const dry = {
+      ...mist,
+      professionalHourlyData: mist.professionalHourlyData.map((r) => ({
+        ...r,
+        relativeHumidityPercent: 50,
+        dewPointSpreadC: 8,
+      })),
+    };
+    expect(buildPhotographyOutlook(dry).days[0]!.lines[1]).toContain("晨雾机会偏低");
+    const rain = {
+      ...mist,
+      professionalHourlyData: mist.professionalHourlyData.map((r) => ({
+        ...r,
+        precipitationAmountMm: 2,
+      })),
+    };
+    expect(buildPhotographyOutlook(rain).days[0]!.lines[1]).toContain("不能直接当作起雾信号");
+  });
+  it("keeps a 52-point or explicitly cautious day from receiving a green trip recommendation", () => {
+    const result = forecast();
+    for (const daily of [
+      result.dailySummaries.map((d) => ({ ...d, practicalTripScore: 52 })),
+      result.dailySummaries.map((d) => ({
+        ...d,
+        practicalTripScore: 90,
+        dedicatedTripRecommendation: "不建议专程前往" as const,
+      })),
+    ]) {
+      const model = buildPhotographyOutlook({ ...result, dailySummaries: daily });
+      expect(model.conclusion[0]).toContain("⚠️");
+      expect(model.days.every((d) => !d.allowed && !d.lines.join(" ").includes("✅"))).toBe(true);
+      expect(model.days[0]!.lines.join(" ")).toContain("参考窗口");
+    }
+  });
+  it("explains events outside the selected forecast range rather than calling them missing", () => {
+    const result = forecast(1);
+    const model = buildPhotographyOutlook({
+      ...result,
+      forecastStart: "2026-05-20T09:00:00+08:00",
+      forecastEnd: "2026-05-20T17:00:00+08:00",
+    });
+    expect(model.days[0]!.lines[2]).toContain("已过本次预报起点");
+    expect(model.days[0]!.lines[3]).toContain("本次范围之外");
   });
 });
