@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import type { ProfessionalHourlyDataPoint } from "@photo-weather/shared";
+import {
+  cloudConsistentWeatherText,
+  type ProfessionalHourlyDataPoint,
+} from "@photo-weather/shared";
 import { StickyDataScroller } from "../../components/sticky-data-scroller";
 import { hourlyTableNumber } from "./professional-hourly-columns";
 import { weatherDateKey, providerNeutralProfessionalWeatherText } from "./general-weather-data";
@@ -44,7 +47,13 @@ export function weatherMatrixMetrics(
           {
             key: "weather",
             label: "天气",
-            value: (h: Hour) => providerNeutralProfessionalWeatherText(h.weatherText) || "—",
+            value: (h: Hour) =>
+              cloudConsistentWeatherText(providerNeutralProfessionalWeatherText(h.weatherText), [
+                h.cloudTotalPercent,
+                h.cloudLowPercent,
+                h.cloudMidPercent,
+                h.cloudHighPercent,
+              ]) || "—",
           },
         ]
       : []),

@@ -174,11 +174,65 @@ describe("forecast request client", () => {
   });
 
   it("bounds polling when a calculation never completes", async () => {
-    const fetcher = vi.fn(async () => jsonResponse({ status: "processing", retryAfterMs: 1 }, 202));
-    await expect(
-      requestForecastCalculation(baseQuery, { fetcher, retryCount: 2 }),
-    ).rejects.toMatchObject({ code: "calculation_pending_timeout" });
-    expect(fetcher).toHaveBeenCalledTimes(90);
+    vi.useFakeTimers();
+    try {
+      const fetcher = vi.fn(async () =>
+        jsonResponse({ status: "processing", retryAfterMs: 1 }, 202),
+      );
+      const checked = expect(
+        requestForecastCalculation(baseQuery, { fetcher, retryCount: 2 }),
+      ).rejects.toMatchObject({ code: "calculation_pending_timeout" });
+      await vi.advanceTimersByTimeAsync(90_000);
+      await checked;
+      expect(fetcher).toHaveBeenCalledTimes(90);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it.each(["72h", "7d"] as const)(
+    "keeps the same %s calculation alive beyond 90 seconds",
+    async (horizon) => {
+      vi.useFakeTimers();
+      try {
+        const expected = resultForTarget("general");
+        const started = Date.now();
+        const fetcher = vi.fn(async () =>
+          Date.now() - started < 100_000
+            ? jsonResponse({ status: "processing", retryAfterMs: 1000 }, 202)
+            : jsonResponse(expected),
+        );
+        const pending = requestForecastCalculation(
+          { ...baseQuery, horizon },
+          { fetcher, retryCount: 0 },
+        );
+        await vi.advanceTimersByTimeAsync(100_000);
+        expect(await pending).toEqual(expected);
+        expect(fetcher).toHaveBeenCalledTimes(101);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it("bounds seven-day polling at three minutes and cleans up for a fresh retry", async () => {
+    vi.useFakeTimers();
+    try {
+      const query = { ...baseQuery, horizon: "7d" as const };
+      const fetcher = vi.fn(async () =>
+        jsonResponse({ status: "processing", retryAfterMs: 5000 }, 202),
+      );
+      const checked = expect(requestForecastCalculation(query, { fetcher })).rejects.toMatchObject({
+        code: "calculation_pending_timeout",
+      });
+      await vi.advanceTimersByTimeAsync(180_000);
+      await checked;
+      expect(fetcher).toHaveBeenCalledTimes(36);
+      fetcher.mockImplementation(async () => jsonResponse(resultForTarget("general")));
+      expect(await requestForecastCalculation(query, { fetcher })).toEqual(
+        resultForTarget("general"),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it("shows Retry-After in Chinese without immediately retrying a rate-limited query", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -557,13 +611,13 @@ describe("forecast request client", () => {
 
     const currentKey = sessionStorage
       .dumpKeys()
-      .find((key) => key.startsWith("photo_weather_forecast_calculation:v7:"));
+      .find((key) => key.startsWith("photo_weather_forecast_calculation:v8:"));
     expect(currentKey).toBeDefined();
     const currentRecord = sessionStorage.getItem(currentKey!);
     expect(currentRecord).not.toBeNull();
     sessionStorage.removeItem(currentKey!);
     sessionStorage.setItem(
-      currentKey!.replace(":v7:", ":v6:"),
+      currentKey!.replace(":v8:", ":v7:"),
       currentRecord!.replace('"version":7', '"version":6'),
     );
     clearForecastRequestClientCachesForTest();

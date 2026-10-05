@@ -7,6 +7,7 @@ import {
   type CloudSeaCloudBasisConsistencyContext,
 } from "./cloud-sea-cloud-basis-consistency.js";
 import type { CloudSeaPrecipitationSignalContext } from "./cloud-sea-precipitation-signal.js";
+import { terrainCloudSubject } from "./terrain-mode.js";
 import {
   buildCloudSeaWeatherVariableConsistencyContext,
   type CloudSeaWeatherVariableConsistencyContext,
@@ -104,8 +105,6 @@ const recommendationRank: Record<CloudSeaGuardRecommendationLevel, number> = {
   recommended_arrangement: 4,
   strong_special_trip: 5,
 };
-
-const mountainTerrainTypes = new Set(["high_mountain", "ridge", "summit", "mountain_platform"]);
 
 export function buildCloudSeaRecommendationGuard(
   input: CloudSeaRecommendationGuardInput,
@@ -670,46 +669,11 @@ function hasHighBlockingRisk(
 }
 
 function shouldDowngradeCloudSeaWordingForResult(result: ForecastCalculationResult): boolean {
-  return !isClassicCloudSeaEligibleForResult(result) && isLowElevationLikeResult(result);
+  return !isClassicCloudSeaEligibleForResult(result);
 }
 
 function isClassicCloudSeaEligibleForResult(result: ForecastCalculationResult): boolean {
-  const profile = result.terrainAnalysis.terrainProfile;
-  const support = result.cloudSeaAnalysis.terrainSupport;
-  const elevation =
-    finiteNumber(profile.locationElevation) ??
-    finiteNumber(profile.elevationMeters) ??
-    finiteNumber(support.selectedSpotElevationMeters);
-  const relief =
-    finiteNumber(profile.localReliefMeters) ??
-    finiteNumber(profile.elevationDiff5km) ??
-    finiteNumber(support.localReliefMeters);
-  const terrainType = String(profile.terrainType ?? support.terrainType ?? "");
-
-  return (
-    (elevation !== undefined && elevation >= 800) ||
-    (relief !== undefined && relief >= 500) ||
-    mountainTerrainTypes.has(terrainType)
-  );
-}
-
-function isLowElevationLikeResult(result: ForecastCalculationResult): boolean {
-  const profile = result.terrainAnalysis.terrainProfile;
-  const support = result.cloudSeaAnalysis.terrainSupport;
-  const elevation =
-    finiteNumber(profile.locationElevation) ??
-    finiteNumber(profile.elevationMeters) ??
-    finiteNumber(support.selectedSpotElevationMeters);
-  const relief =
-    finiteNumber(profile.localReliefMeters) ??
-    finiteNumber(profile.elevationDiff5km) ??
-    finiteNumber(support.localReliefMeters);
-  return (
-    support.terrainMode === "lowland" ||
-    support.terrainMode === "urban_or_plain" ||
-    support.terrainMode === "unknown" ||
-    (elevation !== undefined && elevation < 500 && (relief === undefined || relief < 300))
-  );
+  return terrainCloudSubject(result.terrainAnalysis.terrainProfile) === "云海";
 }
 
 function finiteNumber(value: number | null | undefined): number | undefined {

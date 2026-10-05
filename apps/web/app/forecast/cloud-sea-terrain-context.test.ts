@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildCloudSeaTerrainContext } from "./cloud-sea-terrain-context";
+import { buildCloudSeaRecommendationGuardForResult } from "@photo-weather/shared";
+import { cloudSeaRegressionFixture } from "./__tests__/fixtures/cloudSeaRegressionFixtures";
+import { photographyScene } from "./photography-scene";
+import { buildCloudSeaForecastViewModel } from "./forecast-result-view-model";
+import {
+  buildCloudSeaTerrainContextFromResult,
+  cloudSeaTerrainAwareText,
+} from "./cloud-sea-terrain-context";
 
 const genericHighMountainSpot = {
   elevationMeters: 1680,
@@ -30,6 +38,53 @@ const genericUnknownTerrainSpot = {
 } as const;
 
 describe("buildCloudSeaTerrainContext", () => {
+  it.each([3041, 3433, 3723])(
+    "keeps high unknown terrain consistent through both pages and the recommendation guard: %i m",
+    (elevationMeters) => {
+      const base = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase").result;
+      const result = {
+        ...base,
+        terrainAnalysis: {
+          ...base.terrainAnalysis,
+          isMock: false,
+          terrainProfile: {
+            ...base.terrainAnalysis.terrainProfile,
+            elevationMeters,
+            locationElevation: elevationMeters,
+            terrainType: "unknown" as const,
+            localReliefMeters: null,
+            elevationDiff5km: null,
+            nearbyValleyElevationMeters: null,
+          },
+        },
+      };
+      const context = buildCloudSeaTerrainContextFromResult(result);
+      expect(photographyScene(result).subject).toBe("云雾");
+      expect(context.vocabulary.subjectLabel).toBe("云雾");
+      expect(context.isClassicCloudSeaEligible).toBe(false);
+      expect(context.terrainClass).toBe("high_mountain");
+      expect(context.terrainNoteZh).toContain("周边高差待确认");
+      const view = buildCloudSeaForecastViewModel(result);
+      for (const copy of [
+        view.recommendationExplanation,
+        view.recommendationGuard,
+        view.displayData.recommendationCards,
+        view.displayData.currentNearTermWeather,
+      ]) {
+        expect(JSON.stringify(copy)).not.toContain("晨雾");
+      }
+      expect(cloudSeaTerrainAwareText("清晨云海形成，山顶云海可拍", context)).not.toMatch(
+        /云海|晨雾/,
+      );
+      expect(
+        buildCloudSeaRecommendationGuardForResult(result, {
+          cloudSeaScore: 95,
+          shootabilityScore: 95,
+          proposedRecommendationLabel: "强推荐专程",
+        }).isSpecialTripRecommended,
+      ).toBe(false);
+    },
+  );
   it("uses elevation, relief, and terrain type for classic mountain eligibility", () => {
     const context = buildCloudSeaTerrainContext(genericHighMountainSpot);
 
@@ -66,7 +121,8 @@ describe("buildCloudSeaTerrainContext", () => {
 
     expect(context.terrainClass).toBe("hill");
     expect(context.isClassicCloudSeaEligible).toBe(false);
-    expect(context.shouldDowngradeCloudSeaWording).toBe(false);
+    expect(context.shouldDowngradeCloudSeaWording).toBe(true);
+    expect(context.vocabulary.subjectLabel).toBe("云雾");
   });
 
   it("treats unknown terrain as conservative low-evidence context", () => {

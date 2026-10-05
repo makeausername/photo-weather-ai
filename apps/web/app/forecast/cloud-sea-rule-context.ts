@@ -16,6 +16,7 @@ import {
 } from "@photo-weather/shared";
 import {
   buildCloudSeaTerrainContextFromResult,
+  cloudSeaMistCopy,
   type CloudSeaTerrainContext,
 } from "./cloud-sea-terrain-context";
 
@@ -210,37 +211,40 @@ export function buildCloudSeaRecommendationGuardForRuleContext(
     analysis.watchableCloudSeaWindows[0];
   const formationScore = options.formationScore ?? analysis.formationScore;
 
-  return buildCloudSeaRecommendationGuard({
-    cloudSeaScore: options.cloudSeaScore ?? result.scores.cloudSea.score,
-    shootabilityScore: options.shootabilityScore ?? analysis.shootableScore,
-    formationScore,
-    whiteoutRiskScore: options.whiteoutRiskScore ?? analysis.whiteoutRiskScore,
-    proposedRecommendationLabel:
-      options.proposedRecommendationLabel ?? analysis.recommendationLabel,
-    terrainContext: {
-      shouldDowngradeCloudSeaWording: terrainContext.shouldDowngradeCloudSeaWording,
-      isClassicCloudSeaEligible: terrainContext.isClassicCloudSeaEligible,
-      terrainClass: terrainContext.terrainClass,
-    },
-    cloudLayerCompletenessContext: options.cloudLayerCompleteness,
-    cloudBasisConsistencyContext: options.cloudBasisConsistencyContext,
-    multiSourceAgreementContext:
-      options.multiSourceAgreementContext ??
-      result.weatherFusionSummary?.multiSourceAgreementContext ??
-      null,
-    weatherVariableConsistencyContext: options.weatherVariableConsistencyContext,
-    precipitationSignalContext:
-      options.precipitationSignalContext ??
-      options.weatherVariableConsistencyContext?.precipitationSignalContext,
-    bestWindow: bestWindow ?? null,
-    hasWindow: options.hasWindow ?? Boolean(bestWindow),
-    risks: result.riskFlags,
-    lowCloudSignalSupported:
-      options.lowCloudSignalSupported ??
-      (options.cloudLayerCompleteness.hasLowCloudLayer && formationScore >= 55),
-    mainTargetZh: terrainContext.shouldDowngradeCloudSeaWording ? "低云/晨雾" : "清晨云海",
-    bestWindowLabelZh: options.bestWindowLabelZh ?? bestWindow?.label,
-  });
+  return cloudSeaMistCopy(
+    buildCloudSeaRecommendationGuard({
+      cloudSeaScore: options.cloudSeaScore ?? result.scores.cloudSea.score,
+      shootabilityScore: options.shootabilityScore ?? analysis.shootableScore,
+      formationScore,
+      whiteoutRiskScore: options.whiteoutRiskScore ?? analysis.whiteoutRiskScore,
+      proposedRecommendationLabel:
+        options.proposedRecommendationLabel ?? analysis.recommendationLabel,
+      terrainContext: {
+        shouldDowngradeCloudSeaWording: terrainContext.shouldDowngradeCloudSeaWording,
+        isClassicCloudSeaEligible: terrainContext.isClassicCloudSeaEligible,
+        terrainClass: terrainContext.terrainClass,
+      },
+      cloudLayerCompletenessContext: options.cloudLayerCompleteness,
+      cloudBasisConsistencyContext: options.cloudBasisConsistencyContext,
+      multiSourceAgreementContext:
+        options.multiSourceAgreementContext ??
+        result.weatherFusionSummary?.multiSourceAgreementContext ??
+        null,
+      weatherVariableConsistencyContext: options.weatherVariableConsistencyContext,
+      precipitationSignalContext:
+        options.precipitationSignalContext ??
+        options.weatherVariableConsistencyContext?.precipitationSignalContext,
+      bestWindow: bestWindow ?? null,
+      hasWindow: options.hasWindow ?? Boolean(bestWindow),
+      risks: result.riskFlags,
+      lowCloudSignalSupported:
+        options.lowCloudSignalSupported ??
+        (options.cloudLayerCompleteness.hasLowCloudLayer && formationScore >= 55),
+      mainTargetZh: terrainContext.shouldDowngradeCloudSeaWording ? "低云/晨雾" : "清晨云海",
+      bestWindowLabelZh: options.bestWindowLabelZh ?? bestWindow?.label,
+    }),
+    terrainContext,
+  );
 }
 
 function buildCloudLayerRoleContext(

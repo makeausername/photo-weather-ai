@@ -55,6 +55,35 @@ export function terrainModeUsesMountainSemantics(mode: TerrainMode): boolean {
   return mode === "high_mountain" || mode === "mountain";
 }
 
+/** Absolute altitude alone does not establish a viewpoint above a cloud-filled valley. */
+export function terrainCloudSubject(input: TerrainModeInput): "云海" | "云雾" | "晨雾" {
+  const mode = classifyTerrainMode(input);
+  const type = input.terrainType ?? "unknown";
+  const elevation = finiteNumber(input.locationElevation) ?? finiteNumber(input.elevationMeters);
+  const valley = finiteNumber(input.nearbyValleyElevationMeters);
+  const relief =
+    finiteNumber(input.localReliefMeters) ??
+    finiteNumber(input.elevationDiff5km) ??
+    (elevation !== undefined && valley !== undefined ? elevation - valley : undefined);
+  const elevatedView =
+    ["summit", "ridge", "mountain_platform"].includes(type) ||
+    (relief !== undefined && relief >= 300);
+  if (
+    terrainModeUsesMountainSemantics(mode) &&
+    elevatedView &&
+    !["city", "lake", "valley"].includes(type)
+  )
+    return "云海";
+  if (
+    (terrainModeUsesMountainSemantics(mode) && !["city", "lake"].includes(type)) ||
+    mode === "hill" ||
+    type === "valley" ||
+    mode === "unknown"
+  )
+    return "云雾";
+  return "晨雾";
+}
+
 export function terrainModeUsesLowlandSemantics(mode: TerrainMode): boolean {
   return mode === "lowland" || mode === "urban_or_plain" || mode === "unknown";
 }

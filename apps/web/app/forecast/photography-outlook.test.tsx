@@ -65,6 +65,70 @@ function forecast(count = 2): ForecastCalculationResult {
   };
 }
 describe("photography conclusion", () => {
+  it.each([
+    "complete",
+    "rolling-start",
+    "missing-assessment",
+    "missing-hour",
+    "missing-rain",
+    "heavy-rain",
+    "high-wind",
+    "alert",
+  ])("handles an empty daily assessment after overnight rain: %s", (kind) => {
+    const result = forecast(2);
+    const rain = {
+      key: "precipitation",
+      label: "降水干扰",
+      level: "high" as const,
+      description: "",
+      startTime: "2026-05-20T13:00:00+08:00",
+      endTime: "2026-05-21T05:00:00+08:00",
+    };
+    const dailySummaries = result.dailySummaries.map((d, i) => ({
+      ...d,
+      practicalTripScore: i === 1 ? 52 : d.practicalTripScore,
+      dedicatedTripRecommendation: "仅作备选",
+      riskFlags: kind === "missing-assessment" ? undefined : [],
+    })) as unknown as typeof result.dailySummaries;
+    const model = buildPhotographyOutlook({
+      ...result,
+      dailySummaries,
+      forecastStart: kind === "rolling-start" ? "2026-05-20T12:30:32+08:00" : result.forecastStart,
+      riskFlags: [rain, ...(kind === "high-wind" ? [{ ...rain, key: "wind" }] : [])],
+      weatherAlerts:
+        kind === "alert"
+          ? [
+              {
+                id: "test",
+                title: "暴雨",
+                description: "",
+                level: "orange",
+                startsAt: rain.startTime,
+                endsAt: rain.endTime,
+              },
+            ]
+          : [],
+      professionalHourlyData: result
+        .professionalHourlyData!.filter(
+          (h) => !(kind === "missing-hour" && h.time === "2026-05-21T00:00:00+08:00"),
+        )
+        .map((h) => ({
+          ...h,
+          precipitationAmountMm:
+            kind === "missing-rain"
+              ? null
+              : kind === "heavy-rain"
+                ? 2
+                : Number(h.time.slice(11, 13)) < 5
+                  ? 0.1
+                  : 0,
+          precipitationProbabilityPercent: 80,
+        })),
+    });
+    expect(model.days[1]!.blocked).toBe(!["complete", "rolling-start"].includes(kind));
+    expect(model.days[1]!.score).toBe(kind === "missing-rain" ? undefined : 52);
+    if (kind === "complete") expect(model.days[1]!.lines.join(" ")).toContain("⚠️");
+  });
   it.each([2, 3, 7])(
     "uses each day's rain grade during an overnight event over %i days",
     (count) => {
@@ -335,6 +399,7 @@ describe("photography conclusion", () => {
           locationElevation: 3605,
           localReliefMeters: null,
           elevationDiff5km: null,
+          nearbyValleyElevationMeters: null,
         },
       },
     });

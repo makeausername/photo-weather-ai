@@ -28,7 +28,7 @@ import {
 } from "@photo-weather/calendar";
 import type { CloudSeaDisplayTemperatureContext } from "./cloud-sea-display-temperature";
 import type { CloudSeaRuleContext } from "./cloud-sea-rule-context";
-import type { CloudSeaTerrainContext } from "./cloud-sea-terrain-context";
+import { cloudSeaMistCopy, type CloudSeaTerrainContext } from "./cloud-sea-terrain-context";
 import type {
   CloudSeaActionPlanItem,
   CloudSeaDailyTrendItem,
@@ -253,19 +253,22 @@ export function buildCloudSeaDisplayData(
       cloudBasisConsistency,
       horizonWindow,
     });
-  const currentNearTermWeather = buildCurrentNearTermWeatherDisplay({
-    result: input.result,
-    terrainContext: input.terrainContext,
-    displayTemperatureContext: input.displayTemperatureContext,
-    precipitationSignalContext: displayPrecipitationSignalContext,
-    windowRiskContext,
-    weatherVariableConsistencyContext: input.ruleContext.weatherVariableConsistencyContext,
-    cloudLayerCompleteness,
-    cloudBasisConsistency,
-    anchorStart: nearTermStart,
-    anchorEnd: nearTermEnd,
-    rows: nearTermRows,
-  });
+  const currentNearTermWeather = cloudSeaMistCopy(
+    buildCurrentNearTermWeatherDisplay({
+      result: input.result,
+      terrainContext: input.terrainContext,
+      displayTemperatureContext: input.displayTemperatureContext,
+      precipitationSignalContext: displayPrecipitationSignalContext,
+      windowRiskContext,
+      weatherVariableConsistencyContext: input.ruleContext.weatherVariableConsistencyContext,
+      cloudLayerCompleteness,
+      cloudBasisConsistency,
+      anchorStart: nearTermStart,
+      anchorEnd: nearTermEnd,
+      rows: nearTermRows,
+    }),
+    input.terrainContext,
+  );
   const displayDataMeta = buildDisplayDataMeta({
     result: input.result,
     horizonWindow,

@@ -6,7 +6,8 @@ import {
   classifyTerrainMode,
   forecastRecommendationLabels,
   simplifyWeatherSummaryZh,
-  terrainModeUsesLowlandSemantics,
+  terrainCloudSubject,
+  cloudConsistentWeatherText,
   terrainModeUsesMountainSemantics,
   type AstroAnalysisResult,
   type AstroSummary,
@@ -415,7 +416,12 @@ function buildProfessionalHourlyData(
     const notesZh = professionalHourlyNotes(hour, cloudLayers, temperature, dewPointSpreadC);
     const rowForSignal = {
       time: hour.time,
-      weatherText: safeProfessionalWeatherText(hour),
+      weatherText: cloudConsistentWeatherText(safeProfessionalWeatherText(hour), [
+        cloudLayers.cloudTotalPercent,
+        cloudLayers.cloudLowPercent,
+        cloudLayers.cloudMidPercent,
+        cloudLayers.cloudHighPercent,
+      ]),
       cloudTotalPercent: cloudLayers.cloudTotalPercent,
       cloudHighPercent: cloudLayers.cloudHighPercent,
       cloudMidPercent: cloudLayers.cloudMidPercent,
@@ -447,7 +453,10 @@ function buildProfessionalHourlyData(
       time: hour.time,
       dateLabel: formatProfessionalDateLabel(hour.time, input.calendarBasis.timezone),
       timeLabel: formatProfessionalTimeLabel(hour.time, input.calendarBasis.timezone),
-      weatherCode: safeProfessionalWeatherCode(hour.weatherCode),
+      weatherCode:
+        rowForSignal.weatherText === "云量预报有分歧"
+          ? null
+          : safeProfessionalWeatherCode(hour.weatherCode),
       weatherText: rowForSignal.weatherText,
       cloudSeaSignal: signal.label,
       cloudSeaSignalLevel: signal.level,
@@ -1316,8 +1325,8 @@ export function calculateCloudSeaScore(
   input: ForecastCalculationInput,
   analysis: CloudSeaAnalysisResult = analyzeCloudSea(input),
 ): ForecastScore {
-  const terrainMode = classifyTerrainMode(input.terrainAnalysis.terrainProfile);
-  const label = terrainModeUsesLowlandSemantics(terrainMode) ? "晨雾/低云" : "云海";
+  const subject = terrainCloudSubject(input.terrainAnalysis.terrainProfile);
+  const label = subject === "晨雾" ? "晨雾/低云" : subject;
   return makeScore(
     "cloudSea",
     label,

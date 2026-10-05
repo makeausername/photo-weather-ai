@@ -1,5 +1,6 @@
 import {
   classifyTerrainMode,
+  terrainCloudSubject,
   type ElevationConfidence,
   type ForecastCalculationResult,
   type TerrainMode,
@@ -94,9 +95,8 @@ export type CloudSeaTerrainContext = {
   readonly recommendationCeiling: CloudSeaRecommendationCeiling;
   readonly preferredVocabulary: readonly string[];
   readonly vocabulary: CloudSeaTerrainVocabulary;
+  readonly subject?: "云海" | "云雾" | "晨雾";
 };
-
-const mountainTerrainTypes = new Set(["high_mountain", "ridge", "summit", "mountain_platform"]);
 
 const classicCloudSeaVocabulary: CloudSeaTerrainVocabulary = {
   heroTitleSuffix: "云海判断",
@@ -196,6 +196,25 @@ const downgradedCloudSeaVocabulary: CloudSeaTerrainVocabulary = {
   professionalUsageText: "用于核对低云、晨雾、遮挡和雨后开口。",
 };
 
+const mistText = (text: string) =>
+  text
+    .replace(/低云\s*\/\s*晨雾|低云或晨雾|低云、晨雾|低云与晨雾|低云，晨雾/g, "云雾")
+    .replace(/晨雾/g, "雾气");
+const mistVocabulary: CloudSeaTerrainVocabulary = {
+  ...(Object.fromEntries(
+    Object.entries(downgradedCloudSeaVocabulary).map(([key, value]) => [
+      key,
+      typeof value === "string" ? mistText(value) : value,
+    ]),
+  ) as CloudSeaTerrainVocabulary),
+  windowCategories: Object.fromEntries(
+    Object.entries(downgradedCloudSeaVocabulary.windowCategories).map(([key, value]) => [
+      key,
+      Object.fromEntries(Object.entries(value).map(([field, text]) => [field, mistText(text)])),
+    ]),
+  ) as CloudSeaTerrainVocabulary["windowCategories"],
+};
+
 const classicCloudSeaPreferredVocabulary = [
   "云海窗口",
   "云海形成",
@@ -221,23 +240,17 @@ export function buildCloudSeaTerrainContextFromResult(
   result: ForecastCalculationResult,
 ): CloudSeaTerrainContext {
   const profile = result.terrainAnalysis.terrainProfile;
-  const support = result.cloudSeaAnalysis.terrainSupport;
   const terrainDisplay = buildTerrainDisplayModel(result);
 
   return buildCloudSeaTerrainContext({
-    elevationMeters:
-      profile.locationElevation ?? profile.elevationMeters ?? support.selectedSpotElevationMeters,
+    elevationMeters: profile.locationElevation ?? profile.elevationMeters,
     locationElevation: profile.locationElevation,
-    surroundingReliefMeters:
-      profile.localReliefMeters ?? profile.elevationDiff5km ?? support.localReliefMeters,
-    nearbyValleyElevationMeters:
-      profile.nearbyValleyElevationMeters ?? support.nearbyValleyElevationMeters,
+    surroundingReliefMeters: profile.localReliefMeters ?? profile.elevationDiff5km,
+    nearbyValleyElevationMeters: profile.nearbyValleyElevationMeters,
     localReliefMeters: profile.localReliefMeters,
     elevationDiff5km: profile.elevationDiff5km,
-    terrainType: profile.terrainType ?? support.terrainType,
+    terrainType: profile.terrainType,
     elevationConfidence: profile.elevationConfidence,
-    terrainConfidence: support.confidence,
-    terrainMode: support.terrainMode,
     terrainDisplay,
   });
 }
@@ -265,26 +278,25 @@ export function buildCloudSeaTerrainContext(
       terrainType: isKnownTerrainType(terrainType) ? terrainType : "unknown",
       elevationConfidence: input.elevationConfidence ?? undefined,
     });
-  const mountainTypeEligible =
-    mountainTerrainTypes.has(terrainType) || mountainTerrainTypes.has(locationType);
-  const isClassicCloudSeaEligible =
-    (elevation !== undefined && elevation >= 800) ||
-    (surroundingRelief !== undefined && surroundingRelief >= 500) ||
-    mountainTypeEligible;
-  const shouldDowngradeCloudSeaWording =
-    !isClassicCloudSeaEligible &&
-    ((elevation !== undefined &&
-      elevation < 500 &&
-      (surroundingRelief === undefined || surroundingRelief < 300) &&
-      !mountainTypeEligible) ||
-      terrainMode === "lowland" ||
-      terrainMode === "urban_or_plain" ||
-      terrainMode === "unknown");
+  const subject = terrainCloudSubject({
+    elevationMeters: elevation,
+    localReliefMeters: surroundingRelief,
+    terrainType: isKnownTerrainType(terrainType)
+      ? terrainType
+      : isKnownTerrainType(locationType)
+        ? locationType
+        : "unknown",
+  });
+  const isClassicCloudSeaEligible = subject === "云海";
+  const shouldDowngradeCloudSeaWording = !isClassicCloudSeaEligible;
   const vocabulary = shouldDowngradeCloudSeaWording
-    ? downgradedCloudSeaVocabulary
+    ? subject === "云雾"
+      ? mistVocabulary
+      : downgradedCloudSeaVocabulary
     : classicCloudSeaVocabulary;
 
   return {
+    subject,
     terrainClass: terrainClassForContext({
       elevation,
       surroundingRelief,
@@ -299,21 +311,29 @@ export function buildCloudSeaTerrainContext(
     nearbyValleyElevationMeters: nearbyValleyElevation,
     terrainType: terrainType || undefined,
     terrainNoteZh:
-      input.terrainDisplay?.cloudSeaNoteZh ??
-      terrainNoteZh({
-        elevation,
-        surroundingRelief,
-        isClassicCloudSeaEligible,
-        shouldDowngradeCloudSeaWording,
-      }),
-    windowSectionNoteZh: shouldDowngradeCloudSeaWording ? downgradedWindowSectionNoteZh : undefined,
+      subject === "云雾"
+        ? `地形数据不足以确认云海俯拍条件；${elevation === undefined ? "机位海拔待确认" : `机位海拔约 ${Math.round(elevation)} 米`}，${surroundingRelief === undefined ? "周边高差待确认" : `周边高差约 ${Math.round(surroundingRelief)} 米`}，当前按云雾观察，云层与机位的相对高度待确认。`
+        : input.terrainDisplay?.cloudSeaNoteZh ??
+          terrainNoteZh({
+            elevation,
+            surroundingRelief,
+            isClassicCloudSeaEligible,
+            shouldDowngradeCloudSeaWording,
+          }),
+    windowSectionNoteZh: shouldDowngradeCloudSeaWording
+      ? subject === "云雾"
+        ? mistText(downgradedWindowSectionNoteZh)
+        : downgradedWindowSectionNoteZh
+      : undefined,
     windowCategoryLabels: windowCategoryLabelsFromVocabulary(vocabulary),
     forbiddenStrongRecommendation: shouldDowngradeCloudSeaWording,
     recommendationCeiling: shouldDowngradeCloudSeaWording
       ? "recommend_observation"
       : "classic_cloud_sea",
     preferredVocabulary: shouldDowngradeCloudSeaWording
-      ? downgradedCloudSeaPreferredVocabulary
+      ? subject === "云雾"
+        ? downgradedCloudSeaPreferredVocabulary.map(mistText)
+        : downgradedCloudSeaPreferredVocabulary
       : classicCloudSeaPreferredVocabulary,
     vocabulary,
   };
@@ -324,7 +344,7 @@ export function cloudSeaTerrainAwareText(text: string, context: CloudSeaTerrainC
     return text;
   }
 
-  return text
+  const adjusted = text
     .replace(/强推荐专程云海|推荐专程云海|专程云海/g, "已在附近可观察")
     .replace(/高山云海|山顶云海|山谷云海/g, "低云/晨雾")
     .replace(/云海主守|主守云海/g, "云层变化观察")
@@ -341,6 +361,20 @@ export function cloudSeaTerrainAwareText(text: string, context: CloudSeaTerrainC
     .replace(/山脊/g, "远山")
     .replace(/山谷/g, "周边低处")
     .replace(/俯拍/g, "观察");
+  return context.subject === "云雾" ? mistText(adjusted) : adjusted;
+}
+
+/** Normalize authored recommendation copy only, never raw weather observations. */
+export function cloudSeaMistCopy<T>(value: T, context: CloudSeaTerrainContext): T {
+  if (context.subject !== "云雾") return value;
+  if (typeof value === "string") return mistText(value) as T;
+  if (Array.isArray(value)) return value.map((item) => cloudSeaMistCopy(item, context)) as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, cloudSeaMistCopy(item, context)]),
+    ) as T;
+  }
+  return value;
 }
 
 export function cloudSeaTerrainRecommendationLabel(
@@ -388,7 +422,12 @@ function terrainClassForContext(input: {
   readonly isClassicCloudSeaEligible: boolean;
   readonly shouldDowngradeCloudSeaWording: boolean;
 }): CloudSeaTerrainClass {
-  if (input.shouldDowngradeCloudSeaWording) {
+  if (
+    input.shouldDowngradeCloudSeaWording &&
+    (input.terrainMode === "lowland" ||
+      input.terrainMode === "urban_or_plain" ||
+      input.terrainMode === "unknown")
+  ) {
     return "low_elevation";
   }
   if (
