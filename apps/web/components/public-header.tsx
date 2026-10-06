@@ -14,7 +14,6 @@ const navLinks = [
   { href: "/cloud-sea", label: "云海" },
   { href: "/glow", label: "朝霞晚霞" },
   { href: "/astro", label: "星空银河" },
-  { href: "/pricing", label: "定价" },
 ] as const;
 
 export const publicHeaderNavLabels = navLinks.map((link) => link.label);
@@ -102,9 +101,6 @@ export function PublicHeader(props?: PublicHeaderProps) {
           <img src="/brand-mark.svg" alt="" className="h-10 w-10 shrink-0" aria-hidden="true" />
           <span className="grid min-w-0 leading-tight">
             <span className="truncate text-base font-bold text-card-foreground">逐光天气</span>
-            <span className="hidden truncate text-xs text-muted-foreground min-[360px]:block">
-              风光摄影出行判断工具
-            </span>
           </span>
         </Link>
 

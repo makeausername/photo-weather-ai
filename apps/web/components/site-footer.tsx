@@ -2,6 +2,7 @@ import Link from "next/link";
 import { siteConfig } from "../site-config";
 
 const footerLinks = [
+  { href: "/pricing", label: "定价" },
   { href: "/help", label: "帮助" },
   { href: "/privacy", label: "隐私" },
   { href: "/terms", label: "条款" },

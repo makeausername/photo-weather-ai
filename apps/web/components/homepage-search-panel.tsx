@@ -21,7 +21,6 @@ export function HomepageSearchPanel({
 } = {}) {
   return (
     <PlaceSearchCard
-      className={selectedLocation ? "min-[960px]:sticky min-[960px]:top-[88px]" : undefined}
       compactEntry
       badgeLabel={null}
       description="搜索景区、城市或具体地点，查看所选预报范围内的拍摄条件。"
@@ -31,14 +30,13 @@ export function HomepageSearchPanel({
       defaultTarget={homepageDefaultTarget}
       showTargetSelector={false}
       showForecastSectionDivider={false}
-      ctaLabel="查看完整综合报告 →"
-      ctaDisabledLabel="选择地点后查看完整报告"
+      ctaLabel="查看报告"
+      ctaDisabledLabel="查看报告"
       showResultSourceBadges={false}
       selectedLocationDetailMode="compact"
       showSelectedLocationActions
       showQuickLocations={false}
       enableCurrentLocation
-      autoPreviewEnabled
       lockExtendedHorizonsForFree
       selectedLocation={selectedLocation}
       onSelectedLocationChange={onSelectedLocationChange}

@@ -12,9 +12,7 @@ export function PhotographyOutlook({ result }: { readonly result: ForecastCalcul
       data-photography-outlook="true"
     >
       <Card className="decision-hero min-w-0 p-5 sm:p-6">
-        <h2 className="text-xs font-semibold tracking-widest text-muted-foreground">
-          01 · 先说结论
-        </h2>
+        <h2 className="text-xs font-semibold tracking-widest text-muted-foreground">出行结论</h2>
         <div
           className="mt-4 grid gap-2 text-sm leading-7 text-card-foreground [&>p:first-child]:text-lg [&>p:first-child]:font-semibold"
           data-outlook-section="conclusion"
@@ -23,7 +21,7 @@ export function PhotographyOutlook({ result }: { readonly result: ForecastCalcul
         </div>
       </Card>
       <Card className="min-w-0 p-5 sm:p-6">
-        <h2 className="text-base font-semibold">02 · 按日期看</h2>
+        <h2 className="text-base font-semibold">拍摄时段</h2>
         <div className="mt-4 divide-y divide-border">
           {outlook.days.length ? (
             outlook.days.map((day) => (
@@ -47,9 +45,8 @@ export function PhotographyOutlook({ result }: { readonly result: ForecastCalcul
       </Card>
       {(
         [
-          ["shooting", "03 · 怎么拍 / 怎么选", outlook.shooting],
-          ["clothing", "04 · 穿衣指南", outlook.clothing],
-          ["risks", "05 · 风险提醒", outlook.risks],
+          ["shooting", "拍摄建议", outlook.shooting],
+          ["risks", "主要风险", outlook.risks],
         ] as const
       ).map(([key, title, lines]) => (
         <Card key={key} className="min-w-0 p-5 sm:p-6" data-outlook-section={key}>
@@ -59,6 +56,14 @@ export function PhotographyOutlook({ result }: { readonly result: ForecastCalcul
           </div>
         </Card>
       ))}
+      <details className="border-t border-border pt-3" data-outlook-section="clothing">
+        <summary className="cursor-pointer py-2 text-sm text-muted-foreground">
+          穿衣与装备建议
+        </summary>
+        <div className="grid gap-2 py-3 text-sm leading-7 text-muted-foreground">
+          {paragraphs(outlook.clothing)}
+        </div>
+      </details>
     </div>
   );
 }

@@ -252,7 +252,7 @@ function createStoredSession(overrides: Partial<Parameters<typeof storeAdminSess
 
 describe("public account navigation", () => {
   it("uses a unified account entry instead of top-level login or admin actions", () => {
-    expect(publicHeaderNavLabels).toEqual(["首页", "云海", "朝霞晚霞", "星空银河", "定价"]);
+    expect(publicHeaderNavLabels).toEqual(["首页", "云海", "朝霞晚霞", "星空银河"]);
     expect(publicHeaderActionLabels).toEqual(["账户"]);
     expect(publicHeaderActionLabels).not.toContain("开始分析");
     expect([...publicHeaderNavLabels, ...publicHeaderActionLabels]).not.toContain("管理后台");

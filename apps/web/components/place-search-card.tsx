@@ -99,7 +99,6 @@ type PlaceSearchCardProps = {
   readonly showSelectedLocationHorizon?: boolean;
   readonly showQuickLocations?: boolean;
   readonly showForecastSectionDivider?: boolean;
-  readonly autoPreviewEnabled?: boolean;
   readonly enableCurrentLocation?: boolean;
   readonly currentLocationPrivacyHint?: string;
   readonly requiresFullAccess?: boolean;
@@ -415,7 +414,7 @@ export function HorizonSelector({
   readonly disabledOptions?: ReadonlySet<ForecastHorizon>;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2.5">
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
       {horizonOptions.map((option) => {
         const disabled = disabledOptions?.has(option) ?? false;
         return (
@@ -465,7 +464,6 @@ export function PlaceSearchCard({
   showSelectedLocationHorizon = false,
   showQuickLocations: shouldRenderQuickLocations = true,
   showForecastSectionDivider = true,
-  autoPreviewEnabled = false,
   enableCurrentLocation = false,
   currentLocationPrivacyHint = "浏览器定位仅用于本次天气判断，不会公开显示。",
   requiresFullAccess = false,
@@ -805,7 +803,10 @@ export function PlaceSearchCard({
       </div>
 
       <form
-        className="grid gap-2"
+        className={cn(
+          "grid gap-2",
+          compactEntry && activeSelectedLocation && isCollapsedAfterSelection && "hidden",
+        )}
         onSubmit={(event) => {
           event.preventDefault();
           handleSubmitSearch();
@@ -823,15 +824,8 @@ export function PlaceSearchCard({
         <p className={compactEntry ? "sr-only" : "text-xs leading-5 text-muted-foreground"}>
           输入后会自动搜索，也可按 Enter 立即搜索。
         </p>
-        {enableCurrentLocation && currentLocationPrivacyHint ? (
-          compactEntry ? (
-            <details className="text-xs leading-5 text-muted-foreground">
-              <summary className="cursor-pointer py-1">定位说明</summary>
-              <p className="pt-1">{currentLocationPrivacyHint}</p>
-            </details>
-          ) : (
-            <p className="text-xs leading-5 text-muted-foreground">{currentLocationPrivacyHint}</p>
-          )
+        {!compactEntry && enableCurrentLocation && currentLocationPrivacyHint ? (
+          <p className="text-xs leading-5 text-muted-foreground">{currentLocationPrivacyHint}</p>
         ) : null}
       </form>
 
@@ -895,13 +889,37 @@ export function PlaceSearchCard({
               </button>
             ))}
             <p className="border-t border-border px-4 py-2 text-[11px] leading-5 text-muted-foreground">
-              选择地点后将按其坐标生成天气判断；普通地图地点无需额外验证。
+              请核对地址后选择地点。
             </p>
           </div>
         ) : null}
       </div>
 
-      {activeSelectedLocation ? (
+      {activeSelectedLocation && compactEntry ? (
+        <div
+          data-selected-location-card="true"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border p-3"
+        >
+          <div className="min-w-0">
+            <p className="break-words text-sm font-semibold">
+              {activeSelectedLocation.displayName}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {formatSelectedLocationArea(activeSelectedLocation)}
+            </p>
+          </div>
+          {showSelectedLocationActions ? (
+            <div className="flex gap-2">
+              <Button type="button" variant="ghost" size="sm" onClick={handleChangeLocation}>
+                更换地点
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={handleClearSelection}>
+                清除选择
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : activeSelectedLocation ? (
         <div
           data-selected-location-card="true"
           className="grid gap-3 rounded-xl border border-border bg-muted p-4"
@@ -1003,15 +1021,6 @@ export function PlaceSearchCard({
             <a className="ml-2 font-semibold text-primary hover:underline" href="/pricing">
               开通会员
             </a>
-          </div>
-        ) : null}
-
-        {autoPreviewEnabled && activeSelectedLocation && !fullAccessCtaLocked ? (
-          <div
-            className="rounded-xl border border-primary/20 bg-secondary px-4 py-3 text-xs leading-5 text-secondary-foreground"
-            data-auto-preview-status="ready"
-          >
-            预览已更新
           </div>
         ) : null}
 

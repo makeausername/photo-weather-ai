@@ -16,7 +16,7 @@ vi.mock("next/navigation", () => ({
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
-const removedFooterNavigationLabels = ["综合判断", "云海", "朝霞晚霞", "星空银河", "定价"] as const;
+const removedFooterNavigationLabels = ["综合判断", "云海", "朝霞晚霞", "星空银河"] as const;
 
 const removedFooterCopy = [
   siteConfig.brand.tagline,
@@ -38,7 +38,8 @@ describe("SiteFooter", () => {
     expect(html).toContain(siteConfig.footer.copyright);
     expect(html).toContain(siteConfig.legal.icpNumber);
     expect(html).toContain(`href="${siteConfig.legal.icpUrl}"`);
-    expect(countOccurrences(html, "href=")).toBe(5);
+    expect(countOccurrences(html, "href=")).toBe(6);
+    expect(html).toContain('href="/pricing"');
     expect(html).toContain('href="/help"');
     expect(html).toContain('href="/privacy"');
     expect(html).toContain('href="/terms"');

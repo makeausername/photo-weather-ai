@@ -574,7 +574,7 @@ describe("photography conclusion", () => {
   });
   it("renders readable narrative without professional tables or tabs", () => {
     const html = renderToStaticMarkup(<PhotographyOutlook result={forecast()} />);
-    for (const heading of ["先说结论", "按日期看", "怎么拍 / 怎么选", "穿衣指南", "风险提醒"])
+    for (const heading of ["出行结论", "拍摄时段", "拍摄建议", "穿衣与装备", "主要风险"])
       expect(html).toContain(heading);
     expect(html).not.toMatch(/<table|role="tab"|专业数据|总云量|露点/);
   });

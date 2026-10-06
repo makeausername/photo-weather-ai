@@ -56,9 +56,9 @@ describe("whole-site static copy guard", () => {
       renderScenarioEntryPages(),
     ].join("\n");
 
-    expect(source).toContain("先看值不值得去，再选拍摄日期、时段和题材。");
-    expect(rendered).toContain("先看值不值得去，再选拍摄日期、时段和题材。");
-    expect(rendered).toContain("选择地点后");
+    expect(source).toContain("选择地点和时间范围，查看拍摄建议。");
+    expect(rendered).toContain("选择地点和时间范围，查看拍摄建议。");
+    expect(rendered).toContain("查看报告");
 
     for (const forbiddenClaim of forbiddenStaticLiveClaims) {
       expect(source).not.toMatch(forbiddenClaim);

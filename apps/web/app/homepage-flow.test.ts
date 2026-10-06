@@ -344,7 +344,7 @@ describe("homepage forecast flow", () => {
     );
 
     expect(html).toContain("老君山金顶 · 拍摄建议");
-    for (const heading of ["先说结论", "按日期看", "怎么拍 / 怎么选", "穿衣指南", "风险提醒"]) {
+    for (const heading of ["出行结论", "拍摄时段", "拍摄建议", "穿衣与装备", "主要风险"]) {
       expect(html).toContain(heading);
     }
     expect(html).toContain("山顶强风");
@@ -426,18 +426,13 @@ describe("homepage forecast flow", () => {
     expect(html).not.toContain("本地天文服务");
   });
 
-  it("renders the homepage guidance cards on the full page before selection", () => {
+  it("keeps the homepage focused on selecting location and range", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
-
-    expect(html).toContain("如何查看天气预报");
-    expect(html).toContain("地点与窗口");
-    expect(html).toContain("云层与天气");
-    expect(html).toContain("降水与风险");
-    expect(html).not.toContain('data-homepage-layer-visual="true"');
-    expect(html).not.toContain('data-homepage-location-marker="true"');
-    expect(html).not.toContain('data-homepage-window-cards="true"');
+    expect(html).toContain("查看报告");
+    expect(html).toContain("预报范围");
+    expect(html).not.toContain('data-homepage-guidance-panel="true"');
+    expect(html).not.toContain('data-forecast-entry-help="true"');
   });
-
   it("does not substitute current conditions for missing hourly forecast data", () => {
     const location = selectedLocationFromSearchResult(laojunshanPlace);
     const html = renderToStaticMarkup(
@@ -574,7 +569,7 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("未来48小时");
     expect(html).toContain("未来72小时");
     expect(html).toContain("未来7天");
-    expect(html).toContain("选择地点后查看完整报告");
+    expect(html).toContain("查看报告");
     expect(html).not.toContain(homepageTargetHelperText);
     expect(html).not.toContain("分析目标");
     expect(html).not.toContain("查看拍摄天气分析");
@@ -638,7 +633,7 @@ describe("homepage forecast flow", () => {
     expect(html).toContain('viewBox="0 0 24 24"');
     expect(hasExactButton(html, "定位")).toBe(false);
     expect(hasExactButton(html, "定位中")).toBe(false);
-    expect(html).toContain("浏览器定位仅用于本次天气判断，不会公开显示。");
+    expect(html).not.toContain("浏览器定位仅用于本次天气判断，不会公开显示。");
   });
 
   it("uses automatic place search with Enter as an explicit shortcut", () => {
@@ -748,20 +743,20 @@ describe("homepage forecast flow", () => {
       }),
     );
 
-    expect(emptyHtml).toContain("选择地点后查看完整报告");
+    expect(emptyHtml).toContain("查看报告");
     expect(emptyHtml).toContain("disabled");
-    expect(selectedHtml).toContain("查看完整综合报告");
-    expect(selectedHtml).toContain("预览已更新");
+    expect(selectedHtml).toContain("查看报告");
+    expect(selectedHtml).not.toContain("预览已更新");
     expect(selectedHtml).toContain('value="黄山光明顶"');
     expect(selectedHtml).toContain('data-selected-location-card="true"');
     expect(selectedHtml).toContain('data-forecast-range-section="true"');
-    expect(selectedHtml).toContain("所在地");
-    expect(selectedHtml).toContain("海拔");
-    expect(selectedHtml).toContain("坐标信息");
+    expect(selectedHtml).not.toContain("所在地");
+    expect(selectedHtml).not.toContain("海拔");
+    expect(selectedHtml).not.toContain("坐标信息");
     expect(selectedHtml).toContain("更换地点");
     expect(selectedHtml).toContain("清除选择");
     expect(selectedHtml).toContain("未来48小时");
-    expect(selectedHtml).not.toContain("选择地点后查看完整报告");
+    expect(selectedHtml).not.toContain('disabled="">查看报告</button>');
     expect(selectedHtml).not.toContain("常用机位");
     expect(selectedHtml).not.toContain('data-place-search-results="true"');
     expect(selectedHtml).not.toContain("高德地图");
@@ -802,12 +797,12 @@ describe("homepage forecast flow", () => {
       elevationSource: "unknown",
       elevationConfidence: "low",
     });
-    expect(html).toContain("当前定位");
+    expect(html).not.toContain("当前定位");
     expect(html).toContain("黄浦区");
     expect(html).toContain("上海市 / 上海市 / 黄浦区");
-    expect(html).toContain("海拔将在生成判断时补全");
-    expect(html).toContain("查看完整综合报告");
-    expect(html).not.toContain("选择地点后查看完整报告");
+    expect(html).not.toContain("海拔将在生成判断时补全");
+    expect(html).toContain("查看报告");
+    expect(html).not.toContain('disabled="">查看报告</button>');
   });
 
   it("persists a validated recent location for seamless scenario switching", () => {
@@ -963,12 +958,10 @@ describe("homepage forecast flow", () => {
     expect(html).toContain("mx-auto max-w-[760px]");
     expect(html).not.toContain("min-[960px]:grid-cols-");
     const help = html.match(/<details[^>]*data-forecast-entry-help="true"[^>]*>/)?.[0];
-    expect(help).toBeDefined();
-    expect(help).not.toMatch(/\sopen(?:=|\s|>)/);
+    expect(help).toBeUndefined();
     expect(html).not.toContain("decision-hero");
-    expect(html).toContain('data-homepage-guidance-panel="true"');
+    expect(html).not.toContain('data-homepage-guidance-panel="true"');
     expect(html).toContain("min-w-0");
-    expect(html).toContain("overflow-hidden");
     expect(html).not.toContain(
       "min-[1200px]:grid-cols-[clamp(360px,24vw,420px)_minmax(0,1fr)_clamp(360px,24vw,420px)]",
     );
@@ -981,9 +974,9 @@ describe("homepage forecast flow", () => {
   it("keeps public homepage copy product-friendly", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
 
-    expect(html).toContain("先看值不值得去，再选拍摄日期、时段和题材。");
-    expect(html).toContain("如何查看天气预报");
-    expect(html).toContain("地点与窗口");
+    expect(html).toContain("选择地点和时间范围，查看拍摄建议。");
+    expect(html).not.toContain("如何查看天气预报");
+    expect(html).not.toContain("地点与窗口");
     expect(html).not.toContain("云海判断需要关注什么");
     expect(html).not.toContain("朝霞晚霞判断需要看什么");
     expect(html).not.toContain("星空银河判断需要看什么");

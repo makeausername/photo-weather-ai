@@ -140,23 +140,8 @@ a {
   background: color-mix(in srgb, currentColor 8%, var(--card));
 }
 .decision-hero {
-  background: var(--hero-background);
-  --foreground: #f2f6fa;
-  --card-foreground: #f2f6fa;
-  --muted-foreground: #b8c8d6;
-  --primary: #c5dcef;
-  --primary-hover: #e0eef9;
-  --primary-foreground: #17283b;
-  --secondary: #29445d;
-  --secondary-foreground: #d7e6f2;
-  --card: #20364b;
-  --muted: #20364b;
-  --border: #40546a;
-  --accent-strong: #efba76;
-  --warning-strong: #efba76;
-  --danger: #f4aa9c;
-  --info-strong: #afd2ed;
-  --success: #89d1b8;
+  background: var(--card);
+  border-color: var(--border);
 }
 .decision-value {
   font-variant-numeric: tabular-nums;
