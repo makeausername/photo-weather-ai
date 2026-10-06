@@ -8,6 +8,7 @@ import {
   yearlyFullAccessProductCode,
 } from "./access.js";
 import { createAuditLog } from "./audit.js";
+import { normalizeProductCopy } from "@photo-weather/shared";
 import { getPrismaClient } from "./client.js";
 import { cloneJsonValue, isPlainJsonObject } from "./json.js";
 import type { BillingProductRecord, DatabaseClient, JsonValue } from "./types.js";
@@ -109,10 +110,7 @@ async function withTransaction<TResult>(
   return operation(client);
 }
 
-function requireDelegate<TDelegate>(
-  delegate: TDelegate | undefined,
-  name: string,
-): TDelegate {
+function requireDelegate<TDelegate>(delegate: TDelegate | undefined, name: string): TDelegate {
   if (!delegate) {
     throw new Error(`Database client is missing ${name} delegate.`);
   }
@@ -171,9 +169,7 @@ function publicVisible(product: BillingProductRecord): boolean {
     return readBooleanMetadata(product, "publicVisible") === true;
   }
   return (
-    readBooleanMetadata(product, "publicVisible") ??
-    readBooleanMetadata(product, "public") ??
-    false
+    readBooleanMetadata(product, "publicVisible") ?? readBooleanMetadata(product, "public") ?? false
   );
 }
 
@@ -229,7 +225,9 @@ export function billingProductAdminSnapshot(product: BillingProductRecord): Json
   });
 }
 
-export function formatBillingProductPriceText(product: Pick<BillingProductRecord, "amountCents" | "currency">): string {
+export function formatBillingProductPriceText(
+  product: Pick<BillingProductRecord, "amountCents" | "currency">,
+): string {
   if (product.currency !== "CNY") {
     return `${product.amountCents / 100} ${product.currency}`;
   }
@@ -263,10 +261,11 @@ export function formatBillingProductDurationText(
 }
 
 export function toPublicBillingProduct(product: BillingProductRecord): PublicBillingProduct {
+  const description = descriptionForPublic(product);
   return {
     code: product.code,
     name: product.name,
-    description: descriptionForPublic(product),
+    description: description === null ? null : normalizeProductCopy(description),
     amountCents: product.amountCents,
     currency: product.currency,
     priceText: formatBillingProductPriceText(product),
@@ -274,7 +273,9 @@ export function toPublicBillingProduct(product: BillingProductRecord): PublicBil
     durationText: formatBillingProductDurationText(product),
     recommended: recommended(product),
     badgeText: badgeText(product),
-    featureBullets: readStringListMetadata(product, "featureBullets"),
+    featureBullets: [
+      ...new Set(readStringListMetadata(product, "featureBullets").map(normalizeProductCopy)),
+    ],
     sortOrder: product.sortOrder,
   };
 }
@@ -319,7 +320,10 @@ export async function listPublicBillingProducts(
     where: { enabled: true },
     orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
   });
-  return records.map(normalizeBillingProduct).filter(isPublicFullAccessBillingProduct).map(toPublicBillingProduct);
+  return records
+    .map(normalizeBillingProduct)
+    .filter(isPublicFullAccessBillingProduct)
+    .map(toPublicBillingProduct);
 }
 
 export async function listAdminBillingProducts(
@@ -354,32 +358,50 @@ function assertEditableProductUpdate(
     input.amountCents !== undefined &&
     (!Number.isInteger(input.amountCents) || input.amountCents < 0)
   ) {
-    throw new InvalidBillingProductUpdateError(current.code, "Product amount must be a non-negative integer.");
+    throw new InvalidBillingProductUpdateError(
+      current.code,
+      "Product amount must be a non-negative integer.",
+    );
   }
   if (input.sortOrder !== undefined && !Number.isInteger(input.sortOrder)) {
-    throw new InvalidBillingProductUpdateError(current.code, "Product sort order must be an integer.");
+    throw new InvalidBillingProductUpdateError(
+      current.code,
+      "Product sort order must be an integer.",
+    );
   }
   if (input.featureBullets !== undefined) {
     if (
       input.featureBullets.length > 12 ||
       input.featureBullets.some((item) => typeof item !== "string" || item.trim().length > 120)
     ) {
-      throw new InvalidBillingProductUpdateError(current.code, "Product feature bullets are invalid.");
+      throw new InvalidBillingProductUpdateError(
+        current.code,
+        "Product feature bullets are invalid.",
+      );
     }
   }
   if (current.code === trialFullAccessProductCode) {
     if (input.amountCents !== undefined && input.amountCents !== 0) {
-      throw new InvalidBillingProductUpdateError(current.code, "Trial product amount must remain zero.");
+      throw new InvalidBillingProductUpdateError(
+        current.code,
+        "Trial product amount must remain zero.",
+      );
     }
     if (input.publicPurchasable === true) {
-      throw new InvalidBillingProductUpdateError(current.code, "Trial product cannot be publicly purchasable.");
+      throw new InvalidBillingProductUpdateError(
+        current.code,
+        "Trial product cannot be publicly purchasable.",
+      );
     }
   } else if (
     publicFullAccessProductCodes.has(current.code) &&
     input.amountCents !== undefined &&
     input.amountCents <= 0
   ) {
-    throw new InvalidBillingProductUpdateError(current.code, "Public paid products must have a positive amount.");
+    throw new InvalidBillingProductUpdateError(
+      current.code,
+      "Public paid products must have a positive amount.",
+    );
   }
 }
 

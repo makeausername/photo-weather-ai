@@ -21,3 +21,4 @@ export * from "./terrain-temperature-basis.js";
 export * from "./types.js";
 export * from "./window-format.js";
 export * from "./weather-text.js";
+export * from "./product-copy.js";

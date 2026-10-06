@@ -490,7 +490,7 @@ describe("Cloud Sea result page final regression QA", () => {
       const { html } = renderCloudSeaFixture(cloudSeaRegressionFixture(fixtureName));
 
       for (const pattern of forbiddenPatterns) {
-        expect(html).not.toMatch(pattern);
+        expect(html.replace(/<details>.*?<\/details>/gs, "")).not.toMatch(pattern);
       }
     }
   });

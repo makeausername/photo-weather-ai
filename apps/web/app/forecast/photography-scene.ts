@@ -17,11 +17,14 @@ export function photographyScene(result: ForecastCalculationResult) {
   const subject = terrainCloudSubject(profile ?? {});
   const mountain = subject === "云海";
   const known = mode !== "unknown";
+  // Place-name hints select composition subjects only, never establish physical relief.
+  const lakeScene = type === "lake" || /湖|海岸|海滨/.test(result.place?.name ?? "");
+  const cityScene = type === "city" || /外滩|街|城区|广场/.test(result.place?.name ?? "");
   const lightSubject = mountain
     ? "山体光影"
-    : type === "city"
+    : cityScene
       ? "建筑光影和街景"
-      : type === "lake"
+      : lakeScene
         ? "水面光影和岸边层次"
         : type === "valley"
           ? "谷地光影"
@@ -30,9 +33,9 @@ export function photographyScene(result: ForecastCalculationResult) {
             : "景物光影和近景层次";
   const backup = mountain
     ? "山路、人文与局部明暗层次"
-    : type === "city"
+    : cityScene
       ? "街景、人文与建筑细节"
-      : type === "lake"
+      : lakeScene
         ? "岸边植物、水面倒影和局部光影"
         : type === "valley"
           ? "谷地近景、树林和局部光影"

@@ -585,8 +585,9 @@ export function generateMockTerrainSummary(place: Place): TerrainSummary {
   );
 }
 
-function flattenTerrainAnalysis(analysis: TerrainAnalysisSummary): TerrainSummary {
+export function flattenTerrainAnalysis(analysis: TerrainAnalysisSummary): TerrainSummary {
   return {
+    regionalEvidence: analysis.terrainProfile.regionalEvidence,
     latitudeWgs84: analysis.terrainProfile.latitudeWgs84,
     longitudeWgs84: analysis.terrainProfile.longitudeWgs84,
     latitudeGcj02: analysis.terrainProfile.latitudeGcj02,

@@ -25,6 +25,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@photo-weather/shared": "workspace:*",
     "@prisma/client": "5.22.0",
     "bcryptjs": "2.4.3"
   },

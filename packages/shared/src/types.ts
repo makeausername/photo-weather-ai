@@ -778,6 +778,13 @@ export type TerrainHorizonAssessment = {
 };
 
 export type TerrainProfileSummary = SpotTerrainProfile & {
+  readonly regionalEvidence?: {
+    readonly source: "dem" | "unavailable";
+    readonly sampleCount: number;
+    readonly validSampleCount: number;
+    readonly datasetName?: string | null;
+    readonly datasetVersion?: string | null;
+  };
   readonly locationElevation: number | null;
   readonly minElevation1km: number | null;
   readonly minElevation3km: number | null;

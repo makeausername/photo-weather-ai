@@ -611,14 +611,14 @@ describe("forecast request client", () => {
 
     const currentKey = sessionStorage
       .dumpKeys()
-      .find((key) => key.startsWith("photo_weather_forecast_calculation:v8:"));
+      .find((key) => key.startsWith("photo_weather_forecast_calculation:v9:"));
     expect(currentKey).toBeDefined();
     const currentRecord = sessionStorage.getItem(currentKey!);
     expect(currentRecord).not.toBeNull();
     sessionStorage.removeItem(currentKey!);
     sessionStorage.setItem(
-      currentKey!.replace(":v8:", ":v7:"),
-      currentRecord!.replace('"version":7', '"version":6'),
+        currentKey!.replace(":v9:", ":v8:"),
+        currentRecord!.replace('"version":9', '"version":8'),
     );
     clearForecastRequestClientCachesForTest();
 

@@ -35,7 +35,12 @@ import {
   type DatabaseClient,
   type ForecastAccessStatus,
 } from "@photo-weather/db";
-import { buildForecastInputFromWeatherBundle, calculateForecast } from "@photo-weather/scoring";
+import {
+  buildForecastInputFromWeatherBundle,
+  calculateForecast,
+  flattenTerrainAnalysis,
+} from "@photo-weather/scoring";
+import { applyTerrainRegion } from "./terrain-region.js";
 import {
   MockTerrainProvider,
   type ElevationProvider,
@@ -640,8 +645,13 @@ export function registerForecastRoutes(
           ]).finally(() => clearTimeout(responseTimer))
         : calculationPromise);
       if (!calculation) {
+        request.log.info(
+          { requestId: request.id, forecastTarget: query.target, horizon: query.horizon },
+          "Forecast still processing; client will poll shared calculation",
+        );
         return reply.code(202).header("Retry-After", "1").header("Cache-Control", "no-store").send({
           status: "processing",
+          requestId: request.id,
           retryAfterMs: 1000,
         });
       }
@@ -1213,7 +1223,7 @@ async function calculateForecastResult(
     elevationConfidence: elevation.elevationConfidence,
     terrainProfile: elevation.terrainProfile,
   };
-  const [weatherDataBundle, terrainProfile, horizonProfile] = await Promise.all([
+  const [weatherDataBundle, baseTerrainProfile, horizonProfile, region] = await Promise.all([
     weatherDataService.getWeatherDataBundle({
       coordinates,
       elevationMeters: elevation.elevationMeters ?? undefined,
@@ -1235,14 +1245,47 @@ async function calculateForecastResult(
     }),
     terrainProvider.buildTerrainProfile(enrichedTerrainInput),
     terrainProvider.buildHorizonProfile(enrichedTerrainInput),
+    astroServiceConfig.enabled &&
+    astroServiceConfig.configuredUrl &&
+    astroServiceClient.queryTerrainRegion
+      ? astroServiceClient
+          .queryTerrainRegion({
+            latitudeWgs84: query.latitudeWgs84,
+            longitudeWgs84: query.longitudeWgs84,
+          })
+          .catch((error: unknown) => {
+            logger.warn(
+              { errorName: normalizeError(error).name },
+              "Terrain region unavailable; leaving regional evidence unconfirmed",
+            );
+            return null;
+          })
+      : Promise.resolve(undefined),
   ]);
+  const terrainProfile =
+    region === undefined ? baseTerrainProfile : applyTerrainRegion(baseTerrainProfile, region);
   if (!hasSufficientRealWeatherEvidence(weatherDataBundle)) {
     throw new Error(weatherEvidenceUnavailableMessage);
   }
   const terrainAnalysis = {
     terrainProfile,
-    horizonProfile,
+    horizonProfile:
+      region !== undefined && terrainProvider instanceof MockTerrainProvider
+        ? {
+            directionSamples: [],
+            blockedDirectionsZh: [],
+            obstructionNoteZh: "方向遮挡待独立地形剖面确认，不能将预置角度当作实测。",
+          }
+        : horizonProfile,
     ...terrainAnalysisSourceFields(terrainProfile.elevationSource),
+    ...(terrainProfile.regionalEvidence?.source === "dem"
+      ? {
+          dataSource: "dem" as const,
+          dataSourceLabelZh: "周边地形采样",
+          isMock: false,
+          honestyNoteZh: "已采样周边地形；方向遮挡按独立剖面判断，树木和建筑仍需现场确认。",
+        }
+      : {}),
   };
   const calculationInput = buildForecastInputFromWeatherBundle(query, weatherDataBundle, {
     forecastRange,
@@ -1276,6 +1319,7 @@ async function calculateForecastResult(
   return calculateForecast({
     ...calculationInput,
     terrainAnalysis: enrichedTerrainAnalysis,
+    terrainSummary: flattenTerrainAnalysis(enrichedTerrainAnalysis),
     astroSummaries: astroServiceData.astroSummaries,
     astroWindowBundle: astroServiceData.astroWindowBundle,
     astroCalculationBasis: astroServiceData.astroCalculationBasis,

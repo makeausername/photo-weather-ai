@@ -335,9 +335,6 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       score >= 65 &&
       best &&
       best.rank >= 60;
-    const scoreText = finite(score)
-      ? `${Math.round(Math.max(0, Math.min(100, score)))}/100（条件参考）`
-      : "待确认";
     const low = s.min ?? daily?.weather?.tempMin;
     const high = s.max ?? daily?.weather?.tempMax;
     const temperatureValue =
@@ -420,7 +417,7 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       `${transparency}。`,
       eventNote(astro?.sunrise, "日出和朝霞") ?? `日出${sunrise}；朝霞${dawn}。`,
       eventNote(astro?.sunset, "日落和晚霞") ?? `日落${sunset}；晚霞${dusk}。`,
-      `${recommendation}。出片指数 ${scoreText}。${compact ? `参考窗口：${window}。` : ""}`,
+      `${recommendation}。${compact ? `参考窗口：${window}。` : ""}`,
       ...(!compact ? [`${allowed ? "建议" : "参考"}窗口：${window}；${weatherRisk(s)}。`] : []),
     ];
     return {

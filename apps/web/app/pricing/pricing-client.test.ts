@@ -137,6 +137,6 @@ describe("pricing plan selection", () => {
         code: "monthly_full",
         description: "开通后 30 天内查看完整摄影判断、专业时序表和。",
       }),
-    ).toBe("开通后 30 天内查看完整摄影判断、专业时序表和历史报告。");
+    ).toBe("开通后 30 天内查看完整摄影判断、拍摄时段与准备建议和历史报告。");
   });
 });

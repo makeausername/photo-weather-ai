@@ -280,6 +280,7 @@ export function buildCloudSeaTerrainContext(
     });
   const subject = terrainCloudSubject({
     elevationMeters: elevation,
+    nearbyValleyElevationMeters: nearbyValleyElevation,
     localReliefMeters: surroundingRelief,
     terrainType: isKnownTerrainType(terrainType)
       ? terrainType

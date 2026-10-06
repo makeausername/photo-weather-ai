@@ -84,6 +84,7 @@ export type ApiFetchOptions = {
   readonly fallbackMessage?: string;
   readonly baseUrl?: string;
   readonly fetcher?: typeof fetch;
+  readonly allowGuestFallback?: boolean;
 };
 
 export const loginExpiredMessage = "登录状态已过期，请重新登录。";
@@ -206,6 +207,7 @@ async function apiFetchInternal<TResponse>(
   const authMode = options.authMode ?? "public";
   const fetcher = options.fetcher ?? fetch;
   let tokens = suppressAuth || authMode === "public" ? null : getStoredSessionTokens();
+  const startedAuthenticated = Boolean(tokens);
   if (tokens && shouldRefreshAccessTokenSoon(tokens)) {
     tokens =
       (await refreshStoredSession({
@@ -214,7 +216,10 @@ async function apiFetchInternal<TResponse>(
       })) ?? getStoredSessionTokens();
   }
 
-  if (authMode === "required" && !tokens) {
+  if (
+    (authMode === "required" || (startedAuthenticated && options.allowGuestFallback === false)) &&
+    !tokens
+  ) {
     throw new ApiClientError(loginRequiredMessage, {
       status: 401,
       code: "missing_token",
@@ -260,7 +265,16 @@ async function apiFetchInternal<TResponse>(
       );
     }
 
-    if (authMode === "optional") {
+    if (getStoredSessionTokens()) {
+      throw new ApiClientError("登录校验暂时不可用，请稍后重试。", {
+        status: 503,
+        kind: "service",
+        code: "session_refresh_unavailable",
+        retryable: true,
+      });
+    }
+
+    if (authMode === "optional" && options.allowGuestFallback !== false) {
       return apiFetchInternal<TResponse>(
         path,
         init,

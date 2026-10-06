@@ -6,6 +6,7 @@ import {
 } from "@photo-weather/shared";
 import { Card } from "../../components/ui";
 import type { SubjectDecisionReport, SubjectReportSection } from "./subject-decision-report";
+import { ReportLocationMeta } from "./report-location-meta";
 
 export function SubjectDecisionReportView({
   query,
@@ -32,6 +33,7 @@ export function SubjectDecisionReportView({
           <p className="mt-1 text-sm text-muted-foreground">
             {forecastHorizonLabels[result.horizon]}
           </p>
+          <ReportLocationMeta result={result} />
         </div>
         <a
           href={returnUrl ?? path}
