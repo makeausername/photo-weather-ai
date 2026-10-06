@@ -265,7 +265,7 @@ async function refreshStoredSessionInternal(
       if (current?.refreshToken && current.refreshToken !== tokens.refreshToken) {
         return current;
       }
-      if (response) {
+      if (response && (response.status === 401 || response.status === 403)) {
         clearSession("refresh_failed");
       }
       return null;

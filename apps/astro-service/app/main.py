@@ -29,6 +29,7 @@ from .models import (
 from .responses import Utf8JSONResponse
 from .sky_brightness import SkyBrightnessService, unavailable_response as sky_brightness_unavailable_response
 from .terrain_dem import TerrainDemService, unavailable_response as terrain_dem_unavailable_response
+from .terrain_region import TerrainRegionRequest, TerrainRegionResponse, query_region
 from .terrain_dem_coverage import (
     build_coverage_status,
     bbox_for_center_radius,
@@ -254,6 +255,11 @@ def query_terrain_dem_profile(
         extra=terrain_dem_log_payload(request, response, route="/terrain-dem/profile"),
     )
     return response
+
+
+@app.post("/terrain-dem/region", response_model=TerrainRegionResponse)
+def query_terrain_region(request: TerrainRegionRequest) -> TerrainRegionResponse:
+    return query_region(get_terrain_dem_service(), request)
 
 
 @app.get("/terrain-dem/coverage", response_model=TerrainDemCoverageStatusResponse)

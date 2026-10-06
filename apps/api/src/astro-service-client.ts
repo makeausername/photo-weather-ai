@@ -509,7 +509,27 @@ export type AstroServiceTerrainDemProfileQueryInput = {
   readonly sampleCount?: number;
 };
 
+const terrainRegionSchema = z.object({
+  available: z.boolean(),
+  reason: z.string().nullable().optional(),
+  elevationMeters: z.number().finite().nullable(),
+  minElevation1km: z.number().finite().nullable(),
+  minElevation3km: z.number().finite().nullable(),
+  minElevation5km: z.number().finite().nullable(),
+  maxElevation5km: z.number().finite().nullable(),
+  avgElevation5km: z.number().finite().nullable(),
+  sampleCount: z.number().int().nonnegative(),
+  validSampleCount: z.number().int().nonnegative(),
+  datasetName: z.string().nullable().optional(),
+  datasetVersion: z.string().nullable().optional(),
+});
+export type AstroServiceTerrainRegion = z.infer<typeof terrainRegionSchema>;
+
 export type AstroServiceClientLike = {
+  queryTerrainRegion?(input: {
+    latitudeWgs84: number;
+    longitudeWgs84: number;
+  }): Promise<AstroServiceTerrainRegion>;
   calculate(input: AstroServiceCalculateInput): Promise<AstroServiceCalculationResponse>;
   querySkyBrightness?(
     input: AstroServiceSkyBrightnessQueryInput,
@@ -547,6 +567,26 @@ export class AstroServiceClient implements AstroServiceClientLike {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? resolveAstroServiceTimeoutMs(options.env);
     this.logger = options.logger;
+  }
+
+  async queryTerrainRegion(input: {
+    latitudeWgs84: number;
+    longitudeWgs84: number;
+  }): Promise<AstroServiceTerrainRegion> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const response = await this.fetchImpl(`${this.baseUrl}/terrain-dem/region`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`Terrain region HTTP ${response.status}`);
+      return terrainRegionSchema.parse(await response.json());
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async calculate(input: AstroServiceCalculateInput): Promise<AstroServiceCalculationResponse> {

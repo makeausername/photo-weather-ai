@@ -273,6 +273,29 @@ function createSeedTestClient(): {
 }
 
 describe("billing products", () => {
+  it("normalizes stored legacy promises without changing custom pricing, duration or other copy", async () => {
+    const { client, state } = createProductTestClient();
+    const product = state.products.get("monthly_full");
+    state.products.set("monthly_full", {
+      ...product,
+      amountCents: 2500,
+      durationDays: 45,
+      description: "运营自定义：专业时序表和 AI解读。",
+      metadataJson: {
+        ...product.metadataJson,
+        featureBullets: ["专业逐小时表格", "运营自定义权益"],
+      },
+    });
+    const products = await listPublicBillingProducts({ client });
+    expect(products[0]).toMatchObject({
+      amountCents: 2500,
+      durationDays: 45,
+      description: "运营自定义：拍摄时段与准备建议和 题材拍摄建议。",
+      featureBullets: ["拍摄时段与准备建议", "运营自定义权益"],
+    });
+    expect(state.products.get("monthly_full").description).toContain("专业时序表");
+  });
+
   it("lists only enabled public full-access products for public pricing", async () => {
     const { client, state } = createProductTestClient();
     state.products.set("quarterly_full", {

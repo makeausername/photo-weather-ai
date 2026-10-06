@@ -66,8 +66,10 @@ export function terrainCloudSubject(input: TerrainModeInput): "云海" | "云雾
     finiteNumber(input.elevationDiff5km) ??
     (elevation !== undefined && valley !== undefined ? elevation - valley : undefined);
   const elevatedView =
-    ["summit", "ridge", "mountain_platform"].includes(type) ||
-    (relief !== undefined && relief >= 300);
+    elevation !== undefined && valley !== undefined
+      ? elevation - valley >= 300
+      : ["summit", "ridge", "mountain_platform"].includes(type) ||
+        (relief !== undefined && relief >= 300);
   if (
     terrainModeUsesMountainSemantics(mode) &&
     elevatedView &&

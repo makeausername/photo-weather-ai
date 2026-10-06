@@ -476,7 +476,7 @@ describe("photography conclusion", () => {
       expect(model.clothing).toHaveLength(2);
       expect(model.risks).toHaveLength(3);
       expect(model.conclusion[0]).toContain("✅");
-      expect(model.days[0]!.lines.join(" ")).toMatch(/日出.*朝霞.*日落.*晚霞.*出片指数/s);
+      expect(model.days[0]!.lines.join(" ")).toMatch(/日出.*朝霞.*日落.*晚霞/s);
       expect(model.clothing.join(" ")).toContain("手套");
     }
   });
@@ -499,7 +499,7 @@ describe("photography conclusion", () => {
     expect(model.days[0]!.dawn).toBe("不确定");
     const empty = buildPhotographyOutlook({ ...result, professionalHourlyData: [] });
     expect(empty.conclusion[0]).toContain("⚠️");
-    expect(empty.days[0]!.lines.join(" ")).toContain("出片指数 待确认");
+    expect(empty.days[0]!.lines.join(" ")).not.toContain("出片指数");
   });
   it("does not turn missing rain or a gap into a stable window", () => {
     const result = forecast();

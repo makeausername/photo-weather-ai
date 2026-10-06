@@ -362,6 +362,19 @@ export function ForecastDecisionLoadingState({
   readonly context: DecisionProgressContext;
 }) {
   const horizonLabel = decisionProgressHorizonLabel(context);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const timer = setInterval(
+      () => setElapsedSeconds(Math.floor((Date.now() - started) / 1000)),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, []);
+  const progress =
+    elapsedSeconds >= 15
+      ? `已等待 ${elapsedSeconds} 秒，天气与地形仍在计算，请保持此页；失败后可直接重试，无需重新选点。`
+      : "";
 
   if (target === "cloud_sea") {
     return (
@@ -375,7 +388,9 @@ export function ForecastDecisionLoadingState({
           ],
           title: "云海拍摄判断",
           message: "正在读取云海拍摄条件…",
-          description: `${context.horizon === "7d" ? "7天分析正在汇总多日天气，耗时会更长；数据尚在加载，未判为缺失。" : ""}正在读取天气、地形、云层和光线时段。`,
+          description:
+            progress ||
+            `${context.horizon === "7d" ? "7天分析正在汇总多日天气，耗时会更长；数据尚在加载，未判为缺失。" : ""}正在读取天气、地形、云层和光线时段。`,
         }}
         info={cloudSeaDecisionInfoCard()}
         dataCloudSeaPageMode="loading"
@@ -390,7 +405,9 @@ export function ForecastDecisionLoadingState({
       context={decisionContextFromProgressContext("general", context)}
       loading={{
         message: "正在读取天气预报…",
-        description: `${context.horizon === "7d" ? "7天分析正在汇总多日天气，耗时会更长；数据尚在加载，未判为缺失。" : ""}正在读取降水、温度、风和天气风险。`,
+        description:
+          progress ||
+          `${context.horizon === "7d" ? "7天分析正在汇总多日天气，耗时会更长；数据尚在加载，未判为缺失。" : ""}正在读取降水、温度、风和天气风险。`,
       }}
       info={{
         title: "分析基础",

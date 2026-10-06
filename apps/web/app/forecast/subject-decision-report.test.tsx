@@ -21,6 +21,8 @@ import {
   ForecastResultView,
   GlowResultPage,
 } from "./forecast-result-client";
+import { photographyEvidence } from "./photography-evidence";
+import { subjectWeatherAdvice } from "./subject-weather-advice";
 
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
 
@@ -63,6 +65,85 @@ function report(result: ForecastCalculationResult) {
 }
 
 describe("subject decision reports", () => {
+  it("does not leak positive night recommendations or backup plans after a no-trip decision", () => {
+    const result = { ...forecast("astro"), decisionMode: "not_recommended" as const };
+    const base = buildAstroForecastViewModel(result);
+    const value = buildAstroDecisionReport(result, {
+      ...base,
+      nightlyCards: base.nightlyCards.map((night) => ({
+        ...night,
+        recommendationLabel: "推荐拍摄",
+        conciseReason: "推荐银河窗口。",
+      })),
+      decisionSummary: { ...base.decisionSummary, backupDetail: "推荐另一夜银河窗口" },
+    });
+    expect(value.verdict).toContain("不建议");
+    expect(JSON.stringify(value.dates)).not.toMatch(/推荐拍摄|推荐银河窗口/);
+    expect(value.risks.lines.join(" ")).not.toContain("推荐另一夜");
+  });
+
+  it("scopes cloud conflicts to the selected night and uses subject-specific copy", () => {
+    const result = forecast("astro");
+    const row = result.professionalHourlyData![0]!;
+    const value = {
+      ...result,
+      professionalHourlyData: [
+        { ...row, time: "2026-10-06T06:00:00Z", cloudTotalPercent: 0, cloudLowPercent: 90 },
+        {
+          ...row,
+          time: "2026-10-06T15:00:00Z",
+          cloudTotalPercent: 30,
+          cloudLowPercent: 10,
+          cloudMidPercent: 10,
+          cloudHighPercent: 10,
+        },
+      ],
+    };
+    expect(
+      photographyEvidence(value, {
+        target: "astro",
+        start: "2026-10-06T12:00:00Z",
+        end: "2026-10-06T20:00:00Z",
+      }).review,
+    ).toBe(false);
+    const day = photographyEvidence(value, {
+      target: "astro",
+      start: "2026-10-06T05:00:00Z",
+      end: "2026-10-06T07:00:00Z",
+    });
+    expect(day.review).toBe(true);
+    expect(day.note).toContain("星空");
+    expect(day.note).not.toMatch(/霞光|云雾/);
+  });
+
+  it("uses actual covered night temperature and wind for clothing and preserves unknown values", () => {
+    const result = forecast("astro");
+    const row = result.professionalHourlyData![0]!;
+    const value = {
+      ...result,
+      professionalHourlyData: [
+        { ...row, time: "2026-10-06T15:00:00Z", displayedTemperatureC: -4, windSpeedMs: 12 },
+        { ...row, time: "2026-10-06T06:00:00Z", displayedTemperatureC: 24, windSpeedMs: 1 },
+      ],
+    };
+    const advice = subjectWeatherAdvice(
+      value,
+      "2026-10-06T12:00:00Z",
+      "2026-10-06T20:00:00Z",
+      "所选夜晚",
+    );
+    expect(advice).toContain("-4～-4°C");
+    expect(advice).toContain("厚保暖层");
+    expect(advice).toContain("12 m/s");
+    expect(advice).not.toContain("24°C");
+    expect(
+      subjectWeatherAdvice(
+        { ...value, professionalHourlyData: [] },
+        "2026-10-06T12:00:00Z",
+        "2026-10-06T20:00:00Z",
+      ),
+    ).toContain("温度待确认");
+  });
   it.each(["cloud_sea", "glow", "astro"] as const)(
     "renders %s as an immediate decision without metrics or hidden hourly panels",
     (target) => {
@@ -327,7 +408,7 @@ describe("subject decision reports", () => {
       const value = buildAstroDecisionReport(result, vm);
       expect(value.dates).toHaveLength(vm.nightlyCards.length);
       for (const night of vm.nightlyCards)
-        expect(value.dates.some((d) => d.title === night.localEveningDateLabel)).toBe(true);
+        expect(value.dates.some((d) => d.title.startsWith(night.localEveningDateLabel))).toBe(true);
       expect(value.shooting.lines.join(" ")).toContain("手动对焦");
       expect(value.shooting.lines.join(" ")).toContain("光污染");
       expect(value.risks.lines.join(" ")).toContain("结露");

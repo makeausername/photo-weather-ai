@@ -305,7 +305,7 @@ describe("database seed data", () => {
         }),
         expect.objectContaining({
           code: "monthly_full",
-          description: "开通后 30 天内查看完整摄影判断、专业时序表和历史报告。",
+          description: "开通后 30 天内查看完整摄影判断、拍摄时段与准备建议和历史报告。",
           amountCents: 1900,
           currency: "CNY",
           credits: 0,
@@ -319,7 +319,7 @@ describe("database seed data", () => {
             featureBullets: [
               "未来多日完整摄影判断",
               "云海 / 朝霞晚霞 / 星空银河",
-              "专业逐小时表格",
+              "拍摄时段与准备建议",
               "会员期内完整历史报告",
               "适合短期出行和临时追光",
             ],
@@ -327,7 +327,7 @@ describe("database seed data", () => {
         }),
         expect.objectContaining({
           code: "quarterly_full",
-          description: "开通后 90 天内查看完整摄影判断、专业时序表和历史报告。",
+          description: "开通后 90 天内查看完整摄影判断、拍摄时段与准备建议和历史报告。",
           durationDays: 90,
           metadataJson: expect.objectContaining({
             publicVisible: true,
@@ -339,7 +339,7 @@ describe("database seed data", () => {
             featureBullets: [
               "未来多日完整摄影判断",
               "云海 / 朝霞晚霞 / 星空银河",
-              "专业逐小时表格",
+              "拍摄时段与准备建议",
               "会员期内完整历史报告",
               "适合连续旅行和多地踩点",
               "续费后有效期自动顺延",
@@ -348,7 +348,7 @@ describe("database seed data", () => {
         }),
         expect.objectContaining({
           code: "yearly_full",
-          description: "开通后 365 天内查看完整摄影判断、专业时序表和历史报告。",
+          description: "开通后 365 天内查看完整摄影判断、拍摄时段与准备建议和历史报告。",
           durationDays: 365,
           metadataJson: expect.objectContaining({
             publicVisible: true,
@@ -359,7 +359,7 @@ describe("database seed data", () => {
             featureBullets: [
               "全年完整摄影判断",
               "云海 / 朝霞晚霞 / 星空银河",
-              "专业逐小时表格",
+              "拍摄时段与准备建议",
               "全年完整历史报告",
               "适合长期风光摄影规划",
               "续费后有效期自动顺延",

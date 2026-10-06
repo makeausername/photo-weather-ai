@@ -174,6 +174,31 @@ describe("shared API client session refresh", () => {
     });
   });
 
+  it("does not disguise a failed authenticated forecast as a guest upgrade requirement", async () => {
+    installBrowserWindow();
+    storeAdminSession(createSession({ accessToken: "old", refreshToken: "old-refresh" }));
+    const fetcher = vi.fn(async () => jsonResponse({ error: "token_expired" }, 401));
+    await expect(
+      optionalAuthApiFetch("/forecast/calculate", {}, { fetcher, allowGuestFallback: false }),
+    ).rejects.toMatchObject({ status: 401, kind: "auth" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("retains the session on refresh service failures instead of downgrading to guest", async () => {
+    installBrowserWindow();
+    storeAdminSession(createSession({ accessToken: "old", refreshToken: "old-refresh" }));
+    const fetcher = vi.fn(async (url: RequestInfo | URL) =>
+      String(url).endsWith("/auth/refresh")
+        ? jsonResponse({ error: "service_unavailable" }, 503)
+        : jsonResponse({ error: "token_expired" }, 401),
+    );
+    await expect(
+      optionalAuthApiFetch("/forecast/calculate", {}, { fetcher, allowGuestFallback: false }),
+    ).rejects.toMatchObject({ status: 503, retryable: true });
+    expect(getStoredAdminTokens()).not.toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it("lets optional public requests continue as guests after a true refresh failure", async () => {
     installBrowserWindow();
     storeAdminSession(

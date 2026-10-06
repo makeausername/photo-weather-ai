@@ -14,7 +14,7 @@ const defaultRetryCount = 2;
 const defaultRetryDelayMs = [600, 1200, 2400] as const;
 const defaultSuccessCacheTtlMs = 5 * 60 * 1000;
 const defaultStaleCacheTtlMs = 30 * 60 * 1000;
-const forecastCacheVersion = 8 as const;
+const forecastCacheVersion = 9 as const;
 const sessionCachePrefix = `photo_weather_forecast_calculation:v${forecastCacheVersion}:`;
 const maxSessionCachePayloadChars = 2_000_000;
 
@@ -173,6 +173,7 @@ export async function requestForecastCalculation(
             baseUrl: options.baseUrl ?? apiBaseUrl,
             fetcher: options.fetcher,
             fallbackMessage: forecastCalculationGenericFailureMessage,
+            allowGuestFallback: false,
           },
         );
         if (!("status" in response && response.status === "processing")) {

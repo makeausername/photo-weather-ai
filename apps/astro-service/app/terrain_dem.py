@@ -242,12 +242,23 @@ class TerrainDemService:
         return self.dataset.metadata_response()
 
     def coverage_for_coordinate(self, latitude: float, longitude: float):
-        return coverage_for_coordinate(
+        coverage = coverage_for_coordinate(
             latitude,
             longitude,
             data_dir=self._data_dir,
             active_bounds=load_active_bounds(self.dataset.metadata_path),
         )
+        if coverage.coveredByActiveDataset:
+            metadata = self.dataset.metadata_response()
+            # Incoming tiles describe an import queue, not the active raster.
+            coverage = coverage.model_copy(update={
+                "sourceName": metadata.sourceName,
+                "datasetName": metadata.datasetName,
+                "datasetVersion": metadata.datasetVersion,
+                "datasetYear": metadata.datasetYear,
+                "resolutionMeters": metadata.resolution.approximateMeters if metadata.resolution else None,
+            })
+        return coverage
 
     def query_profile(self, request: TerrainDemProfileQueryRequest) -> TerrainDemProfileQueryResponse:
         started_at = perf_counter()

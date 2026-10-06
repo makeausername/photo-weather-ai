@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { normalizeProductCopy } from "@photo-weather/shared";
 import { useEffect, useState } from "react";
 import {
   getAccountAccess,
@@ -27,15 +28,15 @@ const planDisplayCopy: Partial<
 > = {
   monthly_full: {
     name: "月卡",
-    description: "开通后 30 天内查看完整摄影判断、专业时序表和历史报告。",
+    description: "开通后 30 天内查看完整摄影判断、拍摄时段与准备建议和历史报告。",
   },
   quarterly_full: {
     name: "季卡",
-    description: "开通后 90 天内查看完整摄影判断、专业时序表和历史报告。",
+    description: "开通后 90 天内查看完整摄影判断、拍摄时段与准备建议和历史报告。",
   },
   yearly_full: {
     name: "年卡",
-    description: "开通后 365 天内查看完整摄影判断、专业时序表和历史报告。",
+    description: "开通后 365 天内查看完整摄影判断、拍摄时段与准备建议和历史报告。",
   },
 };
 
@@ -43,14 +44,14 @@ const planFeatureCopy: Partial<Record<string, readonly string[]>> = {
   monthly_full: [
     "未来多日完整摄影判断",
     "云海 / 朝霞晚霞 / 星空银河",
-    "专业逐小时表格",
+    "拍摄时段与准备建议",
     "会员期内完整历史报告",
     "适合短期出行和临时追光",
   ],
   quarterly_full: [
     "未来多日完整摄影判断",
     "云海 / 朝霞晚霞 / 星空银河",
-    "专业逐小时表格",
+    "拍摄时段与准备建议",
     "会员期内完整历史报告",
     "适合连续旅行和多地踩点",
     "续费后有效期自动顺延",
@@ -58,7 +59,7 @@ const planFeatureCopy: Partial<Record<string, readonly string[]>> = {
   yearly_full: [
     "全年完整摄影判断",
     "云海 / 朝霞晚霞 / 星空银河",
-    "专业逐小时表格",
+    "拍摄时段与准备建议",
     "全年完整历史报告",
     "适合长期风光摄影规划",
     "续费后有效期自动顺延",
@@ -68,7 +69,7 @@ const planFeatureCopy: Partial<Record<string, readonly string[]>> = {
 const fallbackPaidFeatures = [
   "完整摄影判断",
   "云海 / 朝霞晚霞 / 星空银河",
-  "专业逐小时表格",
+  "拍摄时段与准备建议",
   "会员期内完整历史报告",
 ] as const;
 
@@ -85,9 +86,9 @@ const stalePricingCopyPatterns = stalePricingCopyPatternTexts.map(
 );
 
 const legacyPlanDescriptions: Partial<Record<string, readonly string[]>> = {
-  monthly_full: ["开通后 30 天内可查看完整摄影判断、专业时序表。", "开通完整摄影判断 30 天。"],
-  quarterly_full: ["开通后 90 天内可查看完整摄影判断、专业时序表。", "开通完整摄影判断 90 天。"],
-  yearly_full: ["开通后 365 天内可查看完整摄影判断、专业时序表。", "开通完整摄影判断 365 天。"],
+  monthly_full: ["开通后 30 天内可查看完整摄影判断、拍摄时段与准备建议。", "开通完整摄影判断 30 天。"],
+  quarterly_full: ["开通后 90 天内可查看完整摄影判断、拍摄时段与准备建议。", "开通完整摄影判断 90 天。"],
+  yearly_full: ["开通后 365 天内可查看完整摄影判断、拍摄时段与准备建议。", "开通完整摄影判断 365 天。"],
 };
 
 const legacyPlanFeatureKeys: Partial<Record<string, readonly string[]>> = {
@@ -95,16 +96,16 @@ const legacyPlanFeatureKeys: Partial<Record<string, readonly string[]>> = {
     featureKey([
       "完整摄影判断",
       "云海 / 朝霞晚霞 / 星空银河",
-      "专业逐小时表格",
+      "拍摄时段与准备建议",
       "会员期内完整历史报告",
     ]),
-    featureKey(["完整摄影判断", "专业逐小时表格"]),
+    featureKey(["完整摄影判断", "拍摄时段与准备建议"]),
   ],
   quarterly_full: [
     featureKey([
       "完整摄影判断",
       "云海 / 朝霞晚霞 / 星空银河",
-      "专业逐小时表格",
+      "拍摄时段与准备建议",
       "续费后有效期自动顺延",
     ]),
     featureKey(["完整摄影判断", "云海 / 朝霞晚霞 / 星空银河"]),
@@ -113,7 +114,7 @@ const legacyPlanFeatureKeys: Partial<Record<string, readonly string[]>> = {
     featureKey([
       "完整摄影判断",
       "云海 / 朝霞晚霞 / 星空银河",
-      "专业逐小时表格",
+      "拍摄时段与准备建议",
       "全年完整历史报告",
     ]),
     featureKey(["完整历史报告", "会员期内完整历史报告"]),
@@ -197,7 +198,7 @@ function sanitizePricingCopy(value: string | null | undefined): string | null {
   }
 
   const sanitized = stalePricingCopyPatterns
-    .reduce((current, pattern) => current.replace(pattern, ""), value)
+    .reduce((current, pattern) => current.replace(pattern, ""), normalizeProductCopy(value))
     .replace(/\s*([、，,。；;：:])\s*/g, "$1")
     .replace(/[、，,；;：:]+/g, "、")
     .replace(/^[\s、，,。；;：:]+|[\s、，,；;：:]+$/g, "")

@@ -765,7 +765,11 @@ describe("forecast query validation route", () => {
     };
     const first = await app.inject(request);
     expect(first.statusCode).toBe(202);
-    expect(first.json()).toEqual({ status: "processing", retryAfterMs: 1000 });
+    expect(first.json()).toEqual({
+      status: "processing",
+      retryAfterMs: 1000,
+      requestId: expect.any(String),
+    });
     expect(first.headers["cache-control"]).toBe("no-store");
     const second = await app.inject(request);
     expect(second.statusCode).toBe(202);
@@ -2148,6 +2152,55 @@ describe("forecast query validation route", () => {
     });
   });
 
+  it("populates real regional terrain for cloud-sea forecasts and synchronizes its summary", async () => {
+    const queryTerrainRegion = vi.fn(async () => ({
+      available: true,
+      elevationMeters: 1850,
+      minElevation1km: 1000,
+      minElevation3km: 600,
+      minElevation5km: 400,
+      maxElevation5km: 1900,
+      avgElevation5km: 1100,
+      sampleCount: 1200,
+      validSampleCount: 1200,
+      datasetName: "Active DEM",
+      datasetVersion: "v2",
+    }));
+    app = buildApiServer({
+      authConfig: forecastTestAuthConfig,
+      astroServiceClient: {
+        calculate: async (input) => buildAstroServiceResponse(input),
+        queryTerrainRegion,
+      },
+      env: {
+        ...process.env,
+        ENABLE_ASTRO_SERVICE: "true",
+        ASTRO_SERVICE_URL: "http://127.0.0.1:4100",
+      },
+      logger: false,
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/forecast/calculate",
+      payload: validPayload,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(queryTerrainRegion).toHaveBeenCalledOnce();
+    const body = response.json();
+    expect(body.terrainAnalysis.terrainProfile).toMatchObject({
+      minElevation1km: 1000,
+      minElevation5km: 400,
+      localReliefMeters: 1460,
+      regionalEvidence: { source: "dem", datasetName: "Active DEM" },
+    });
+    expect(body.terrainAnalysis.terrainProfile.samples).toBeUndefined();
+    expect(body.terrainSummary.minElevation5km).toBe(400);
+    expect(body.terrainSummary.isMock).toBe(false);
+    expect(body.terrainSummary.regionalEvidence).toEqual(
+      body.terrainAnalysis.terrainProfile.regionalEvidence,
+    );
+  });
+
   it("enriches astro terrain horizon scoring with available local DEM profiles", async () => {
     const calculateMock = vi.fn((input: AstroServiceCalculateInput) => {
       const response = buildAstroServiceResponse(input);
@@ -2218,6 +2271,10 @@ describe("forecast query validation route", () => {
         status: "available",
       }),
     });
+    expect(body.terrainSummary.directionSamples).toEqual(
+      body.terrainAnalysis.horizonProfile.directionSamples,
+    );
+    expect(body.terrainSummary.isMock).toBe(body.terrainAnalysis.isMock);
     expect(
       body.terrainAnalysis.horizonProfile.directionSamples.filter(
         (sample: { target?: string | null }) => sample.target === "milky_way",

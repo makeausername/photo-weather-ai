@@ -2,6 +2,7 @@ import React from "react";
 import type { ForecastCalculationResult } from "@photo-weather/shared";
 import { Card } from "../../components/ui";
 import { buildPhotographyOutlook } from "./photography-outlook";
+import { ReportLocationMeta } from "./report-location-meta";
 
 export function PhotographyOutlook({ result }: { readonly result: ForecastCalculationResult }) {
   const outlook = buildPhotographyOutlook(result);
@@ -11,6 +12,7 @@ export function PhotographyOutlook({ result }: { readonly result: ForecastCalcul
       className="mx-auto grid w-full min-w-0 max-w-4xl gap-4 [overflow-wrap:anywhere]"
       data-photography-outlook="true"
     >
+      <ReportLocationMeta result={result} />
       <Card className="decision-hero min-w-0 p-5 sm:p-6">
         <h2 className="text-xs font-semibold tracking-widest text-muted-foreground">出行结论</h2>
         <div
