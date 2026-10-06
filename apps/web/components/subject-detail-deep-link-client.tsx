@@ -21,6 +21,7 @@ import {
   buildGlowForecastViewModel,
 } from "../app/forecast/forecast-result-view-model";
 import { focusSubjectDetailResult } from "../app/forecast/subject-detail-focus";
+import { WeatherAlerts } from "../app/forecast/weather-alerts";
 import {
   formatSubjectDetailWindowLabel,
   buildSubjectDetailFallbackRequest,
@@ -184,12 +185,15 @@ export function SubjectDetailDeepLinkClient({ target, parsed }: SubjectDetailDee
       ) : null}
 
       {state.status === "ready" ? (
-        <SubjectResultContent
-          target={target}
-          query={state.query}
-          result={state.result}
-          context={context}
-        />
+        <>
+          <WeatherAlerts result={state.result} />
+          <SubjectResultContent
+            target={target}
+            query={state.query}
+            result={state.result}
+            context={context}
+          />
+        </>
       ) : null}
     </PublicShell>
   );
