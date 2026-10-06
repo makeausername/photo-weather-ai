@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   getCurrentAccountSession,
@@ -16,11 +17,11 @@ type PublicAccountEntryProps = {
 
 type PublicAccountMenuPlacement = "dropdown" | "inline";
 
-export const publicAccountMenuLinks = [
-  { href: "/account", label: "账户中心" },
-] as const;
+export const publicAccountMenuLinks = [{ href: "/account", label: "账户中心" }] as const;
 
 export function PublicAccountEntry({ onNavigate, variant = "desktop" }: PublicAccountEntryProps) {
+  const pathname = usePathname();
+  const [resolved, setResolved] = useState(false);
   const [session, setSession] = useState<PublicAccountSession | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const isMobile = variant === "mobile";
@@ -57,18 +58,35 @@ export function PublicAccountEntry({ onNavigate, variant = "desktop" }: PublicAc
       .then((nextSession) => {
         if (!cancelled) {
           setSession(nextSession);
+          setResolved(true);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setSession(null);
+          setResolved(true);
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pathname]);
+
+  useEffect(() => setMenuOpen(false), [pathname]);
+
+  if (!resolved)
+    return (
+      <span
+        aria-label="正在确认账户"
+        className={cn(
+          "inline-flex h-11 min-w-[74px] items-center justify-center text-sm text-muted-foreground",
+          isMobile && "w-full",
+        )}
+      >
+        账户
+      </span>
+    );
 
   if (!session) {
     return (
@@ -99,10 +117,7 @@ export function PublicAccountEntry({ onNavigate, variant = "desktop" }: PublicAc
   }
 
   return (
-    <div
-      ref={menuRef}
-      className={cn(isMobile ? "grid w-full max-w-full min-w-0" : "relative")}
-    >
+    <div ref={menuRef} className={cn(isMobile ? "grid w-full max-w-full min-w-0" : "relative")}>
       <button
         type="button"
         className={cn(
@@ -152,9 +167,7 @@ export function PublicAccountMenuContent({
       role="menu"
       className={cn(
         "mt-2 grid overflow-hidden rounded-lg border border-border bg-card p-1 shadow-soft",
-        placement === "dropdown"
-          ? "absolute right-0 z-50 min-w-48"
-          : "w-full max-w-full min-w-0",
+        placement === "dropdown" ? "absolute right-0 z-50 min-w-48" : "w-full max-w-full min-w-0",
       )}
     >
       {publicAccountMenuLinks.map((item) => (

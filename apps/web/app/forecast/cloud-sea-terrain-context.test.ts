@@ -38,6 +38,32 @@ const genericUnknownTerrainSpot = {
 } as const;
 
 describe("buildCloudSeaTerrainContext", () => {
+  it("labels viewpoint relief separately from regional maximum minus minimum", () => {
+    const base = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase").result;
+    const result = {
+      ...base,
+      terrainAnalysis: {
+        ...base.terrainAnalysis,
+        terrainProfile: {
+          ...base.terrainAnalysis.terrainProfile,
+          elevationMeters: 9,
+          locationElevation: 9,
+          localReliefMeters: 9.9,
+          nearbyValleyElevationMeters: -0.9,
+          elevationDiff5km: 471.9,
+          minElevation5km: -0.9,
+          maxElevation5km: 471,
+        },
+      },
+    };
+    const context = buildCloudSeaTerrainContextFromResult(result);
+    expect(context.terrainNoteZh).toContain("机位高出周边低地约 10");
+    expect(context.terrainNoteZh).not.toContain("周边5公里高差约 10");
+    expect(context.isClassicCloudSeaEligible).toBe(false);
+    const rangeOnly = buildCloudSeaTerrainContext({ elevationMeters: 800, elevationDiff5km: 1500 });
+    expect(rangeOnly.surroundingReliefMeters).toBeUndefined();
+    expect(rangeOnly.isClassicCloudSeaEligible).toBe(false);
+  });
   it.each([3041, 3433, 3723])(
     "keeps high unknown terrain consistent through both pages and the recommendation guard: %i m",
     (elevationMeters) => {
@@ -63,7 +89,7 @@ describe("buildCloudSeaTerrainContext", () => {
       expect(context.vocabulary.subjectLabel).toBe("云雾");
       expect(context.isClassicCloudSeaEligible).toBe(false);
       expect(context.terrainClass).toBe("high_mountain");
-      expect(context.terrainNoteZh).toContain("周边高差待确认");
+      expect(context.terrainNoteZh).toContain("机位相对低地高差待确认");
       const view = buildCloudSeaForecastViewModel(result);
       for (const copy of [
         view.recommendationExplanation,

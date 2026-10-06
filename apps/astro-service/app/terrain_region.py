@@ -22,10 +22,15 @@ class TerrainRegionResponse(BaseModel):
     validSampleCount: int = 0
     datasetName: str | None = None
     datasetVersion: str | None = None
-    samplingVersion: str = "terrain-region-v1"
+    samplingVersion: str = "terrain-region-v2"
 
 
 def query_region(service, request: TerrainRegionRequest) -> TerrainRegionResponse:
+    with service.dataset.read_session():
+        return _query_region_locked(service, request)
+
+
+def _query_region_locked(service, request: TerrainRegionRequest) -> TerrainRegionResponse:
     from .terrain_dem import sample_elevation
     metadata = service.dataset.metadata or {}
     basis = dict(datasetName=metadata.get("datasetName"), datasetVersion=metadata.get("datasetVersion"))
@@ -72,6 +77,12 @@ def query_region(service, request: TerrainRegionRequest) -> TerrainRegionRespons
         if elevation is None:
             return TerrainRegionResponse(reason="missing_observer_elevation", **basis)
         region = values[circle & valid]
+        # A resampled grid can miss a narrow peak, so allow 100 m, but never
+        # accept a centre thousands of metres above the surrounding maximum.
+        if not np.isfinite(elevation) or not -500 <= elevation <= 9000 or not (
+            float(region.min()) - 100 <= elevation <= float(region.max()) + 100
+        ):
+            return TerrainRegionResponse(reason="inconsistent_region_elevation", **basis)
         return TerrainRegionResponse(available=True, elevationMeters=round(elevation, 1),
             minElevation1km=minima[0], minElevation3km=minima[1], minElevation5km=minima[2],
             maxElevation5km=round(float(region.max()), 1), avgElevation5km=round(float(region.mean()), 1), **basis)

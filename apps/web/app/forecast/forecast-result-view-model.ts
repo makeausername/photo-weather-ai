@@ -745,6 +745,7 @@ export type AstroTerrainHorizonDisplayModel = {
 };
 
 export type AstroNightDisplayModel = {
+  readonly selectedWindow?: { start: string; end: string };
   readonly nightKey: string;
   readonly localEveningDate: string;
   readonly localEveningDateLabel: string;
@@ -3739,6 +3740,7 @@ function buildAstroNightDisplayModels(
       confidence: astroNightConfidence(result, weatherSummary, horizonCoverageState),
       unavailableReason,
       bestShootingWindowLabel,
+      selectedWindow: bestWindow ? { start: bestWindow.start, end: bestWindow.end } : undefined,
       directionSummaryLabel,
       moonImpactSummaryLabel: `${moonInterference} · ${astro?.moonPhaseNameZh ?? "暂无月相"} ${typeof astro?.moonIllumination === "number" ? formatPercent(astro.moonIllumination) : "暂无照明"}`,
       cloudWeatherBlockerLabel,

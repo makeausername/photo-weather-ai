@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from contextlib import nullcontext
 
 import pytest
 
@@ -21,7 +22,7 @@ def test_regional_stats_require_real_coverage(tmp_path, state):
                        dtype="int16", crs="EPSG:4326", transform=from_origin(-.1, .1, .001, .001), nodata=-9999) as dst:
         dst.write(data, 1)
     with rasterio.open(path) as dataset:
-        service = SimpleNamespace(dataset=SimpleNamespace(open=lambda: dataset,
+        service = SimpleNamespace(dataset=SimpleNamespace(open=lambda: dataset, read_session=nullcontext,
             metadata={"datasetName": "Actual DEM", "datasetVersion": "v1"}))
         result = query_region(service, TerrainRegionRequest(latitudeWgs84=0,
             longitudeWgs84=.09 if state == "edge" else 0))
@@ -39,8 +40,24 @@ def test_regional_stats_require_real_coverage(tmp_path, state):
 
 
 def test_missing_dataset_does_not_invent_area_stats():
-    service = SimpleNamespace(dataset=SimpleNamespace(open=lambda: None, metadata=None))
+    service = SimpleNamespace(dataset=SimpleNamespace(open=lambda: None, metadata=None, read_session=nullcontext))
     result = query_region(service, TerrainRegionRequest(latitudeWgs84=30, longitudeWgs84=110))
     assert not result.available
     assert result.minElevation5km is None
     assert result.sampleCount == 0
+
+
+def test_region_rejects_centre_incompatible_with_area(tmp_path, monkeypatch):
+    from app import terrain_dem
+    monkeypatch.setattr(terrain_dem, "sample_elevation", lambda *_: 5122)
+    data = np.full((201, 201), 3099.2, dtype="float32")
+    path = tmp_path / "dem.tif"
+    with rasterio.open(path, "w", driver="GTiff", width=201, height=201, count=1,
+                       dtype="float32", crs="EPSG:4326", transform=from_origin(-.1, .1, .001, .001)) as dst:
+        dst.write(data, 1)
+    with rasterio.open(path) as dataset:
+        service = SimpleNamespace(dataset=SimpleNamespace(open=lambda: dataset, read_session=nullcontext, metadata={}))
+        result = query_region(service, TerrainRegionRequest(latitudeWgs84=0, longitudeWgs84=0))
+    assert not result.available
+    assert result.reason == "inconsistent_region_elevation"
+    assert result.maxElevation5km is None

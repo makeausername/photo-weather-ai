@@ -18,6 +18,8 @@ export type SubjectReportTarget = "cloud_sea" | "glow" | "astro";
 export type SubjectReportSection = {
   readonly title: string;
   readonly lines: readonly string[];
+  readonly date?: string;
+  readonly summary?: string;
 };
 export type SubjectDecisionReport = {
   readonly target: SubjectReportTarget;
@@ -31,6 +33,8 @@ export type SubjectDecisionReport = {
   readonly dates: readonly SubjectReportSection[];
   readonly shooting: SubjectReportSection;
   readonly risks: SubjectReportSection;
+  readonly selectedWindow?: { start: string; end: string };
+  readonly selectedDate?: string;
 };
 
 function lines(...values: (string | undefined | null)[]): string[] {
@@ -62,6 +66,14 @@ function astroRisk(text: string): string {
 
 function direction(text: string): string {
   return text.replace(/\s*·?\s*高度\s*[\d.]+°/g, "");
+}
+
+function dailyCloudDecision(action: string, reason: string): string {
+  const verdict = action || "条件待确认，暂不专程";
+  const explanation = conclusion(reason);
+  return explanation.includes(verdict)
+    ? explanation
+    : `${verdict}。${explanation || "云层和观景条件需临近复核。"}`;
 }
 
 function observationCopy(text: string): string {
@@ -98,6 +110,8 @@ function finish(
       arrival: "等预报更新后再安排交通和到场时间。",
       caution: "旧资料或示例数据不能作为出行依据。",
       dates: [],
+      selectedWindow: undefined,
+      selectedDate: undefined,
       shooting: { title: report.shooting.title, lines: ["具体机位、朝向和拍摄安排待确认。"] },
       risks: { title: report.risks.title, lines: ["出发前重新查询，并核对当地预警与现场条件。"] },
     };
@@ -120,6 +134,13 @@ function finish(
     .map((risk) => risk.description);
   return {
     ...report,
+    selectedWindow:
+      !guarded && window?.start && window.end
+        ? { start: window.start, end: window.end }
+        : undefined,
+    selectedDate:
+      report.selectedDate ??
+      (window?.start ? localDateKey(window.start, result.calendarBasis.timezone) : undefined),
     verdict: waiting
       ? "先观望，等资料补齐"
       : noTrip
@@ -159,6 +180,7 @@ function finish(
       ? report.dates.map((day) => ({
           ...day,
           title: `${day.title} · 观察参考`,
+          summary: day.summary ? observationCopy(day.summary) : undefined,
           lines: day.lines.map(observationCopy),
         }))
       : report.dates,
@@ -195,18 +217,18 @@ export function buildCloudSeaDecisionReport(
         : "不为参考窗口专程赶路；已在附近再看云层开口。",
       caution: lines(
         /不足|缺|不一致|分歧|复核|待确认|待补/.test(model.dataCaution ?? "")
-          ? model.dataCaution
+          ? conclusion(model.dataCaution ?? "", 2)
           : undefined,
         !classic ? terrain.terrainNoteZh : undefined,
       ).join("；"),
       datesTitle: classic ? "哪天值得上山守云海" : "哪天留意低云和晨雾",
       dates: display.dailyJudgment.map((day) => ({
         title: day.dateLabel,
+        date: day.date,
+        summary: day.recommendedAction || "条件待确认，暂不专程",
         lines: lines(
-          (day.decisionReason || day.keyReason).includes(day.recommendedAction)
-            ? conclusion(day.decisionReason || day.keyReason)
-            : `${day.recommendedAction}。${conclusion(day.decisionReason || day.keyReason)}`,
-          `守候参考：${day.bestMorningWindow}`,
+          dailyCloudDecision(day.recommendedAction, day.decisionReason || day.keyReason),
+          `${classic ? "守候参考" : "低云观察参考（不代表会起晨雾）"}：${day.bestMorningWindow}`,
           `${classic ? "白墙" : "低云遮挡"}（该日期范围整体）：${day.whiteoutRiskLabel}`,
         ),
       })),
@@ -291,6 +313,8 @@ export function buildGlowDecisionReport(
       datesTitle: "追朝霞还是等晚霞",
       dates: model.dailyOpportunities.map((day) => ({
         title: day.localDateLabel,
+        date: day.date,
+        summary: `朝霞${day.sunrise.recommendation}；晚霞${day.sunset.recommendation}`,
         lines: lines(
           glowSlot(day.sunrise),
           glowSlot(day.sunset),
@@ -348,6 +372,7 @@ export function buildAstroDecisionReport(
     result,
     {
       target: "astro",
+      selectedDate: selected?.localEveningDate,
       title: "星空银河拍摄建议",
       verdict: missingNight
         ? "所选观测夜资料不足"
@@ -374,6 +399,8 @@ export function buildAstroDecisionReport(
       datesTitle: focused ? "这个夜晚能拍什么" : "哪一晚值得守银河",
       dates: nights.map((night) => ({
         title: night.localEveningDateLabel,
+        date: night.localEveningDate,
+        summary: night.recommendationLabel,
         lines: lines(
           `${night.recommendationLabel}。${conclusion(night.conciseReason, 2).replace(/，方向\s*[^。]+/g, "")}`,
           `时段参考：${night.bestShootingWindowLabel}`,
@@ -412,6 +439,6 @@ export function buildAstroDecisionReport(
         ),
       },
     },
-    { start: selected?.astronomicalNight.startAt, end: selected?.astronomicalNight.endAt },
+    selected?.selectedWindow,
   );
 }

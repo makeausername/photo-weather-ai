@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
+import { PublicFrame } from "../components/public-frame";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://zhuguangweather.com"),
@@ -38,7 +39,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
             __html: `try{document.documentElement.dataset.theme=localStorage.getItem('zhuguang-reading-theme')==='dark'?'dark':'light'}catch(e){}`,
           }}
         />
-        {children}
+        <PublicFrame>{children}</PublicFrame>
       </body>
     </html>
   );

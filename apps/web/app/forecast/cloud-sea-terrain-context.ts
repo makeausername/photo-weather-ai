@@ -245,7 +245,7 @@ export function buildCloudSeaTerrainContextFromResult(
   return buildCloudSeaTerrainContext({
     elevationMeters: profile.locationElevation ?? profile.elevationMeters,
     locationElevation: profile.locationElevation,
-    surroundingReliefMeters: profile.localReliefMeters ?? profile.elevationDiff5km,
+    surroundingReliefMeters: profile.localReliefMeters,
     nearbyValleyElevationMeters: profile.nearbyValleyElevationMeters,
     localReliefMeters: profile.localReliefMeters,
     elevationDiff5km: profile.elevationDiff5km,
@@ -263,7 +263,6 @@ export function buildCloudSeaTerrainContext(
   const surroundingRelief =
     finiteNumber(input.surroundingReliefMeters) ??
     finiteNumber(input.localReliefMeters) ??
-    finiteNumber(input.elevationDiff5km) ??
     (elevation !== undefined && nearbyValleyElevation !== undefined
       ? elevation - nearbyValleyElevation
       : undefined);
@@ -313,7 +312,7 @@ export function buildCloudSeaTerrainContext(
     terrainType: terrainType || undefined,
     terrainNoteZh:
       subject === "云雾"
-        ? `地形数据不足以确认云海俯拍条件；${elevation === undefined ? "机位海拔待确认" : `机位海拔约 ${Math.round(elevation)} 米`}，${surroundingRelief === undefined ? "周边高差待确认" : `周边高差约 ${Math.round(surroundingRelief)} 米`}，当前按云雾观察，云层与机位的相对高度待确认。`
+        ? `地形数据不足以确认云海俯拍条件；${elevation === undefined ? "机位海拔待确认" : `机位海拔约 ${Math.round(elevation)} 米`}，${surroundingRelief === undefined ? "机位相对低地高差待确认" : `机位高出周边低地约 ${Math.round(surroundingRelief)} 米`}，当前按云雾观察，云层与机位的相对高度待确认。`
         : input.terrainDisplay?.cloudSeaNoteZh ??
           terrainNoteZh({
             elevation,
@@ -464,14 +463,14 @@ function terrainNoteZh(input: {
     if (input.surroundingRelief === undefined) {
       return `地形参考：${elevationText}；高差缺测，周边5公里高差统计暂未返回，当前按低云/晨雾参考处理。`;
     }
-    return `地形参考：${elevationText}；周边5公里高差约 ${Math.round(
+    return `地形参考：${elevationText}；机位高出周边低地约 ${Math.round(
       input.surroundingRelief,
     )} 米，${cloudSeaReliefSupportPhrase(input.surroundingRelief)}当前仍按低云/晨雾和通透参考处理。`;
   }
 
   const elevationText = `机位海拔约 ${Math.round(input.elevation)} 米（${elevationBand}）`;
   if (input.surroundingRelief !== undefined) {
-    return `地形参考：${elevationText}；周边5公里高差约 ${Math.round(
+    return `地形参考：${elevationText}；机位高出周边低地约 ${Math.round(
       input.surroundingRelief,
     )} 米，${cloudSeaReliefSupportPhrase(input.surroundingRelief)}仍需现场复核云顶高度和白墙风险。`;
   }

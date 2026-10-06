@@ -59,9 +59,10 @@ type PublicHeaderProps = {
 
 export function PublicHeader(props?: PublicHeaderProps) {
   const { initialMenuOpen = false } = props ?? {};
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "/";
   const [menuOpen, setMenuOpen] = useState(initialMenuOpen);
   const headerMenuRef = useRef<HTMLElement | null>(null);
+  useEffect(() => setMenuOpen(false), [pathname]);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -145,7 +146,7 @@ export function PublicHeader(props?: PublicHeaderProps) {
       {menuOpen ? (
         <div
           id="public-mobile-menu"
-          className="w-full max-w-full min-w-0 border-t border-border bg-card shadow-panel lg:hidden"
+          className="absolute inset-x-0 top-full max-h-[calc(100dvh-73px)] w-full max-w-full min-w-0 overflow-y-auto border-b border-border bg-card shadow-panel lg:hidden"
         >
           <div className="mx-auto grid w-full max-w-[1600px] min-w-0 gap-4 px-[clamp(16px,4vw,64px)] py-4">
             <div className="grid w-full max-w-full min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">

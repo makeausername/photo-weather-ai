@@ -99,6 +99,73 @@ def profile_request(**overrides: object) -> TerrainDemProfileQueryRequest:
     return TerrainDemProfileQueryRequest(**payload)
 
 
+def test_region_and_direction_reads_share_lock_and_exclude_close(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event, Lock
+    from time import sleep
+    from app import terrain_region
+
+    write_profile_dataset(tmp_path)
+    service = terrain_service(tmp_path)
+    active, maximum = 0, 0
+    guard = Lock()
+
+    def instrument(function):
+        def wrapped(*args):
+            nonlocal active, maximum
+            with guard:
+                active += 1
+                maximum = max(maximum, active)
+            try:
+                sleep(.005)
+                return function(*args)
+            finally:
+                with guard:
+                    active -= 1
+        return wrapped
+
+    monkeypatch.setattr(service, "_query_profile_locked", instrument(service._query_profile_locked))
+    monkeypatch.setattr(terrain_region, "_query_region_locked", instrument(terrain_region._query_region_locked))
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        jobs = [pool.submit(service.query_profile, profile_request()) if i % 2 else
+                pool.submit(terrain_region.query_region, service, terrain_region.TerrainRegionRequest(latitudeWgs84=0, longitudeWgs84=0)) for i in range(24)]
+        results = [job.result(timeout=10) for job in jobs]
+    assert maximum == 1
+    assert all(result.available for result in results)
+    reader = service.dataset.open()
+    entered, released, closing = Event(), Event(), Event()
+
+    def read():
+        with service.dataset.read_session():
+            entered.set()
+            assert released.wait(5)
+            assert not reader.closed
+
+    def close():
+        closing.set()
+        service.dataset.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        reading = pool.submit(read)
+        assert entered.wait(5)
+        closed = pool.submit(close)
+        assert closing.wait(5)
+        try:
+            assert not closed.done()
+        finally:
+            released.set()
+        reading.result(timeout=5)
+        closed.result(timeout=5)
+    assert reader.closed
+
+
+def test_direction_rejects_gross_observer_dem_mismatch(tmp_path):
+    write_profile_dataset(tmp_path)
+    result = terrain_service(tmp_path).query_profile(profile_request(observerElevationMeters=5122))
+    assert not result.available
+    assert result.unavailableReason.startswith("invalid_directional_sample")
+
+
 def test_missing_terrain_dem_is_unavailable_without_faking_clearance(tmp_path: Path) -> None:
     service = terrain_service(tmp_path)
 

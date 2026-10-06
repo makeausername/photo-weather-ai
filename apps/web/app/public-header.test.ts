@@ -42,13 +42,12 @@ describe("public header", () => {
 
   it("renders desktop header controls without a duplicate start-analysis CTA", () => {
     const html = renderHeader();
-    const accountLink = findRenderedLink(html, "/login", publicHeaderActionLabels[0]);
 
     expect(html).not.toContain("开始分析");
     expect(html).not.toContain('href="/#analysis"');
     expect(html).toContain("账户");
-    expect(accountLink).toContain('href="/login"');
-    expect(accountLink).not.toContain("w-full max-w-full min-w-0");
+    expect(html).toContain('aria-label="正在确认账户"');
+    expect(html).not.toContain('href="/login"');
     expect(html).not.toContain('role="group"');
     expect(html).toContain('aria-label="切换夜间阅读" aria-pressed="false"');
 
@@ -60,14 +59,14 @@ describe("public header", () => {
   it("renders the mobile menu without a duplicate start-analysis action", () => {
     const html = renderHeader({ initialMenuOpen: true });
     const mobileMenu = findMobileMenu(html);
-    const mobileAccountLink = findRenderedLink(mobileMenu, "/login", publicHeaderActionLabels[0]);
 
     expect(html).toContain('id="public-mobile-menu"');
     expect(mobileMenu).toContain("w-full max-w-full min-w-0");
     expect(mobileMenu).toContain("grid w-full max-w-full min-w-0 gap-2 border-t");
     expect(mobileMenu).not.toContain("absolute right-0");
     expect(mobileMenu).not.toContain("z-50");
-    expect(mobileAccountLink).toContain("w-full max-w-full min-w-0 justify-center");
+    expect(mobileMenu).toContain('aria-label="正在确认账户"');
+    expect(mobileMenu).toContain("absolute inset-x-0 top-full");
     expect(html).not.toContain("开始分析");
     expect(html).not.toContain('href="/#analysis"');
     expect(html).toContain("账户");

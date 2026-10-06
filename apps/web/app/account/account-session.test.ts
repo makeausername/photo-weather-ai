@@ -137,6 +137,8 @@ const cloudSeaHistoryRecord: AccountForecastHistoryRecord = {
     photoSpotId: "spot-test",
   },
   resultSummaryJson: {
+    summaryVersion: 2,
+    windowLabel: "附近观察参考：6月22日 05:00–07:00",
     overallScore: 82,
     recommendationLabel: "推荐前往",
     bestWindowStart: "2026-06-22T05:00:00+08:00",
@@ -259,10 +261,11 @@ describe("public account navigation", () => {
     expect([...publicHeaderNavLabels, ...publicHeaderActionLabels]).not.toContain("登录");
   });
 
-  it("keeps the logged-out account entry pointed at the public login route", () => {
+  it("waits for account resolution instead of flashing a logged-out link", () => {
     const html = renderToStaticMarkup(React.createElement(PublicAccountEntry));
 
-    expect(html).toContain('href="/login"');
+    expect(html).not.toContain('href="/login"');
+    expect(html).toContain('aria-label="正在确认账户"');
     expect(html).toContain("账户");
   });
 
@@ -587,6 +590,13 @@ describe("account center foundation", () => {
   it("shows recent forecast history by default while preserving target jump links", () => {
     const html = renderAuthenticatedAccountCenter(baseAccountSession, [cloudSeaHistoryRecord]);
     const href = buildForecastHistoryHref(cloudSeaHistoryRecord);
+    expect(html).toContain("附近观察参考：6月22日 05:00–07:00");
+    expect(html).not.toContain("82 分");
+    const old = renderAuthenticatedAccountCenter(baseAccountSession, [
+      { ...cloudSeaHistoryRecord, resultSummaryJson: null },
+    ]);
+    expect(old).toContain("旧报告摘要需重新查询确认");
+    expect(old).not.toContain("05:00");
 
     expect(href).toContain("/cloud-sea?");
     expect(href).toContain("from=account_history");
@@ -606,7 +616,7 @@ describe("account center foundation", () => {
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain("测试山顶");
     expect(html).toContain("推荐前往");
-    expect(html).toContain("82 分");
+    expect(html).not.toContain("82 分");
     expect(html).toContain("打开分析");
     expect(html).toContain('href="/cloud-sea?');
     expect(html).not.toContain("坐标不足");

@@ -27,6 +27,31 @@ const region = {
   datasetVersion: "v1",
 };
 describe("regional terrain evidence", () => {
+  it.each([
+    {
+      elevationMeters: 5122,
+      minElevation1km: 772.1,
+      minElevation3km: 718.4,
+      minElevation5km: 702.8,
+      maxElevation5km: 3099.2,
+      avgElevation5km: 1894.2,
+    },
+    { minElevation1km: 200 },
+    { avgElevation5km: 2000 },
+    { validSampleCount: 949 },
+    { sampleCount: 0 },
+    { validSampleCount: 1001 },
+    { elevationMeters: 2000 },
+  ])("rejects inconsistent regional evidence without inventing cloud-sea relief: %j", (invalid) => {
+    const profile = applyTerrainRegion(
+      { ...input.terrainAnalysis.terrainProfile, elevationMeters: 500 },
+      { ...region, ...invalid },
+    );
+    expect(profile.regionalEvidence?.source).toBe("unavailable");
+    expect(profile.localReliefMeters).toBeNull();
+    expect(profile.elevationDiff5km).toBeNull();
+    expect(profile.terrainCloudSeaPotential).toBe("low");
+  });
   it("preserves weather point elevation and does not turn a valley into an elevated cloud-sea viewpoint", () => {
     const profile = applyTerrainRegion(
       {

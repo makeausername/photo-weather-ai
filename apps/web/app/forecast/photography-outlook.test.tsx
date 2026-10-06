@@ -5,6 +5,7 @@ import type { ForecastCalculationResult } from "@photo-weather/shared";
 import { cloudSeaRegressionFixture } from "./__tests__/fixtures/cloudSeaRegressionFixtures";
 import { buildPhotographyOutlook } from "./photography-outlook";
 import { PhotographyOutlook } from "./photography-outlook-view";
+import { buildForecastHistorySummary } from "./forecast-result-client";
 import { photographyScene } from "./photography-scene";
 
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
@@ -65,6 +66,46 @@ function forecast(count = 2): ForecastCalculationResult {
   };
 }
 describe("photography conclusion", () => {
+  it("saves the same daylight window and verdict shown in the general report", () => {
+    const result = forecast(3);
+    const outlook = buildPhotographyOutlook(result);
+    const summary = buildForecastHistorySummary(result);
+    expect(summary.recommendationLabel).toBe(outlook.conclusion[0]);
+    expect(summary.windowLabel).toBe(outlook.conclusion[1]);
+    expect(summary.bestWindowStart).toBe(outlook.selectedWindow?.start ?? null);
+    expect(summary.bestWindowEnd).toBe(outlook.selectedWindow?.end ?? null);
+  });
+  it("uses only the matching date and solar phase of real DEM samples", () => {
+    const result = forecast(3);
+    const sample = {
+      target: "sunset" as const,
+      sourcePhase: "sunset" as const,
+      sourceDate: "2026-05-20",
+      azimuthDegrees: 270,
+      dataSource: "dem_raster" as const,
+      confidence: "high" as const,
+      validSampleCount: 120,
+      obstructionLevel: "obstructed" as const,
+    };
+    const value = buildPhotographyOutlook({
+      ...result,
+      terrainAnalysis: {
+        ...result.terrainAnalysis,
+        horizonProfile: { ...result.terrainAnalysis.horizonProfile, directionSamples: [sample] },
+      },
+    });
+    expect(value.days[0]!.sunset).toContain("被山体遮挡");
+    expect(value.days[0]!.sunset).toContain("提前拍摄");
+    expect(value.days[0]!.sunset).not.toContain("太阳升高");
+    expect(value.days[0]!.sunset).not.toContain("地平线遮挡待确认");
+    expect(value.days[0]!.sunrise).not.toContain("被山体遮挡");
+    expect(value.days[1]!.sunset).not.toContain("被山体遮挡");
+    expect(value.days[0]!.dusk).not.toContain("山体");
+    expect(value.conclusion[2]).toContain("部分日期受山体遮挡");
+    const html = renderToStaticMarkup(<PhotographyOutlook result={result} />);
+    expect(html.match(/data-outlook-day=/g)).toHaveLength(3);
+    expect(html.match(/<details open=""/g)).toHaveLength(1);
+  });
   it.each([
     "complete",
     "rolling-start",

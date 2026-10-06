@@ -2,6 +2,7 @@ import type {
   ElevationConfidence,
   ElevationSource,
   ForecastHorizon,
+  ForecastQueryInput,
   ForecastTarget,
   SpotTerrainProfile,
 } from "@photo-weather/shared";
@@ -33,6 +34,57 @@ export type SelectedLocation = {
 };
 
 export const recentSelectedLocationStorageKey = "photo_weather_recent_selected_location:v1";
+export function selectedLocationFromForecastQuery(query: ForecastQueryInput): SelectedLocation {
+  const source =
+    query.source === "amap"
+      ? "amap"
+      : query.source === "browser_geolocation"
+        ? "browser_geolocation"
+        : query.photoSpotId
+          ? "local_photo_spot"
+          : "manual";
+  return {
+    id: query.photoSpotId ?? query.locationId ?? `${query.latitudeWgs84},${query.longitudeWgs84}`,
+    name: query.name,
+    displayName: query.name,
+    source,
+    originalSource: query.source,
+    latitudeWgs84: query.latitudeWgs84,
+    longitudeWgs84: query.longitudeWgs84,
+    latitudeGcj02: query.latitudeGcj02,
+    longitudeGcj02: query.longitudeGcj02,
+    elevationMeters: query.elevationMeters,
+    elevationSource: query.elevationSource,
+    elevationConfidence: query.elevationConfidence,
+    dataStatus: "pending",
+    coordinateSource: coordinateSourceLabel(source),
+    locationId: query.locationId,
+    photoSpotId: query.photoSpotId,
+  };
+}
+export const recentForecastHorizonStorageKey = "photo_weather_recent_horizon:v1";
+
+export function readRecentForecastHorizon(
+  storage: SelectedLocationStorage | null = browserSessionStorage(),
+): ForecastHorizon | null {
+  try {
+    const value = storage?.getItem(recentForecastHorizonStorageKey);
+    return value === "24h" || value === "48h" || value === "72h" || value === "7d" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function rememberForecastHorizon(
+  horizon: ForecastHorizon,
+  storage: SelectedLocationStorage | null = browserSessionStorage(),
+): void {
+  try {
+    storage?.setItem(recentForecastHorizonStorageKey, horizon);
+  } catch {
+    /* Storage may be disabled. */
+  }
+}
 
 type SelectedLocationStorage = Pick<Storage, "getItem" | "removeItem" | "setItem">;
 

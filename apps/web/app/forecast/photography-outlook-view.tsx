@@ -26,17 +26,24 @@ export function PhotographyOutlook({ result }: { readonly result: ForecastCalcul
         <h2 className="text-base font-semibold">拍摄时段</h2>
         <div className="mt-4 divide-y divide-border">
           {outlook.days.length ? (
-            outlook.days.map((day) => (
-              <article
+            outlook.days.map((day, index) => (
+              <details
                 key={day.date}
+                open={
+                  outlook.days.length <= 2 ||
+                  (outlook.selectedDate ? day.date === outlook.selectedDate : index === 0)
+                }
                 className="py-5 first:pt-0 last:pb-0"
                 data-outlook-day={day.date}
               >
-                <h3 className="mb-3 text-base font-semibold text-primary">{day.label}</h3>
-                <div className="grid gap-2 text-sm leading-7 text-card-foreground">
+                <summary className="cursor-pointer text-sm leading-7">
+                  <span className="font-semibold text-primary">{day.label}</span>
+                  <span className="ml-2">{day.recommendation}</span>
+                </summary>
+                <div className="mt-3 grid gap-2 text-sm leading-7 text-card-foreground">
                   {paragraphs(day.lines)}
                 </div>
-              </article>
+              </details>
             ))
           ) : (
             <p className="text-sm leading-7 text-muted-foreground">
