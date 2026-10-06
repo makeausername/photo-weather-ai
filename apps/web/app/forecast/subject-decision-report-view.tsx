@@ -7,6 +7,8 @@ import {
 import { Card } from "../../components/ui";
 import type { SubjectDecisionReport, SubjectReportSection } from "./subject-decision-report";
 import { ReportLocationMeta } from "./report-location-meta";
+import { ReportShareButton } from "./report-share-button";
+import { buildShareDocument } from "./report-share-document";
 
 export function SubjectDecisionReportView({
   query,
@@ -35,12 +37,15 @@ export function SubjectDecisionReportView({
           </p>
           <ReportLocationMeta result={result} />
         </div>
-        <a
-          href={returnUrl ?? path}
-          className="inline-flex min-h-11 items-center rounded-lg border border-border px-3 text-sm text-primary"
-        >
-          {returnUrl ? "返回天气概览" : "更换地点与范围"}
-        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          <ReportShareButton document={buildShareDocument(result, report)} />
+          <a
+            href={returnUrl ?? path}
+            className="inline-flex min-h-11 items-center rounded-lg border border-border px-3 text-sm text-primary"
+          >
+            {returnUrl ? "返回天气概览" : "更换地点与范围"}
+          </a>
+        </div>
       </header>
       <Card className="grid min-w-0 gap-3 p-5 sm:p-6" data-subject-report-section="decision">
         <h2 className="text-sm font-semibold text-muted-foreground">这趟值不值得去</h2>

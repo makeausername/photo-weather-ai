@@ -3,6 +3,8 @@ import type { ForecastCalculationResult } from "@photo-weather/shared";
 import { Card } from "../../components/ui";
 import { buildPhotographyOutlook } from "./photography-outlook";
 import { ReportLocationMeta } from "./report-location-meta";
+import { ReportShareButton } from "./report-share-button";
+import { buildShareDocument } from "./report-share-document";
 
 export function PhotographyOutlook({ result }: { readonly result: ForecastCalculationResult }) {
   const outlook = buildPhotographyOutlook(result);
@@ -12,7 +14,10 @@ export function PhotographyOutlook({ result }: { readonly result: ForecastCalcul
       className="mx-auto grid w-full min-w-0 max-w-4xl gap-4 [overflow-wrap:anywhere]"
       data-photography-outlook="true"
     >
-      <ReportLocationMeta result={result} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ReportLocationMeta result={result} />
+        <ReportShareButton document={buildShareDocument(result, outlook)} />
+      </div>
       <Card className="decision-hero min-w-0 p-5 sm:p-6">
         <h2 className="text-xs font-semibold tracking-widest text-muted-foreground">出行结论</h2>
         <div
