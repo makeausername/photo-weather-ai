@@ -1,31 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   forecastHorizonLabels,
   type ForecastCalculationResult,
   type ForecastHorizon,
-  type ForecastTarget,
 } from "@photo-weather/shared";
+import { HomepageSearchPanel } from "./homepage-search-panel";
 import {
-  HomepageSearchPanel,
-  homepageDefaultHorizon,
-  homepageDefaultTarget,
-} from "./homepage-search-panel";
-import {
-  buildForecastRequestPayload,
   forgetRecentSelectedLocation,
   readRecentSelectedLocation,
   rememberRecentSelectedLocation,
   type SelectedLocation,
 } from "./selected-location";
-import {
-  normalizeForecastClientErrorMessage,
-  requestForecastCalculation,
-} from "../app/forecast/forecast-request-client";
 import { Badge, Card, cn } from "./ui";
 import { DecisionValue } from "./decision-value";
-import { ForecastEntryHeader, ForecastEntryHelp } from "./forecast-entry";
+import { ForecastEntryHeader } from "./forecast-entry";
 import { PhotographyOutlook } from "../app/forecast/photography-outlook-view";
 
 type LayerStatus = "idle" | "loading" | "ready" | "partial" | "fallback" | "error";
@@ -72,19 +62,7 @@ const homepageGuidanceCards = [
 ] as const;
 
 export function HomepageWorkbench() {
-  const workspaceRef = useRef<HTMLElement>(null);
   const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
-  const [forecastOptions, setForecastOptions] = useState<{
-    readonly horizon: ForecastHorizon;
-    readonly target: ForecastTarget;
-  }>({
-    horizon: homepageDefaultHorizon,
-    target: homepageDefaultTarget,
-  });
-  const [layerState, setLayerState] = useState<ForecastLayerState>({
-    status: "idle",
-    result: null,
-  });
 
   useEffect(() => {
     const recentLocation = readRecentSelectedLocation();
@@ -102,89 +80,22 @@ export function HomepageWorkbench() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!selectedLocation) {
-      setLayerState({ status: "idle", result: null });
-      return;
-    }
-
-    const location = selectedLocation;
-    const controller = new AbortController();
-    setLayerState({ status: "loading", result: null });
-
-    async function loadSelectedLocationForecast() {
-      try {
-        const result = await requestForecastCalculation(
-          buildForecastRequestPayload(location, forecastOptions.horizon, forecastOptions.target),
-          {
-            signal: controller.signal,
-          },
-        );
-        setLayerState({
-          status: buildHomepageLayerStatus(result),
-          result,
-        });
-      } catch (error) {
-        if ((error as Error).name === "AbortError") {
-          return;
-        }
-
-        setLayerState({
-          status: "error",
-          result: null,
-          errorMessage: normalizeForecastClientErrorMessage(error),
-        });
-      }
-    }
-
-    void loadSelectedLocationForecast();
-
-    return () => {
-      controller.abort();
-    };
-  }, [forecastOptions.horizon, forecastOptions.target, selectedLocation]);
-
   return (
     <>
       <ForecastEntryHeader
-        title="天气概览"
-        description="先看值不值得去，再选拍摄日期、时段和题材。"
-        centered={!selectedLocation}
+        title="拍摄天气报告"
+        description="选择地点和时间范围，查看拍摄建议。"
+        centered
       />
       <section
         id="analysis"
-        ref={workspaceRef}
-        tabIndex={-1}
-        className={cn(
-          "grid w-full min-w-0 scroll-mt-24 gap-5 outline-none",
-          selectedLocation
-            ? "min-[960px]:grid-cols-[clamp(340px,31vw,420px)_minmax(0,1fr)] min-[960px]:items-stretch xl:gap-8"
-            : "mx-auto max-w-[760px]",
-        )}
-        data-homepage-workbench-layout={
-          selectedLocation ? "scenario-two-column" : "centered-search"
-        }
+        className="mx-auto grid w-full min-w-0 max-w-[760px] gap-5"
+        data-homepage-workbench-layout="centered-search"
       >
         <HomepageSearchPanel
           selectedLocation={selectedLocation}
           onSelectedLocationChange={handleSelectedLocationChange}
-          onForecastOptionsChange={setForecastOptions}
         />
-        {selectedLocation ? (
-          <HomepageGuidancePanel
-            location={selectedLocation}
-            state={layerState}
-            horizon={forecastOptions.horizon}
-          />
-        ) : (
-          <ForecastEntryHelp title="如何查看天气预报？">
-            <HomepageGuidancePanel
-              location={null}
-              state={{ status: "idle", result: null }}
-              horizon={forecastOptions.horizon}
-            />
-          </ForecastEntryHelp>
-        )}
       </section>
     </>
   );

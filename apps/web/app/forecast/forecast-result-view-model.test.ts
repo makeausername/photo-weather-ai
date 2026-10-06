@@ -3383,8 +3383,8 @@ describe("forecast result target-aware view model", () => {
     );
 
     expect(html).toContain('data-photography-outlook="true"');
-    expect(html).toContain("按日期看");
-    expect(html).toContain("穿衣指南");
+    expect(html).toContain("拍摄时段");
+    expect(html).toContain("穿衣与装备");
     expect(html).not.toContain('data-result-view-tab="professional"');
     expect(html).not.toContain('data-result-view-tab="hourly"');
     expect(html).not.toContain('data-professional-hourly-target="general"');
@@ -4153,7 +4153,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-testid="decision-loading-template"');
     expect(html).toContain('data-testid="decision-context-card"');
     expect(html).toContain('data-testid="decision-loading-card"');
-    expect(html).toContain('data-testid="decision-info-card"');
+    expect(html).not.toContain('data-testid="decision-info-card"');
     expect(html).toContain('data-forecast-decision-page-shell="true"');
     expect(html).toContain('data-forecast-loading-state="true"');
     expect(html).toContain('data-result-page-state="loading"');
@@ -4164,7 +4164,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("分析目标");
     expect(html).toContain("综合判断");
     expect(html).toContain("正在读取天气预报");
-    expect(html).toContain("分析基础");
+    expect(html).not.toContain("分析基础");
   });
 
   it("renders Cloud Sea loading with the same shared DecisionLoadingTemplate and context card", () => {
@@ -4175,7 +4175,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-testid="decision-loading-template"');
     expect(html).toContain('data-testid="decision-context-card"');
     expect(html).toContain('data-testid="decision-loading-card"');
-    expect(html).toContain('data-testid="decision-info-card"');
+    expect(html).not.toContain('data-testid="decision-info-card"');
     expect(html).toContain('data-forecast-decision-page-shell="true"');
     expect(html).toContain('data-forecast-loading-state="true"');
     expect(html).toContain('data-result-page-state="loading"');
@@ -4187,7 +4187,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain("首页");
     expect(html).toContain("云海拍摄判断");
     expect(html).toContain("正在读取云海拍摄条件");
-    expect(html).toContain("云海判断基础");
+    expect(html).not.toContain("云海判断基础");
     expect(html).toContain("地点 / 查询");
     expect(html).toContain("黄山光明顶");
     expect(html).toContain("预报范围");
@@ -4216,7 +4216,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-testid="decision-loading-template"');
     expect(html).toContain('data-testid="decision-context-card"');
     expect(html).toContain('data-testid="decision-loading-card"');
-    expect(html).toContain('data-testid="decision-info-card"');
+    expect(html).not.toContain('data-testid="decision-info-card"');
     expect(html).toContain('data-forecast-decision-page-shell="true"');
     expect(html).toContain('data-forecast-loading-state="true"');
     expect(html).toContain('data-result-page-state="loading"');
@@ -4249,7 +4249,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-testid="decision-error-template"');
     expect(html).toContain('data-testid="decision-context-card"');
     expect(html).toContain('data-testid="decision-error-card"');
-    expect(html).toContain('data-testid="decision-info-card"');
+    expect(html).not.toContain('data-testid="decision-info-card"');
     expect(html).toContain('data-forecast-decision-page-shell="true"');
     expect(html).toContain('data-forecast-error-state="true"');
     expect(html).toContain('data-result-page-state="error"');

@@ -8,14 +8,9 @@ import type {
 } from "@photo-weather/shared";
 import { forecastHorizonLabels, formatLocalDateTimeRange } from "@photo-weather/shared";
 import { buildAstroForecastViewModel } from "../app/forecast/forecast-result-view-model";
-import {
-  normalizeForecastClientErrorMessage,
-  requestForecastCalculation,
-} from "../app/forecast/forecast-request-client";
 import { PlaceSearchCard } from "./place-search-card";
 import { PublicShell } from "./public-shell";
 import {
-  buildForecastRequestPayload,
   forgetRecentSelectedLocation,
   readRecentSelectedLocation,
   rememberRecentSelectedLocation,
@@ -24,7 +19,7 @@ import {
 import { SubjectControlPanel } from "./subject-control-panel";
 import { Badge, Card, cn } from "./ui";
 import { DecisionValue } from "./decision-value";
-import { ForecastEntryHeader, ForecastEntryHelp } from "./forecast-entry";
+import { ForecastEntryHeader } from "./forecast-entry";
 
 type PopularScenarioSpot = {
   readonly name: string;
@@ -145,137 +140,33 @@ export function ScenarioModulePage({ config }: { readonly config: ScenarioPageCo
 }
 
 function SubjectScenarioEntryPage({ config }: { readonly config: ScenarioPageConfig }) {
-  const pageMode = "search";
-  const isCloudSea = config.target === "cloud_sea";
-  const isGlow = config.target === "glow";
-  const isAstro = config.target === "astro";
-  const isInlineDecisionTarget = isCloudSea || isGlow || isAstro;
   const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
-  const [selectedHorizon, setSelectedHorizon] = useState<ForecastHorizon>(config.defaultHorizon);
-  const [subjectLayerState, setSubjectLayerState] = useState<SubjectForecastLayerState>({
-    status: "idle",
-    result: null,
-  });
   useEffect(() => {
-    const recentLocation = readRecentSelectedLocation();
-    if (recentLocation) {
-      setSelectedLocation(recentLocation);
-    }
+    setSelectedLocation(readRecentSelectedLocation());
   }, []);
   const handleSelectedLocationChange = useCallback((location: SelectedLocation | null) => {
     setSelectedLocation(location);
-    if (location) {
-      rememberRecentSelectedLocation(location);
-    } else {
-      forgetRecentSelectedLocation();
-    }
+    if (location) rememberRecentSelectedLocation(location);
+    else forgetRecentSelectedLocation();
   }, []);
-  const handleForecastOptionsChange = useCallback(
-    (options: { readonly horizon: ForecastHorizon; readonly target: ForecastTarget }) => {
-      setSelectedHorizon(options.horizon);
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (!isInlineDecisionTarget) {
-      return;
-    }
-
-    if (!selectedLocation) {
-      setSubjectLayerState({ status: "idle", result: null });
-      return;
-    }
-
-    const location = selectedLocation;
-    const inlineForecastTarget = isAstro ? "astro" : config.target;
-    const controller = new AbortController();
-    setSubjectLayerState({ status: "loading", result: null });
-
-    async function loadSubjectForecast() {
-      try {
-        const result = await requestForecastCalculation(
-          buildForecastRequestPayload(location, selectedHorizon, inlineForecastTarget),
-          {
-            signal: controller.signal,
-          },
-        );
-        setSubjectLayerState({
-          status: buildSubjectForecastLayerStatus(result),
-          result,
-        });
-      } catch (error) {
-        if ((error as Error).name === "AbortError") {
-          return;
-        }
-
-        setSubjectLayerState({
-          status: "error",
-          result: null,
-          errorMessage: normalizeForecastClientErrorMessage(error),
-        });
-      }
-    }
-
-    void loadSubjectForecast();
-
-    return () => {
-      controller.abort();
-    };
-  }, [config.target, isAstro, isInlineDecisionTarget, selectedHorizon, selectedLocation]);
-
   return (
     <PublicShell contentClassName="grid gap-6 pb-10">
       <ForecastEntryHeader
         title={config.title}
-        description={config.subtitle}
-        centered={!selectedLocation}
+        description="选择地点和时间范围，查看拍摄建议。"
+        centered
       />
-
       <section
-        className={cn(
-          "grid w-full min-w-0 gap-5",
-          selectedLocation
-            ? "min-[960px]:grid-cols-[clamp(340px,31vw,420px)_minmax(0,1fr)] min-[960px]:items-stretch xl:gap-8"
-            : "mx-auto max-w-[760px]",
-        )}
-        data-cloud-sea-page-mode={isCloudSea ? pageMode : undefined}
-        data-subject-scenario-page-mode={pageMode}
+        className="mx-auto grid w-full min-w-0 max-w-[760px] gap-5"
+        data-cloud-sea-page-mode={config.target === "cloud_sea" ? "search" : undefined}
+        data-subject-scenario-page-mode="search"
         data-subject-scenario-target={config.target}
       >
-        {pageMode === "search" ? (
-          <ScenarioSearchPanel
-            config={config}
-            selectedLocation={isInlineDecisionTarget ? selectedLocation : undefined}
-            onSelectedLocationChange={
-              isInlineDecisionTarget ? handleSelectedLocationChange : undefined
-            }
-            onForecastOptionsChange={handleForecastOptionsChange}
-          />
-        ) : null}
-        {isCloudSea && selectedLocation ? (
-          <CloudSeaDecisionPanel
-            location={selectedLocation}
-            state={subjectLayerState}
-            horizon={selectedHorizon}
-          />
-        ) : isGlow && selectedLocation ? (
-          <GlowDecisionPanel
-            location={selectedLocation}
-            state={subjectLayerState}
-            horizon={selectedHorizon}
-          />
-        ) : isAstro && selectedLocation ? (
-          <AstroDecisionPanel
-            location={selectedLocation}
-            state={subjectLayerState}
-            horizon={selectedHorizon}
-          />
-        ) : (
-          <ForecastEntryHelp>
-            <SubjectKnowledgeGuide config={config} selectedHorizon={selectedHorizon} />
-          </ForecastEntryHelp>
-        )}
+        <ScenarioSearchPanel
+          config={config}
+          selectedLocation={selectedLocation}
+          onSelectedLocationChange={handleSelectedLocationChange}
+        />
       </section>
     </PublicShell>
   );

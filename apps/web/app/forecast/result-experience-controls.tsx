@@ -58,9 +58,6 @@ export function ResultViewTabs({
               data-result-view-tab={item.value}
             >
               <span className="flex min-w-0 items-center justify-center gap-1.5">
-                <span className="hidden min-[360px]:inline-flex">
-                  <ResultViewIcon value={item.value} />
-                </span>
                 <span className="truncate">{item.label}</span>
               </span>
             </Tabs.Trigger>
@@ -80,47 +77,6 @@ export function ResultViewTabs({
         </Tabs.Content>
       ))}
     </Tabs.Root>
-  );
-}
-
-function ResultViewIcon({ value }: { readonly value: string }) {
-  if (value === "hourly" || value === "timeline") {
-    return (
-      <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none">
-        <path
-          d="M2 12.5 5.2 8l2.4 2.2L11 4.5l3 2.4"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  }
-
-  if (value === "professional" || value === "details") {
-    return (
-      <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none">
-        <path
-          d="M3 2.5h10v11H3zM3 6h10M6.5 6v7.5"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  }
-
-  return (
-    <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none">
-      <path
-        d="M3 3h10v10H3zM5.5 6h5M5.5 8.5h5M5.5 11h3"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }
 

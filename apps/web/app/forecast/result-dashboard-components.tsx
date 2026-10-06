@@ -48,10 +48,7 @@ export function ResultDashboardShell({
 }: ResultDashboardShellProps) {
   return (
     <section
-      className={cn(
-        className,
-        "mx-auto grid w-full max-w-[1480px] min-w-0 gap-5 lg:gap-6",
-      )}
+      className={cn(className, "mx-auto grid w-full max-w-[1480px] min-w-0 gap-5 lg:gap-6")}
       data-forecast-decision-page-shell="true"
       data-result-dashboard-shell="true"
       data-result-target={target}
@@ -102,14 +99,14 @@ export function DecisionContextCard({
       data-testid={dataTestId}
     >
       <div>
-        <p className="text-xs font-bold text-primary">{titleLabel}</p>
-        <h2 className="mt-2 break-words text-2xl font-bold leading-tight text-card-foreground">
+        <p className="sr-only">{titleLabel}</p>
+        <h2 className="break-words text-lg font-bold leading-tight text-card-foreground">
           {title}
         </h2>
       </div>
 
       {details.length > 0 ? (
-        <dl className="grid min-w-0 gap-3 text-sm">
+        <dl className="flex min-w-0 flex-wrap gap-x-6 gap-y-2 text-sm">
           {details.map((detail) => (
             <DecisionDefinitionItem key={detail.label} label={detail.label} value={detail.value} />
           ))}
@@ -203,11 +200,6 @@ export function DecisionLoadingCard({
         <div className="h-3 w-2/3 animate-pulse rounded-full bg-muted" />
         <div className="h-3 w-1/2 animate-pulse rounded-full bg-muted" />
         <div className="h-3 w-5/6 animate-pulse rounded-full bg-muted" />
-        <div className="mt-1 grid min-w-0 gap-2 sm:grid-cols-3">
-          <div className="h-24 animate-pulse rounded-xl bg-muted" />
-          <div className="h-24 animate-pulse rounded-xl bg-muted" />
-          <div className="h-24 animate-pulse rounded-xl bg-muted" />
-        </div>
       </div>
       {action ? <div className="mt-4">{action}</div> : null}
     </Card>
@@ -349,7 +341,6 @@ export function DecisionLoadingTemplate({
   target,
   context,
   loading,
-  info,
   className,
   dataCloudSeaPageMode,
   dataCloudSeaLoading,
@@ -361,7 +352,7 @@ export function DecisionLoadingTemplate({
       dataCloudSeaPageMode={dataCloudSeaPageMode}
     >
       <section
-        className="grid min-w-0 gap-5 min-[980px]:grid-cols-[minmax(260px,320px)_minmax(0,1fr)] min-[980px]:items-start"
+        className="mx-auto grid w-full max-w-4xl min-w-0 gap-4"
         data-decision-loading-template="true"
         data-forecast-loading-state="true"
         data-result-page-state="loading"
@@ -372,10 +363,7 @@ export function DecisionLoadingTemplate({
           dataTestId: "decision-loading-template",
         })}
       >
-        <div
-          className="grid min-w-0 content-start gap-4 min-[980px]:sticky min-[980px]:top-[88px]"
-          data-decision-context-region="true"
-        >
+        <div className="grid min-w-0 content-start gap-4" data-decision-context-region="true">
           <DecisionContextCard {...context} target={target} />
         </div>
         <div className="grid min-w-0 gap-5">
@@ -385,7 +373,6 @@ export function DecisionLoadingTemplate({
             dataCloudSeaPageMode={dataCloudSeaPageMode}
             dataCloudSeaLoading={dataCloudSeaLoading}
           />
-          <DecisionInfoCard {...info} target={target} />
         </div>
       </section>
     </DecisionPageShell>
@@ -406,7 +393,6 @@ export function DecisionErrorTemplate({
   target,
   context,
   error,
-  info,
   className,
   dataCloudSeaPageMode,
   dataCloudSeaError,
@@ -418,7 +404,7 @@ export function DecisionErrorTemplate({
       dataCloudSeaPageMode={dataCloudSeaPageMode}
     >
       <section
-        className="grid min-w-0 gap-5 min-[980px]:grid-cols-[minmax(260px,320px)_minmax(0,1fr)] min-[980px]:items-start"
+        className="mx-auto grid w-full max-w-4xl min-w-0 gap-4"
         data-decision-error-template="true"
         data-forecast-error-state="true"
         data-result-page-state="error"
@@ -429,10 +415,7 @@ export function DecisionErrorTemplate({
           dataTestId: "decision-error-template",
         })}
       >
-        <div
-          className="grid min-w-0 content-start gap-4 min-[980px]:sticky min-[980px]:top-[88px]"
-          data-decision-context-region="true"
-        >
+        <div className="grid min-w-0 content-start gap-4" data-decision-context-region="true">
           <DecisionContextCard {...context} target={target} />
         </div>
         <div className="grid min-w-0 gap-5">
@@ -442,7 +425,6 @@ export function DecisionErrorTemplate({
             dataCloudSeaPageMode={dataCloudSeaPageMode}
             dataCloudSeaError={dataCloudSeaError}
           />
-          {info ? <DecisionInfoCard {...info} target={target} /> : null}
         </div>
       </section>
     </DecisionPageShell>
@@ -471,9 +453,9 @@ export function DecisionResultTemplate({
 
 function DecisionDefinitionItem({ label, value }: DecisionDetail) {
   return (
-    <div className="rounded-xl border border-border bg-muted/70 p-3">
+    <div className="flex flex-wrap items-baseline gap-2">
       <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words font-bold text-card-foreground">{value}</dd>
+      <dd className="break-words font-semibold text-card-foreground">{value}</dd>
     </div>
   );
 }
@@ -577,10 +559,7 @@ export function ResultScoreCard({
 
   return (
     <Card
-      className={cn(
-        className,
-        "grid h-full min-w-0 max-w-full content-between gap-4 p-5 sm:p-6",
-      )}
+      className={cn(className, "grid h-full min-w-0 max-w-full content-between gap-4 p-5 sm:p-6")}
       data-forecast-score-card="true"
       data-result-score-card="true"
       data-result-target={target}
@@ -619,13 +598,7 @@ export function ForecastScoreCard(props: ResultScoreCardProps) {
   return <ResultScoreCard {...props} />;
 }
 
-export type ResultMeterTone =
-  | "primary"
-  | "accent"
-  | "danger"
-  | "info"
-  | "muted"
-  | "warning";
+export type ResultMeterTone = "primary" | "accent" | "danger" | "info" | "muted" | "warning";
 
 type ResultMeterProps = {
   readonly value: number;

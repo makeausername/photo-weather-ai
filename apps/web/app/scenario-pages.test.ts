@@ -529,64 +529,26 @@ describe("scenario module pages", () => {
 
   it("renders the cloud-sea entry page as a search-first decision entry", () => {
     const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
-    const oldPlaceholderLabels = [
-      "有没有云海机会",
-      "能不能拍",
-      "会不会白墙",
-      "几点到、几点守",
-      "白墙时怎么转拍",
-      "是否值得专程去",
-    ];
-
-    expect(html).not.toContain("热门云海机位");
-    expect(html).not.toContain("机位参考");
-    expect(html).not.toContain("页面预设");
-    expect(html).not.toContain("体验模式");
-    expect(html).not.toContain("数据提醒");
-    expect(html).not.toContain("固定分析目标");
-    expect(html).not.toContain("云海判断重点");
-    expect(html).not.toContain("白墙风险说明");
-    expect(html).not.toContain("判断指标");
-    expect(html).toContain('data-cloud-sea-page-mode="search"');
-    expect(html).toContain('data-cloud-sea-section="CloudSeaSearchPanel"');
     expect(html).toContain("选择拍摄地点");
-    expect(html).toContain('data-cloud-sea-pre-result="knowledge-guide"');
-    expect(html).not.toContain('data-cloud-sea-decision-panel="true"');
-    expect(html).toContain("云海判断需要关注什么");
-    expect(html).toContain("选择地点后，查看水汽、低云、地形、风速、光线时段、降水和白墙风险。");
-    expect(countOccurrences(html, 'data-cloud-sea-knowledge-card="true"')).toBe(6);
-    expect(html).toContain("水汽是否足够");
-    expect(html).toContain("低云是否在合适高度");
-    expect(html).toContain("拍摄点是否高于云层");
-    expect(html).toContain("风速是否合适");
-    expect(html).toContain("是否有光线窗口");
-    expect(html).toContain("是否存在雨后开口");
-    expect(html).toContain("核心指标");
-    expect(html).toContain("白墙判断");
-    expect(html).toContain("出片窗口");
-    for (const label of oldPlaceholderLabels) {
-      expect(html).not.toContain(label);
-    }
-    expect(html).not.toContain("云海拍摄决策");
-    expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
+    expect(html).toContain("预报范围");
+    expect(html).toContain("查看报告");
+    expect(html).toContain("max-w-[760px]");
+    expect(html).not.toContain("knowledge-guide");
+    expect(html).not.toContain("decision-panel");
+    expect(html).not.toContain("data-forecast-entry-help");
+    expect(html).not.toContain("data-quick-location-section");
   });
-
-  it("keeps the cloud sea knowledge cards responsive without mobile overflow classes", () => {
+  it("keeps the cloud sea query form responsive without mobile overflow classes", () => {
     const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
-    const guideStart = html.indexOf('data-cloud-sea-pre-result="knowledge-guide"');
-    const guideHtml = html.slice(guideStart);
-
-    expect(guideStart).toBeGreaterThanOrEqual(0);
-    expect(html).toContain("mx-auto max-w-[760px]");
-    expect(guideHtml).toContain("guide-grid grid min-w-0 gap-0 sm:grid-cols-2 xl:grid-cols-3");
-    expect(guideHtml).toContain("grid min-w-0 content-start gap-3");
-    expect(guideHtml).not.toMatch(/min-w-\[[^\]]+\]/);
-    expect(guideHtml).not.toContain("overflow-x");
-    const help = html.match(/<details[^>]*data-forecast-entry-help="true"[^>]*>/)?.[0];
-    expect(help).toBeDefined();
-    expect(help).not.toMatch(/\sopen(?:=|\s|>)/);
+    expect(html).toContain("选择拍摄地点");
+    expect(html).toContain("预报范围");
+    expect(html).toContain("查看报告");
+    expect(html).toContain("max-w-[760px]");
+    expect(html).not.toContain("knowledge-guide");
+    expect(html).not.toContain("decision-panel");
+    expect(html).not.toContain("data-forecast-entry-help");
+    expect(html).not.toContain("data-quick-location-section");
   });
-
   it("reuses the shared current-location input on homepage, cloud sea, glow, and astro", () => {
     const homepageHtml = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
     const cloudSeaHtml = renderToStaticMarkup(React.createElement(CloudSeaPage));
@@ -625,7 +587,7 @@ describe("scenario module pages", () => {
     expect(wrapperIndex).toBeGreaterThanOrEqual(0);
     expect(inputIndex).toBeGreaterThan(wrapperIndex);
     expect(buttonIndex).toBeGreaterThan(inputIndex);
-    expect(html).toContain("浏览器定位仅用于本次云海判断，不会公开显示。");
+    expect(html).not.toContain("浏览器定位仅用于本次云海判断，不会公开显示。");
     expect(hasExactButton(html, "定位")).toBe(false);
     expect(hasExactButton(html, "定位中")).toBe(false);
     expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
@@ -640,7 +602,7 @@ describe("scenario module pages", () => {
     expect(wrapperIndex).toBeGreaterThanOrEqual(0);
     expect(inputIndex).toBeGreaterThan(wrapperIndex);
     expect(buttonIndex).toBeGreaterThan(inputIndex);
-    expect(html).toContain("浏览器定位仅用于本次朝霞晚霞判断，不会公开显示。");
+    expect(html).not.toContain("浏览器定位仅用于本次朝霞晚霞判断，不会公开显示。");
     expect(html).toContain("pr-12");
     expect(html).toContain("absolute right-1.5 top-1/2");
     expect(html).toContain("h-8 w-8");
@@ -663,7 +625,7 @@ describe("scenario module pages", () => {
     expect(wrapperIndex).toBeGreaterThanOrEqual(0);
     expect(inputIndex).toBeGreaterThan(wrapperIndex);
     expect(buttonIndex).toBeGreaterThan(inputIndex);
-    expect(html).toContain("浏览器定位仅用于本次星空银河判断，不会公开显示。");
+    expect(html).not.toContain("浏览器定位仅用于本次星空银河判断，不会公开显示。");
     expect(html).toContain("pr-12");
     expect(html).toContain("absolute right-1.5 top-1/2");
     expect(html).toContain("h-8 w-8");
@@ -688,14 +650,14 @@ describe("scenario module pages", () => {
     expect(searchCardHtml).toContain("输入后会自动搜索，也可按 Enter 立即搜索。");
     expect(searchCardHtml).toContain('aria-label="目的地"');
     expect(searchCardHtml).toContain('data-current-location-button="true"');
-    expect(searchCardHtml).toContain("浏览器定位仅用于本次云海判断，不会公开显示。");
+    expect(searchCardHtml).not.toContain("浏览器定位仅用于本次云海判断，不会公开显示。");
     expect(searchCardHtml).toContain("预报范围");
     expect(searchCardHtml).toContain("未来24小时");
     expect(searchCardHtml).toContain("未来48小时");
     expect(searchCardHtml).toContain("未来72小时");
     expect(searchCardHtml).toContain("未来7天");
     expect(searchCardHtml).not.toContain("分析题材");
-    expect(searchCardHtml).toContain("选择地点后查看完整报告");
+    expect(searchCardHtml).toContain("查看报告");
     expect(searchCardHtml).not.toContain('data-quick-location-section="true"');
     expect(searchCardHtml).not.toContain("常用机位");
     expect(searchCardHtml).not.toContain("border-t border-border pt-4");
@@ -797,104 +759,34 @@ describe("scenario module pages", () => {
     }
   });
 
-  it("syncs the subject guide horizon through shared onForecastOptionsChange state", () => {
-    const scenarioSource = readFileSync(
+  it("keeps range selection in the query form without a second guide state", () => {
+    const source = readFileSync(
       fileURLToPath(new URL("../components/scenario-module-page.tsx", import.meta.url)),
       "utf8",
     );
-    const cloudSeaPageSource = readFileSync(
-      fileURLToPath(new URL("./cloud-sea/page.tsx", import.meta.url)),
-      "utf8",
-    );
-    const glowPageSource = readFileSync(
-      fileURLToPath(new URL("./glow/page.tsx", import.meta.url)),
-      "utf8",
-    );
-    const astroPageSource = readFileSync(
-      fileURLToPath(new URL("./astro/page.tsx", import.meta.url)),
-      "utf8",
-    );
-
-    expect(scenarioSource).toContain("useState<ForecastHorizon>(config.defaultHorizon)");
-    expect(scenarioSource).toContain("const handleForecastOptionsChange = useCallback");
-    expect(scenarioSource).toContain("setSelectedHorizon(options.horizon)");
-    expect(scenarioSource).toContain("onForecastOptionsChange={handleForecastOptionsChange}");
-    expect(scenarioSource).toContain("selectedHorizon={selectedHorizon}");
-    expect(scenarioSource).toContain("forecastHorizonLabels[selectedHorizon]");
-    expect(scenarioSource).not.toContain("forecastHorizonLabels[config.defaultHorizon]");
-
-    for (const source of [cloudSeaPageSource, glowPageSource, astroPageSource]) {
-      expect(source).toContain("ScenarioModulePage");
-      expect(source).not.toContain("SubjectControlPanel");
-      expect(source).not.toContain("PlaceSearchCard");
-      expect(source).not.toContain("onForecastOptionsChange");
-      expect(source).not.toContain("selectedHorizon");
-      expect(source).not.toContain("useState");
-    }
+    expect(source).not.toContain("setSelectedHorizon");
+    expect(source).not.toContain("requestForecastCalculation");
+    expect(source).toContain("onSelectedLocationChange={handleSelectedLocationChange}");
   });
-
-  it("wires cloud sea, glow, and astro selected locations into inline forecast calculation", () => {
-    const scenarioSource = readFileSync(
-      fileURLToPath(new URL("../components/scenario-module-page.tsx", import.meta.url)),
-      "utf8",
-    );
-    const glowPageSource = readFileSync(
-      fileURLToPath(new URL("./glow/page.tsx", import.meta.url)),
-      "utf8",
-    );
-    const cloudSeaPageSource = readFileSync(
-      fileURLToPath(new URL("./cloud-sea/page.tsx", import.meta.url)),
-      "utf8",
-    );
-    const astroPageSource = readFileSync(
-      fileURLToPath(new URL("./astro/page.tsx", import.meta.url)),
-      "utf8",
-    );
-
-    expect(scenarioSource).toContain(
-      "const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null)",
-    );
-    expect(scenarioSource).toContain('const isGlow = config.target === "glow"');
-    expect(scenarioSource).toContain('const isAstro = config.target === "astro"');
-    expect(scenarioSource).toContain(
-      "const isInlineDecisionTarget = isCloudSea || isGlow || isAstro",
-    );
-    expect(scenarioSource).toContain(
-      "selectedLocation={isInlineDecisionTarget ? selectedLocation : undefined}",
-    );
-    expect(scenarioSource).toContain("onSelectedLocationChange={");
-    expect(scenarioSource).toContain(
-      "isInlineDecisionTarget ? handleSelectedLocationChange : undefined",
-    );
-    expect(scenarioSource).toContain(
-      'const inlineForecastTarget = isAstro ? "astro" : config.target',
-    );
-    expect(scenarioSource).toContain(
-      "buildForecastRequestPayload(location, selectedHorizon, inlineForecastTarget)",
-    );
-    expect(scenarioSource).toContain("requestForecastCalculation(");
-    expect(scenarioSource).toContain("normalizeForecastClientErrorMessage(error)");
-    expect(scenarioSource).toContain('data-cloud-sea-decision-panel="true"');
-    expect(scenarioSource).toContain('data-glow-decision-panel="true"');
-    expect(scenarioSource).toContain('data-astro-decision-panel="true"');
-    expect(scenarioSource).not.toContain(
-      'buildForecastRequestPayload(location, selectedHorizon, "general")',
-    );
-    expect(scenarioSource).not.toContain(
-      'buildForecastRequestPayload(location, selectedHorizon, "cloud_sea")',
-    );
-    expect(scenarioSource).not.toContain(
-      'buildForecastRequestPayload(location, selectedHorizon, "glow")',
-    );
-
-    for (const source of [cloudSeaPageSource, glowPageSource, astroPageSource]) {
-      expect(source).toContain("ScenarioModulePage");
+  it("does not calculate forecasts on any entry page before submitting", () => {
+    for (const path of [
+      "../components/homepage-workbench.tsx",
+      "../components/scenario-module-page.tsx",
+    ]) {
+      const source = readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
       expect(source).not.toContain("requestForecastCalculation");
       expect(source).not.toContain("buildForecastRequestPayload");
-      expect(source).not.toContain("selectedLocation");
+      expect(source).toContain("rememberRecentSelectedLocation");
     }
+    const source = readFileSync(
+      fileURLToPath(new URL("../components/place-search-card.tsx", import.meta.url)),
+      "utf8",
+    );
+    expect(source).toContain(
+      "buildForecastUrlFromSelectedLocation(activeSelectedLocation, horizon, activeTarget)",
+    );
+    expect(source).toContain("onClick={handleRunForecast}");
   });
-
   it("renders generated cloud sea decision cards without homepage or provider copy", () => {
     const { result } = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
     const location = selectedLocationFromBrowserGeolocation({
@@ -1194,7 +1086,7 @@ describe("scenario module pages", () => {
     expect(html).toContain("预报范围");
     expect(html).toContain('aria-label="目的地"');
     expect(html).toContain('data-current-location-button="true"');
-    expect(html).toContain("选择地点后查看完整报告");
+    expect(html).toContain("查看报告");
     expect(html).not.toContain("CloudSeaResultPage");
     expect(html).not.toContain("CloudSeaTopResultHeader");
     expect(html).not.toContain("CloudSeaScoreCard");
@@ -1223,15 +1115,15 @@ describe("scenario module pages", () => {
       }),
     );
 
-    expect(html).toContain("当前定位");
+    expect(html).not.toContain("当前定位");
     expect(html).toContain("黄浦区");
     expect(html).toContain("上海市 / 上海市 / 黄浦区");
-    expect(html).toContain("判断范围");
+    expect(html).not.toContain("判断范围");
     expect(html).toContain("未来48小时");
-    expect(html).toContain("海拔将在生成判断时补全");
-    expect(html).toContain("坐标信息");
-    expect(html).toContain("查看完整云海报告");
-    expect(html).not.toContain('disabled="">查看完整云海报告 →</button>');
+    expect(html).not.toContain("海拔将在生成判断时补全");
+    expect(html).not.toContain("坐标信息");
+    expect(html).toContain("查看报告");
+    expect(html).not.toContain('disabled="">查看报告 →</button>');
   });
 
   it("builds cloud sea current-location requests with WGS84 coordinates and no spot id", () => {
@@ -1337,53 +1229,24 @@ describe("scenario module pages", () => {
 
   it("renders the glow entry page without the popular spot placeholder", () => {
     const html = renderToStaticMarkup(React.createElement(GlowPage));
-
-    expect(html).not.toContain("热门朝霞晚霞机位");
-    expect(html).not.toContain("热门朝霞机位");
-    expect(html).not.toContain("热门晚霞机位");
     expect(html).toContain("选择拍摄地点");
-    expect(html).toContain('data-subject-control-panel="true"');
-    expect(html).toContain('data-subject-control-panel-target="glow"');
-    expect(html).toContain('data-subject-knowledge-guide="glow"');
-    expect(html).not.toContain('data-glow-decision-panel="true"');
-    expect(html).not.toContain('data-quick-location-section="true"');
-    expect(html).not.toContain("常用机位");
-    for (const label of cloudSeaQuickSpotLabels) {
-      expect(html).not.toContain(label);
-      expect(hasExactButton(html, label)).toBe(false);
-    }
     expect(html).toContain("预报范围");
-    expect(html).toContain("未来24小时");
-    expect(html).toContain("未来48小时");
-    expect(html).toContain("未来72小时");
-    expect(html).toContain("未来7天");
-    expect(html).not.toContain("分析题材");
-    expect(html).toContain("选择地点后查看完整报告");
-    expect(html).toContain("朝霞晚霞判断需要看什么");
-    expect(html).toContain("日出日落时间");
-    expect(html).toContain("中高云条件");
-    expect(html).toContain("低云遮挡风险");
-    expect(html).toContain("能见度与通透度");
-    expect(html).toContain("地形遮挡");
-    expect(html).toContain("风与降水");
-    expect(html).toContain('data-current-location-button="true"');
-    expect(html).toContain("浏览器定位仅用于本次朝霞晚霞判断，不会公开显示。");
-    expect(html).not.toContain("数据说明");
-    expect(html).not.toContain("当前为体验模式");
-    expect(html).not.toContain("演示天气数据");
-    expect(html).not.toContain("体验模式");
-    expect(html).not.toMatch(/\bmock\b|\bdemo\b|测试数据|开发模式|开发环境|provider|debug/i);
+    expect(html).toContain("查看报告");
+    expect(html).toContain("max-w-[760px]");
+    expect(html).not.toContain("knowledge-guide");
+    expect(html).not.toContain("decision-panel");
+    expect(html).not.toContain("data-forecast-entry-help");
+    expect(html).not.toContain("data-quick-location-section");
   });
-
   it("keeps the glow entry layout responsive without fixed wide columns", () => {
     const html = renderToStaticMarkup(React.createElement(GlowPage));
 
     expect(html).toContain("mx-auto max-w-[760px]");
-    expect(html).toMatch(/<details[^>]*data-forecast-entry-help="true"[^>]*>/);
+    expect(html).not.toMatch(/<details[^>]*data-forecast-entry-help="true"[^>]*>/);
     expect(html).toContain("relative min-w-0 w-full");
     expect(html).toContain("pr-12");
     expect(html).toContain('data-subject-control-panel="true"');
-    expect(html).toContain("sm:grid-cols-2 xl:grid-cols-3");
+    expect(html).not.toContain("sm:grid-cols-2 xl:grid-cols-3");
   });
 
   it("keeps the astro entry layout responsive without fixed wide columns", () => {
@@ -1396,11 +1259,11 @@ describe("scenario module pages", () => {
     );
 
     expect(html).toContain("mx-auto max-w-[760px]");
-    expect(html).toMatch(/<details[^>]*data-forecast-entry-help="true"[^>]*>/);
+    expect(html).not.toMatch(/<details[^>]*data-forecast-entry-help="true"[^>]*>/);
     expect(html).toContain("relative min-w-0 w-full");
     expect(html).toContain("pr-12");
     expect(html).toContain('data-subject-control-panel="true"');
-    expect(html).toContain("sm:grid-cols-2 xl:grid-cols-3");
+    expect(html).not.toContain("sm:grid-cols-2 xl:grid-cols-3");
     expect(html).not.toContain("xl:grid-cols-[clamp(340px,24vw,420px)_minmax(0,1fr)_clamp");
     expect(subjectSectionHtml).not.toMatch(/w-\[(?:[1-9]\d{3,})px\]|min-w-\[(?:[1-9]\d{3,})px\]/);
   });
@@ -1517,7 +1380,7 @@ describe("scenario module pages", () => {
 
     expect(searchPanelHtml).toContain("选择拍摄地点");
     expect(searchPanelHtml).toContain("预报范围");
-    expect(searchPanelHtml).toContain("选择地点后查看完整报告");
+    expect(searchPanelHtml).toContain("查看报告");
     expect(searchPanelHtml).not.toContain("分析题材");
     expect(serialized).not.toContain("热门云海机位");
     expect(serialized).toContain("云海判断需要关注什么");
@@ -1555,49 +1418,15 @@ describe("scenario module pages", () => {
 
   it("renders the astro entry page with the shared public search and judgment layout", () => {
     const html = renderToStaticMarkup(React.createElement(AstroPage));
-
-    expect(html).not.toContain("热门星空银河机位");
-    expect(html).not.toContain("热门星空机位");
-    expect(html).not.toContain("热门银河机位");
     expect(html).toContain("选择拍摄地点");
-    expect(html).toContain('data-subject-control-panel="true"');
-    expect(html).toContain('data-subject-control-panel-target="astro"');
-    expect(html).toContain('data-subject-knowledge-guide="astro"');
-    expect(html).not.toContain('data-astro-decision-panel="true"');
-    expect(countOccurrences(html, 'data-subject-knowledge-card="astro"')).toBe(6);
-    expect(html).not.toContain('data-quick-location-section="true"');
-    expect(html).not.toContain("常用机位");
-    expect(html).not.toContain("专题设置");
-    expect(html).not.toContain("题材预设");
-    for (const label of cloudSeaQuickSpotLabels) {
-      expect(html).not.toContain(label);
-      expect(hasExactButton(html, label)).toBe(false);
-    }
     expect(html).toContain("预报范围");
-    expect(html).toContain("未来24小时");
-    expect(html).toContain("未来48小时");
-    expect(html).toContain("未来72小时");
-    expect(html).toContain("未来7天");
-    expect(html).not.toContain("分析题材");
-    expect(html).toContain("选择地点后查看完整报告");
-    expect(html).toContain("星空银河判断需要看什么");
-    expect(html).toContain("天文黑夜");
-    expect(html).toContain("月相与月光");
-    expect(html).toContain("无月黑夜");
-    expect(html).toContain("银河窗口");
-    expect(html).toContain("云量与能见度");
-    expect(html).toContain("光污染与地形");
-    expect(html).toContain('data-current-location-button="true"');
-    expect(html).toContain("浏览器定位仅用于本次星空银河判断，不会公开显示。");
-    expect(html).not.toContain("数据提醒");
-    expect(html).not.toContain("当前为体验模式");
-    expect(html).not.toContain("体验模式");
-    expect(html).not.toContain("演示数据");
-    expect(html).not.toContain("本地天文计算");
-    expect(html).not.toContain("本地算法");
-    expect(html).not.toMatch(/\bmock\b|\bdemo\b|测试数据|开发模式|开发环境|provider|debug/i);
+    expect(html).toContain("查看报告");
+    expect(html).toContain("max-w-[760px]");
+    expect(html).not.toContain("knowledge-guide");
+    expect(html).not.toContain("decision-panel");
+    expect(html).not.toContain("data-forecast-entry-help");
+    expect(html).not.toContain("data-quick-location-section");
   });
-
   it("astro page reads General deep-link query params and preselects context", () => {
     const html = renderToStaticMarkup(
       React.createElement(AstroPage, {

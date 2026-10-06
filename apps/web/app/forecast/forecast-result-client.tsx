@@ -182,7 +182,14 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
       activeTarget === "cloud_sea" ||
       activeTarget === "glow" ||
       activeTarget === "astro");
-  const changeLocationPath = isCloudSeaFlow ? "/cloud-sea" : "/#analysis";
+  const changeLocationPath =
+    activeTarget === "cloud_sea"
+      ? "/cloud-sea"
+      : activeTarget === "glow"
+        ? "/glow"
+        : activeTarget === "astro"
+          ? "/astro"
+          : "/";
 
   useEffect(() => {
     if (!queryKey) {
@@ -287,44 +294,16 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   return (
     <PublicShell contentClassName="grid gap-6 pb-16 lg:gap-8">
       {!usesSpecializedResultHeader ? (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <nav aria-label="当前位置" className="flex items-center gap-2 text-sm">
-              <a
-                href="/"
-                className="font-medium text-muted-foreground transition hover:text-primary"
-              >
-                首页
-              </a>
-              <span className="text-muted-foreground">/</span>
-              <span className="font-semibold text-foreground">{shellCopy.pageTitle}</span>
-            </nav>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                window.location.assign(changeLocationPath);
-              }}
-            >
-              重新选择地点
-            </Button>
-          </div>
-
-          <header className="flex flex-col justify-between gap-4 border-b border-border pb-5 min-[900px]:flex-row min-[900px]:items-end">
-            <div className="max-w-4xl">
-              <Badge variant="default">{shellCopy.badgeLabel}</Badge>
-              <h1 className="mt-4 text-[34px] font-bold leading-tight tracking-[-0.03em] text-foreground sm:text-[42px]">
-                {shellCopy.pageTitle}
-              </h1>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground sm:text-[15px]">
-                {shellCopy.pageSubtitle}
-              </p>
-            </div>
-            <Badge variant={result ? dataReadinessBadgeVariant(result) : "warning"}>
-              {result ? dataReadinessBadgeLabel(result) : "加载中"}
-            </Badge>
-          </header>
-        </>
+        <header className="mx-auto flex w-full max-w-4xl flex-wrap items-center justify-between gap-3">
+          <h1 className="text-xl font-bold">{shellCopy.pageTitle}</h1>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => window.location.assign(changeLocationPath)}
+          >
+            更换地点与范围
+          </Button>
+        </header>
       ) : null}
 
       {!query ? <InvalidQueryCard message={invalidReason} /> : null}
