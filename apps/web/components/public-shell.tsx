@@ -1,4 +1,7 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { usePublicFrame } from "./public-frame";
 import { PublicHeader } from "./public-header";
 import { SiteFooter } from "./site-footer";
 import { cn } from "./ui";
@@ -10,9 +13,10 @@ type PublicShellProps = {
 };
 
 export function PublicShell({ children, className, contentClassName }: PublicShellProps) {
+  const framed = usePublicFrame();
   return (
-    <div className={cn("min-h-screen bg-background text-foreground", className)}>
-      <PublicHeader />
+    <div className={cn(!framed && "min-h-screen bg-background text-foreground", className)}>
+      {!framed && <PublicHeader />}
       <div
         className={cn(
           "mx-auto w-full max-w-[1440px] min-w-0 px-[clamp(16px,4vw,48px)] py-6 sm:py-8 lg:py-9",
@@ -21,7 +25,7 @@ export function PublicShell({ children, className, contentClassName }: PublicShe
       >
         {children}
       </div>
-      <SiteFooter />
+      {!framed && <SiteFooter />}
     </div>
   );
 }

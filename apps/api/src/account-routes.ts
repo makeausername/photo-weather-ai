@@ -124,6 +124,8 @@ const deleteAccountSchema = z
 
 const historySummarySchema = z
   .object({
+    summaryVersion: z.literal(2).optional(),
+    windowLabel: z.string().trim().max(500).nullable().optional(),
     overallScore: z.number().finite().nullable().optional(),
     recommendationLabel: z.string().trim().max(80).nullable().optional(),
     bestWindowStart: z.string().trim().max(80).nullable().optional(),
@@ -567,7 +569,9 @@ function isJsonRecord(value: JsonValue | null | undefined): value is Record<stri
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readHistoryAccessMeta(record: UserForecastHistoryRecord): Record<string, JsonValue> | null {
+function readHistoryAccessMeta(
+  record: UserForecastHistoryRecord,
+): Record<string, JsonValue> | null {
   const query = isJsonRecord(record.queryJson) ? record.queryJson.accessMeta : null;
   if (isJsonRecord(query)) {
     return query;
@@ -1096,6 +1100,8 @@ export function registerAccountRoutes(app: FastifyInstance, options: AccountRout
     }
     const accessMeta = buildServerHistoryAccessMeta({ query, access, now });
     const compactSummary = {
+      summaryVersion: resultSummary?.summaryVersion,
+      windowLabel: optionalTrimmedString(resultSummary?.windowLabel),
       overallScore: optionalFiniteNumber(resultSummary?.overallScore),
       recommendationLabel: optionalTrimmedString(resultSummary?.recommendationLabel),
       bestWindowStart: optionalTrimmedString(resultSummary?.bestWindowStart),

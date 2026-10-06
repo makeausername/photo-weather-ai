@@ -61,19 +61,34 @@ export function SubjectDecisionReportView({
         {report.caution ? (
           <p className="text-sm leading-6 text-warning-strong">{report.caution}</p>
         ) : null}
+        {report.risks.lines[0] ? (
+          <p className="text-sm leading-6">
+            <span className="font-semibold">主要风险：</span>
+            {report.risks.lines[0]}
+          </p>
+        ) : null}
       </Card>
       <Card className="min-w-0 p-5 sm:p-6" data-subject-report-section="dates">
         <h2 className="text-base font-semibold">{report.datesTitle}</h2>
         <div className="mt-4 divide-y divide-border">
           {report.dates.length ? (
             report.dates.map((day, index) => (
-              <section
+              <details
                 key={`${day.title}-${index}`}
+                open={
+                  report.dates.length <= 2 ||
+                  (day.date && report.selectedDate ? day.date === report.selectedDate : index === 0)
+                }
                 className="grid gap-2 py-4 first:pt-0 last:pb-0"
               >
-                <h3 className="font-semibold">{day.title}</h3>
-                <ReportLines lines={day.lines} />
-              </section>
+                <summary className="cursor-pointer text-sm leading-7">
+                  <span className="font-semibold">{day.title}</span>
+                  <span className="ml-2">{day.summary || day.lines[0]}</span>
+                </summary>
+                <div className="mt-2">
+                  <ReportLines lines={day.lines} />
+                </div>
+              </details>
             ))
           ) : (
             <p className="text-sm leading-7 text-muted-foreground">

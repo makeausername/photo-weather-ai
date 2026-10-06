@@ -88,6 +88,8 @@ export type AccountVerificationCodeResponse = {
 };
 
 export type AccountForecastHistorySummary = {
+  readonly summaryVersion?: number;
+  readonly windowLabel?: string | null;
   readonly overallScore?: number | null;
   readonly recommendationLabel?: string | null;
   readonly bestWindowStart?: string | null;

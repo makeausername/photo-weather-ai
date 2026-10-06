@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import contextmanager
 from pathlib import Path
 import json
 import math
@@ -34,7 +35,7 @@ from .models import (
 from .terrain_dem_coverage import coverage_for_coordinate, load_active_bounds
 
 
-SAMPLING_CONFIG_VERSION = "terrain-dem-profile-v1"
+SAMPLING_CONFIG_VERSION = "terrain-dem-profile-v2"
 OBSTRUCTION_RULE = "clearance = target altitude - terrain horizon altitude; clear >= 3 deg; marginal 0-3 deg; obstructed < 0 deg"
 DEFAULT_UNAVAILABLE_NOTE_ZH = (
     "本地 DEM 地形数据暂不可用；本次不按无遮挡处理，仍需现场复核银河方向地平线。"
@@ -108,6 +109,13 @@ class TerrainDemDataset:
         with self._lock:
             self._ensure_open_locked(raise_on_error=True)
             return self._dataset
+
+    @contextmanager
+    def read_session(self):
+        # GDAL readers (including VRT child datasets) must not be shared between
+        # request threads while reading. Also exclude close/reload until done.
+        with self._lock:
+            yield
 
     def health_state(self) -> HealthState:
         if RASTER_DEPENDENCY_ERROR is not None:
@@ -261,6 +269,10 @@ class TerrainDemService:
         return coverage
 
     def query_profile(self, request: TerrainDemProfileQueryRequest) -> TerrainDemProfileQueryResponse:
+        with self.dataset.read_session():
+            return self._query_profile_locked(request)
+
+    def _query_profile_locked(self, request: TerrainDemProfileQueryRequest) -> TerrainDemProfileQueryResponse:
         started_at = perf_counter()
         coverage = self.coverage_for_coordinate(request.latitudeWgs84, request.longitudeWgs84)
         if RASTER_DEPENDENCY_ERROR is not None:
@@ -307,6 +319,13 @@ class TerrainDemService:
 
         observer_elevation_source = "input"
         observer_elevation = finite_float(request.observerElevationMeters)
+        dem_observer_elevation = sample_elevation(dataset, request.longitudeWgs84, request.latitudeWgs84)
+        if observer_elevation is not None and dem_observer_elevation is not None and abs(observer_elevation - dem_observer_elevation) > 500:
+            return unavailable_response(
+                "invalid_directional_sample", metadata=metadata, request=request,
+                coverage=coverage, query_elapsed_ms=elapsed_ms(started_at),
+                load_error="observer_elevation_disagrees_with_dem",
+            )
         if observer_elevation is None:
             observer_elevation = sample_elevation(
                 dataset,

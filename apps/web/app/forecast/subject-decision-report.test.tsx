@@ -20,6 +20,7 @@ import {
   CloudSeaResultPage,
   ForecastResultView,
   GlowResultPage,
+  buildForecastHistorySummary,
 } from "./forecast-result-client";
 import { photographyEvidence } from "./photography-evidence";
 import { subjectWeatherAdvice } from "./subject-weather-advice";
@@ -65,6 +66,37 @@ function report(result: ForecastCalculationResult) {
 }
 
 describe("subject decision reports", () => {
+  it.each(["不建议专程，评分 32 分。", "云雾形成或可拍证据不足，不建议专程。"])(
+    "retains each day's action when score copy is removed: %s",
+    (reason) => {
+      const result = forecast("cloud_sea");
+      const model = buildCloudSeaForecastViewModel(result);
+      const day = model.displayData.dailyJudgment[0]!;
+      const value = buildCloudSeaDecisionReport(result, {
+        ...model,
+        displayData: {
+          ...model.displayData,
+          dailyJudgment: [{ ...day, recommendedAction: "不建议专程", decisionReason: reason }],
+        },
+      });
+      expect(value.dates[0]!.lines[0]).toContain("不建议专程");
+      expect(value.dates[0]!.lines.join(" ")).not.toContain("评分");
+      expect(value.dates[0]!.lines.join(" ")).not.toContain("，。");
+    },
+  );
+  it.each(["cloud_sea", "glow", "astro"] as const)(
+    "saves %s history from the displayed decision instead of generic best windows",
+    (target) => {
+      const result = forecast(target);
+      const expected = report(result);
+      const actual = buildForecastHistorySummary(result);
+      expect(actual.summaryVersion).toBe(2);
+      expect(actual.recommendationLabel).toBe(expected.verdict);
+      expect(actual.windowLabel).toBe(expected.timing);
+      expect(actual.bestWindowStart).toBe(expected.selectedWindow?.start ?? null);
+      expect(actual.bestWindowEnd).toBe(expected.selectedWindow?.end ?? null);
+    },
+  );
   it("does not leak positive night recommendations or backup plans after a no-trip decision", () => {
     const result = { ...forecast("astro"), decisionMode: "not_recommended" as const };
     const base = buildAstroForecastViewModel(result);

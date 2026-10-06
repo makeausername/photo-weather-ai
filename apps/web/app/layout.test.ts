@@ -14,7 +14,10 @@ describe("RootLayout", () => {
     );
 
     expect(html).toContain('<html lang="zh-CN" data-theme="light">');
-    expect(html).toContain("<main>content</main></body>");
+    expect(html).toContain("<main>content</main>");
+    expect(html.match(/<header\b/g)).toHaveLength(1);
+    expect(html.match(/<footer\b/g)).toHaveLength(1);
+    expect(html.indexOf("<script>")).toBeLessThan(html.indexOf("<main>"));
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
     expect(script).toBeTruthy();
     for (const saved of ["dark", "light", null, "invalid"]) {

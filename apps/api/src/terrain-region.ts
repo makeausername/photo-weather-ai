@@ -17,7 +17,24 @@ export function applyTerrainRegion(
       region.minElevation5km,
       region.maxElevation5km,
       region.avgElevation5km,
-    ].every((value) => typeof value === "number" && Number.isFinite(value));
+    ].every(
+      (value) =>
+        typeof value === "number" && Number.isFinite(value) && value >= -500 && value <= 9000,
+    ) &&
+    region.sampleCount >= 4 &&
+    region.validSampleCount <= region.sampleCount &&
+    region.validSampleCount / region.sampleCount >= 0.95 &&
+    region.minElevation5km! <= region.minElevation3km! &&
+    region.minElevation3km! <= region.minElevation1km! &&
+    region.minElevation1km! <= region.maxElevation5km! &&
+    region.avgElevation5km! >= region.minElevation5km! &&
+    region.avgElevation5km! <= region.maxElevation5km! &&
+    region.elevationMeters! >= region.minElevation5km! - 100 &&
+    region.elevationMeters! <= region.maxElevation5km! + 100 &&
+    // Point providers and DEMs differ in resolution. A gross mismatch is not
+    // a reliable basis for cloud-layer or observer-relative relief decisions.
+    (profile.elevationMeters === null ||
+      Math.abs(profile.elevationMeters - region.elevationMeters!) <= 500);
   const min = usable ? region!.minElevation5km! : null;
   const max = usable ? region!.maxElevation5km! : null;
   // Preserve the point elevation already used for weather correction.
@@ -50,7 +67,7 @@ export function applyTerrainRegion(
       aboveValley === null || aboveValley < 300 ? "low" : aboveValley >= 900 ? "high" : "medium",
     terrainNoteZh: usable
       ? "已采样机位周边 1、3、5 公里地形；高差支持机位判断，云顶高度与现场遮挡仍需确认。"
-      : "周边地形覆盖不足，云海高差待确认。",
+      : "周边地形覆盖不足或海拔数据不一致，云海高差待确认。",
     terrainNotesZh: usable ? "区域高差来自地形采样，近景需现场核对。" : "区域地形待确认。",
     valleyDirectionZh: undefined,
     ridgeDirectionZh: undefined,

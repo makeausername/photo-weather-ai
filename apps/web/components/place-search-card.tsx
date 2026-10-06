@@ -1,4 +1,5 @@
 "use client";
+import { readRecentForecastHorizon, rememberForecastHorizon } from "./selected-location";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ForecastHorizon, ForecastTarget } from "@photo-weather/shared";
@@ -486,6 +487,9 @@ export function PlaceSearchCard({
   const [isActivelySearching, setIsActivelySearching] = useState(false);
   const [isCollapsedAfterSelection, setIsCollapsedAfterSelection] = useState(false);
   const [horizon, setHorizon] = useState<ForecastHorizon>(defaultHorizon);
+  useEffect(() => {
+    setHorizon(readRecentForecastHorizon() ?? defaultHorizon);
+  }, [defaultHorizon]);
   const [target, setTarget] = useState<ForecastTarget>(fixedTarget ?? defaultTarget);
   const [currentLocationStatus, setCurrentLocationStatus] = useState<CurrentLocationStatus>("idle");
   const [currentLocationError, setCurrentLocationError] = useState("");
@@ -982,7 +986,10 @@ export function PlaceSearchCard({
           <p className="text-sm font-semibold text-card-foreground">{horizonLabel}</p>
           <HorizonSelector
             value={horizon}
-            onChange={setHorizon}
+            onChange={(value) => {
+              setHorizon(value);
+              rememberForecastHorizon(value);
+            }}
             disabledOptions={disabledHorizonOptions}
           />
         </div>

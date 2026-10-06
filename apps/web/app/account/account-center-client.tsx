@@ -1205,9 +1205,13 @@ function HistoryRow({
   const href = item.locked ? null : buildForecastHistoryHref(item);
   const targetLabel = targetLabelFor(item.target);
   const horizonLabel = horizonLabelFor(item.horizon);
-  const scoreText =
-    typeof item.overallScore === "number" && Number.isFinite(item.overallScore)
-      ? `${Math.round(item.overallScore)} 分`
+  const summary = item.resultSummaryJson;
+  const currentSummary =
+    summary &&
+    typeof summary === "object" &&
+    "summaryVersion" in summary &&
+    summary.summaryVersion === 2
+      ? summary
       : null;
 
   return (
@@ -1218,7 +1222,6 @@ function HistoryRow({
             <Badge variant="muted">{targetLabel}</Badge>
             <Badge variant="muted">{horizonLabel}</Badge>
             {item.locked ? <Badge variant="warning">已锁定</Badge> : null}
-            {scoreText ? <Badge variant="info">{scoreText}</Badge> : null}
           </div>
           <h3 className="mt-2 break-words text-sm font-bold text-card-foreground">
             {item.locationName}
@@ -1226,8 +1229,12 @@ function HistoryRow({
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             {item.locked
               ? item.upgradeRequiredMessage || "会员到期后，完整报告已锁定。"
-              : item.recommendationLabel || "结果摘要待补充"}
-            {item.bestWindowStart ? ` · ${formatHistoryWindow(item)}` : ""}
+              : currentSummary
+                ? item.recommendationLabel || "结果摘要待补充"
+                : "旧报告摘要需重新查询确认"}
+            {!item.locked && currentSummary && typeof currentSummary.windowLabel === "string"
+              ? ` · ${currentSummary.windowLabel}`
+              : ""}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {formatOptionalDateTime(item.createdAt)}
@@ -1847,29 +1854,6 @@ function formatOptionalDateTime(value: string | null): string {
     minute: "2-digit",
     hour12: false,
   }).format(date);
-}
-
-function formatHistoryWindow(item: AccountForecastHistoryRecord): string {
-  if (!item.bestWindowStart || !item.bestWindowEnd) {
-    return "窗口待确认";
-  }
-
-  const start = new Date(item.bestWindowStart);
-  const end = new Date(item.bestWindowEnd);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    return "窗口待确认";
-  }
-
-  const formatter = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: item.timezone ?? "Asia/Shanghai",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-
-  return `${formatter.format(start)}-${formatter.format(end)}`;
 }
 
 function targetLabelFor(target: string): string {

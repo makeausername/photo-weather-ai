@@ -28,6 +28,7 @@ export type ForecastTerrainDisplayModel = {
     readonly detail: string;
   };
   readonly surroundingRelief: {
+    readonly relativeToObserver?: boolean;
     readonly available: boolean;
     readonly supportLevel: ForecastTerrainReliefSupportLevel;
     readonly valueMeters?: number;
@@ -224,9 +225,7 @@ function resolveSurroundingRelief(
   const profile = result.terrainAnalysis.terrainProfile;
   const support = result.cloudSeaAnalysis.terrainSupport;
   const localRelief =
-    finiteNumber(profile.localReliefMeters) ??
-    finiteNumber(profile.elevationDiff5km) ??
-    finiteNumber(support.localReliefMeters);
+    finiteNumber(profile.localReliefMeters) ?? finiteNumber(support.localReliefMeters);
   const minElevation = finiteNumber(profile.minElevation5km);
   const maxElevation = finiteNumber(profile.maxElevation5km);
   const avgElevation = finiteNumber(profile.avgElevation5km);
@@ -238,7 +237,7 @@ function resolveSurroundingRelief(
     localRelief === undefined && minElevation !== undefined && maxElevation !== undefined
       ? Math.max(0, maxElevation - minElevation)
       : undefined;
-  const relief = localRelief ?? rangeRelief;
+  const relief = localRelief ?? rangeRelief ?? finiteNumber(profile.elevationDiff5km);
 
   if (relief !== undefined) {
     const source =
@@ -247,9 +246,13 @@ function resolveSurroundingRelief(
     const supportLabelZh = surroundingReliefSupportLabel(supportLevel);
     return {
       available: true,
+      relativeToObserver: localRelief !== undefined,
       supportLevel,
       valueMeters: relief,
-      valueLabel: `高差约 ${formatMeters(relief)}`,
+      valueLabel:
+        localRelief !== undefined
+          ? `机位高出周边低地约 ${formatMeters(relief)}`
+          : `周边最高与最低点高差约 ${formatMeters(relief)}`,
       statusLabelZh: "高差已返回",
       supportLabelZh,
       rangeLabel,
@@ -409,10 +412,10 @@ function buildCloudSeaMorphology(input: {
 
   if (input.relief.available && input.relief.valueMeters !== undefined) {
     const reliefValue = input.relief.valueMeters;
-    const conclusion = cloudSeaReliefConclusion(reliefValue);
-    const detail = `地形参考：${elevationText}；周边5公里高差约 ${Math.round(
-      reliefValue,
-    )} 米。${conclusion}仍需现场复核云顶高度、低云贴地情况和白墙风险。`;
+    const conclusion = input.relief.relativeToObserver
+      ? cloudSeaReliefConclusion(reliefValue)
+      : "周边起伏不能代表机位高出云层，俯拍条件待确认。";
+    const detail = `地形参考：${elevationText}；${input.relief.valueLabel}。${conclusion}仍需现场复核云顶高度、低云贴地情况和白墙风险。`;
     return {
       confidenceLabelZh: "中置信（高差已返回）",
       supportLabelZh: input.relief.supportLabelZh,

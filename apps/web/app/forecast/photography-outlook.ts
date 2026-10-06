@@ -208,8 +208,28 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
         : evidence.cloud || evidence.visibility
           ? `${sunChance(event)}（预报有分歧，需复核）`
           : sunChance(event);
-    const sunrise = sun(morning);
-    const sunset = sun(evening);
+    const terrainSun = (phase: "sunrise" | "sunset", weather: string) => {
+      const samples = (result.terrainAnalysis.horizonProfile.directionSamples ?? []).filter(
+        (sample) =>
+          sample.sourceDate === date &&
+          sample.sourcePhase === phase &&
+          sample.target === phase &&
+          sample.dataSource === "dem_raster" &&
+          !sample.unavailableReason &&
+          (sample.validSampleCount ?? 0) > 0,
+      );
+      if (!samples.length) return weather;
+      const clean = weather.replace(/，地平线遮挡待确认/g, "");
+      if (samples.some((sample) => sample.obstructionLevel === "obstructed"))
+        return `低角度太阳被山体遮挡，${phase === "sunrise" ? "需等太阳升高或另选开阔机位" : "需提前拍摄或另选西侧开阔机位"}；天气${clean}（高处云霞仍可观察）`;
+      if (samples.some((sample) => sample.obstructionLevel === "marginal"))
+        return `${clean}，太阳贴近地形边缘，露面时刻需现场确认`;
+      return samples.every((sample) => sample.obstructionLevel === "clear")
+        ? `${clean}，目标方向地形较开阔，近景仍需现场确认`
+        : weather;
+    };
+    const sunrise = terrainSun("sunrise", sun(morning));
+    const sunset = terrainSun("sunset", sun(evening));
     const glow = (event: readonly Hour[], score: number | undefined) =>
       event.length &&
       event.every(usable) &&
@@ -424,6 +444,8 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
       date,
       label: labelDate(date),
       lines,
+      recommendation,
+      windowLabel: window,
       best,
       score,
       allowed: Boolean(allowed),
@@ -463,6 +485,10 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
     );
     const values = relevant.map((d) => d[key]);
     if (!values.length) return "不在本次范围内";
+    if ((key === "sunrise" || key === "sunset") && values.some((v) => v.includes("被山体遮挡")))
+      return values.every((v) => v.includes("被山体遮挡"))
+        ? "低角度被山体遮挡"
+        : "部分日期受山体遮挡，按逐日结论选机位";
     if (values.some((v) => v.includes("分歧")))
       return values.some((v) => /有望|有机会|机会较好/.test(v))
         ? "有机会但需复核"
@@ -536,5 +562,14 @@ export function buildPhotographyOutlook(result: ForecastCalculationResult) {
         ? "当地天气预警待确认，出发前查看最新预警和通行情况。"
         : `移动途中留意能见度变化，${scene.mountain ? "山路或" : ""}湿滑地面优先稳步通行。`,
   ];
-  return { conclusion, days, shooting, clothing, risks, compact };
+  return {
+    conclusion,
+    days,
+    shooting,
+    clothing,
+    risks,
+    compact,
+    selectedDate: bestDay?.date,
+    selectedWindow: !uncertain && !noTrip ? bestDay?.best : undefined,
+  };
 }

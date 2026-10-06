@@ -2031,6 +2031,8 @@ describe("auth routes", () => {
       payload: {
         query: baseHistoryQuery,
         resultSummary: {
+          summaryVersion: 2,
+          windowLabel: "附近观察参考：6月22日 05:00–07:00",
           overallScore: 82,
           recommendationLabel: "推荐前往",
           bestWindowStart: "2026-06-22T05:00:00+08:00",
@@ -2070,6 +2072,10 @@ describe("auth routes", () => {
         locationName: "测试山顶",
         target: "general",
         recommendationLabel: "推荐前往",
+        resultSummaryJson: expect.objectContaining({
+          summaryVersion: 2,
+          windowLabel: "附近观察参考：6月22日 05:00–07:00",
+        }),
       }),
     ]);
     expect(JSON.stringify(plainList.json())).not.toContain("管理员地点");

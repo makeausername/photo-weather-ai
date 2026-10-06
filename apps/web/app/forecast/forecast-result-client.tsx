@@ -1,4 +1,9 @@
 "use client";
+import {
+  rememberForecastHorizon,
+  rememberRecentSelectedLocation,
+  selectedLocationFromForecastQuery,
+} from "../../components/selected-location";
 
 import {
   buildCloudSeaDecisionReport,
@@ -68,6 +73,7 @@ import {
   type ResultMeterTone,
 } from "./result-dashboard-components";
 import { PhotographyOutlook } from "./photography-outlook-view";
+import { buildPhotographyOutlook } from "./photography-outlook";
 import { WeatherAlerts } from "./weather-alerts";
 import { HourlyWeatherMatrix } from "./hourly-weather-matrix";
 import { StickyDataScroller } from "../../components/sticky-data-scroller";
@@ -166,6 +172,13 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
         : activeTarget === "astro"
           ? "/astro"
           : "/";
+
+  useEffect(() => {
+    if (query) {
+      rememberForecastHorizon(query.horizon);
+      rememberRecentSelectedLocation(selectedLocationFromForecastQuery(query));
+    }
+  }, [query]);
 
   useEffect(() => {
     if (!queryKey) {
@@ -312,12 +325,23 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
 }
 
 export function buildForecastHistorySummary(result: ForecastCalculationResult) {
-  const bestWindow = result.bestWindows[0];
+  const model = buildForecastResultViewModel(result, result.target);
+  const report = model.cloudSea
+    ? buildCloudSeaDecisionReport(result, model.cloudSea)
+    : model.glow
+      ? buildGlowDecisionReport(result, model.glow)
+      : model.astro
+        ? buildAstroDecisionReport(result, model.astro)
+        : undefined;
+  const outlook = report ? undefined : buildPhotographyOutlook(result);
+  const bestWindow = report?.selectedWindow ?? outlook?.selectedWindow;
   return {
+    summaryVersion: 2,
     overallScore: forecastHistoryScoreForTarget(result),
-    recommendationLabel: result.finalRecommendationLabel ?? result.recommendationLabel,
-    bestWindowStart: bestWindow?.startTime ?? null,
-    bestWindowEnd: bestWindow?.endTime ?? null,
+    recommendationLabel: report?.verdict ?? outlook!.conclusion[0],
+    windowLabel: report?.timing ?? outlook!.conclusion[1],
+    bestWindowStart: bestWindow?.start ?? null,
+    bestWindowEnd: bestWindow?.end ?? null,
   };
 }
 
