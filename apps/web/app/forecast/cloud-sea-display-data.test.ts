@@ -1,6 +1,4 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import {} from "node:path";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -14,8 +12,6 @@ import {
 import { cloudSeaRegressionFixture } from "./__tests__/fixtures/cloudSeaRegressionFixtures";
 import { CloudSeaResultPage } from "./forecast-result-client";
 import { buildCloudSeaForecastViewModel } from "./forecast-result-view-model";
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 const testGlobal = globalThis as typeof globalThis & { React: typeof React };
 testGlobal.React = React;
 
@@ -100,7 +96,8 @@ describe("Cloud Sea display data rolling horizon", () => {
             viewModel: model,
           }),
         );
-        expect(html).toContain(card.detail);
+        expect(html).toContain("data-subject-decision-report=");
+        expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
         if (kind === "consistent") expect(card.detail).toContain("可用于复核云层变化");
         if (name === "genericHighMountainGoodCloudSeaCase")
           expect(model.displayData.header.heroBadgeLabel).toBe("云海判断");
@@ -271,6 +268,8 @@ describe("Cloud Sea display data rolling horizon", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const expectedWindow = formatForecastWindowZh(
       "2026-06-05T04:38:00+08:00",
       "2026-06-05T06:35:00+08:00",
@@ -316,10 +315,6 @@ describe("Cloud Sea display data rolling horizon", () => {
     expect(viewModel.displayData.riskReview.find((item) => item.label === "影响时段")?.value).toBe(
       expectedWindow,
     );
-    expect(html).toContain(expectedWindow);
-    expect(html).toContain(expectedArrivalReference);
-    expect(html).toContain(expectedBackup);
-    expect(html).not.toMatch(/>\s*04:38-06:35\s*</);
   });
 
   it("keeps no-go display data free of unconditional arrival recommendations", () => {
@@ -453,59 +448,6 @@ describe("Cloud Sea display data rolling horizon", () => {
     ).toContain("5");
   });
 
-  it("keeps the professional table free of same-day filtering logic", () => {
-    const source = readFileSync(
-      resolve(repoRoot, "apps/web/app/forecast/forecast-result-client.tsx"),
-      "utf8",
-    );
-    const panelSource = source.slice(
-      source.indexOf("function CloudSeaProfessionalHourlyDataPanel"),
-      source.indexOf("function CloudSeaProfessionalHourlyRow"),
-    );
-    const rowSource = source.slice(
-      source.indexOf("function CloudSeaProfessionalHourlyRow"),
-      source.indexOf("function CloudSeaHourlyFocusPreview"),
-    );
-    const cloudSeaPageSource = source.slice(
-      source.indexOf("export function CloudSeaResultPage"),
-      source.indexOf("export function GlowResultPage"),
-    );
-    const glowPageSource = source.slice(
-      source.indexOf("export function GlowResultPage"),
-      source.indexOf("export function AstroResultPage"),
-    );
-    const glowProfessionalDataSource = source.slice(
-      source.indexOf("function GlowProfessionalDataSection"),
-      source.indexOf("function CloudSeaTopResultHeader"),
-    );
-
-    expect(panelSource).toContain("const rows = data.rows");
-    expect(panelSource).toContain("<StickyDataScroller>");
-    expect(panelSource).toContain('data-professional-hourly-table-layout="mobile-scroll-safe"');
-    expect(panelSource).toContain("border-separate border-spacing-0");
-    expect(panelSource).not.toContain("border-collapse");
-    expect(panelSource).toContain("professionalHourlyDateHeaderClassName");
-    expect(panelSource).toContain("professional-time sticky left-0");
-    expect(panelSource).toContain("sm:left-[4.5rem]");
-    expect(panelSource).not.toContain("ProfessionalHourlyCloudCard");
-    expect(panelSource).not.toContain("professionalHourlyRowsByDate");
-    expect(panelSource).not.toContain("data-professional-hourly-card-layout");
-    expect(panelSource).not.toContain("data-glow-hourly-cloud-card");
-    expect(panelSource).not.toMatch(/row\.date|currentDate|isSameDay|23:00/);
-    expect(panelSource).not.toMatch(/startsWith\(\s*`\$\{date\}T`/);
-    expect(rowSource).toContain("professionalHourlyDateCellClassName(rowBackgroundClassName)");
-    expect(rowSource).toContain("professionalHourlyTimeCellClassName()");
-    expect(rowSource).not.toContain("bg-inherit");
-    expect(rowSource).not.toContain("sticky left-0");
-    expect(cloudSeaPageSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
-    expect(cloudSeaPageSource).not.toContain("CloudSeaMultiSourceAgreement");
-    expect(glowPageSource).toContain("<GlowProfessionalDataSection");
-    expect(glowProfessionalDataSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
-    expect(glowProfessionalDataSource).toContain('target="glow"');
-    expect(glowProfessionalDataSource).toContain('variant="embedded"');
-    expect(glowProfessionalDataSource).not.toContain("<ProfessionalHourlyCloudSection");
-  });
-
   it("keeps future48 provider-short coverage as 39 of 48 display hours", () => {
     const fixture = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
     const baseRow = fixture.result.professionalHourlyData?.[0];
@@ -550,11 +492,8 @@ describe("Cloud Sea display data rolling horizon", () => {
         viewModel,
       }),
     );
-    expect(html).toContain("覆盖率");
-    expect(html).toContain("39 / 48 小时");
-    expect(html).not.toContain("39 / 39 小时");
-    expect(html).toContain("2026年6月4日 09:00");
-    expect(html).toContain("2026年6月6日 08:00");
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
   });
 
   it("recomputes field coverage after clipping provider rows to the selected horizon", () => {

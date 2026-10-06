@@ -107,9 +107,9 @@ describe("responsive safeguards", () => {
     expect(resultControlsSource).not.toContain('from "recharts"');
     expect(hourlyTimelineSource).toContain('from "recharts"');
     expect(hourlyTimelineSource).toContain('data-hourly-weather-timeline="true"');
-    expect(forecastSource).toContain('import("./hourly-weather-timeline")');
-    expect(forecastSource.match(/deferUntilActive: true/g)).toHaveLength(1);
-    expect(forecastSource).toContain('data-astro-night-selector="true"');
+    expect(forecastSource).not.toContain('import("./hourly-weather-timeline")');
+    expect(forecastSource).toContain("<SubjectDecisionReportView");
+    expect(forecastSource).not.toContain('data-astro-night-selector="true"');
     expect(adminShellSource).toContain("@radix-ui/react-dialog");
     expect(adminShellSource).toContain('data-admin-mobile-navigation="sheet"');
     expect(adminShellSource).not.toContain("overflow-x-auto pb-2");

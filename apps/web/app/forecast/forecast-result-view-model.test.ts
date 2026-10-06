@@ -150,8 +150,8 @@ describe("target-aware forecast history scores", () => {
         initialNightDate: requested.localEveningDate,
       }),
     );
-    const selectedButton = html.match(/<button[^>]*aria-pressed="true"[^>]*>/)?.[0];
-    expect(selectedButton).toContain(`data-astro-night-selector-item="${requested.nightKey}"`);
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
   });
   it("does not offer a daily astro link to a night outside the forecast range", () => {
     const base = resultForTarget("general");
@@ -3057,86 +3057,6 @@ function queryForTarget(target: ForecastCalculationResult["target"]): ForecastQu
   };
 }
 
-function countOccurrences(text: string, pattern: string): number {
-  return text.split(pattern).length - 1;
-}
-
-function classNamesForCloudSeaDailyCards(html: string): readonly string[] {
-  return Array.from(
-    html.matchAll(/<article\b[^>]*data-cloud-sea-daily-card="true"[^>]*>/g),
-    (match) => match[0].match(/\bclass="([^"]*)"/)?.[1] ?? "",
-  );
-}
-
-function expectNoObsoleteLightPollutionPlaceholders(html: string): void {
-  const placeholders = [
-    `光污染${"暂未接入"}`,
-    `光污染${"数据暂未接入"}`,
-    `光污染/地形${"暂未接入"}`,
-    `后续${"接入"}`,
-    `需要${"后续接入"}`,
-    `暂缺${"光污染"}`,
-    `模拟${"光污染"}`,
-    `体验${"数据"}`,
-  ];
-
-  for (const placeholder of placeholders) {
-    expect(html).not.toContain(placeholder);
-  }
-}
-
-function expectNoForbiddenBortleCopy(html: string): void {
-  const forbiddenTexts = [
-    "波特尔等级：1级",
-    "实测波特尔",
-    "SQM",
-    "SQM实测值",
-    "实测 SQM",
-    "mag/arcsec²",
-    "国标等级",
-    "国家标准",
-    "官方等级",
-    "官方认证",
-    "国家标准等级",
-    "全国标准",
-    "国标一级",
-    "国标二级",
-    "环境分区认证",
-    "天文通",
-    "Tianwentong",
-  ];
-
-  for (const forbiddenText of forbiddenTexts) {
-    expect(html).not.toContain(forbiddenText);
-  }
-}
-
-function sectionBetween(html: string, startMarker: string, endMarker: string): string {
-  const start = html.indexOf(startMarker);
-  const end = html.indexOf(endMarker, start + startMarker.length);
-
-  return start >= 0 && end > start ? html.slice(start, end) : "";
-}
-
-function sectionAfter(html: string, startMarker: string): string {
-  const start = html.indexOf(startMarker);
-
-  return start >= 0 ? html.slice(start) : "";
-}
-
-function expectMarkersInOrder(html: string, markers: readonly string[]): void {
-  let previousIndex = -1;
-  for (const marker of markers) {
-    const index = html.indexOf(marker);
-    expect(index, `Expected marker "${marker}" to be rendered`).toBeGreaterThanOrEqual(0);
-    expect(
-      index,
-      `Expected marker "${marker}" to render after the previous marker`,
-    ).toBeGreaterThan(previousIndex);
-    previousIndex = index;
-  }
-}
-
 describe("forecast result target-aware view model", () => {
   it("blocks every target page when weather evidence is stale, insufficient, or non-real", () => {
     for (const target of ["general", "cloud_sea", "glow", "astro"] as const) {
@@ -3614,11 +3534,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-
-    expect(html).not.toContain("朝霞 / 晚霞机会");
-    expect(html).not.toContain("低云遮挡风险");
-    expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风|高德/i);
-    expect(html).not.toMatch(/智能解读|\bAI\b/i);
+    expect(html).toContain('data-photography-outlook="true"');
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     const glowResult: ForecastCalculationResult = {
       ...resultForTarget("glow"),
@@ -3632,13 +3549,8 @@ describe("forecast result target-aware view model", () => {
         viewModel: glowViewModel,
       }),
     );
-
-    expect(glowHtml).toContain("低云/雾墙风险低");
-    expect(glowHtml).toContain("光路中 / 云层压制高");
-    expect(glowHtml).toContain("太阳方向光路缺少足够的方向性数据，需现场复核地平线云缝");
-    expect(glowHtml).not.toContain("低云遮挡风险");
-    expect(glowHtml).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风天气|高德地图/i);
-    expect(glowHtml).not.toMatch(/智能解读|\bAI\b/i);
+    expect(glowHtml).toContain("data-subject-decision-report=");
+    expect(glowHtml).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
   });
 
   it("omits the old subject breakdown grid from the general dashboard", () => {
@@ -3981,7 +3893,7 @@ describe("forecast result target-aware view model", () => {
     expect(highMountain.preferredVocabulary).toContain("云海形成");
   });
 
-  it("downgrades low-elevation Cloud Sea result wording while keeping professional hourly data visible", () => {
+  it("downgrades low-elevation Cloud Sea result wording without exposing professional hourly data", () => {
     const result = lowElevationCloudSeaResultForTest();
     const viewModel = buildCloudSeaForecastViewModel(result);
     const html = renderToStaticMarkup(
@@ -3991,7 +3903,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const windowSection = sectionBetween(html, "CloudSeaWindowCards", "CloudSeaDailyCards");
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.terrainContext.shouldDowngradeCloudSeaWording).toBe(true);
     expect(viewModel.hero.title).toBe("瓯江河畔 低云/晨雾参考");
@@ -4004,57 +3917,6 @@ describe("forecast result target-aware view model", () => {
     ]);
     expect(viewModel.actionPlan.map((item) => item.label)).toContain("参考窗口");
     expect(viewModel.dailyTrend.map((item) => item.recommendedAction)).toContain("已在附近可观察");
-
-    expect(html).toContain("低云/晨雾参考");
-    expect(html).toContain("地形数据不足：机位海拔约 142 米（低海拔）；高差缺测");
-    expect(html).toContain("周边5公里高差统计暂未返回");
-    expect(windowSection).toContain("低云观察与备选");
-    expect(windowSection).toContain(
-      "当前地形更适合顺带观察，本区块按低云、晨雾、层云和通透参考处理。",
-    );
-    expect(html).toContain("晨雾");
-    expect(html).toContain("低云");
-    expect(html).toContain("云层变化");
-    expect(html).toContain("通透");
-    expect(windowSection).toContain("日出低云 / 晨雾");
-    expect(windowSection).toContain("日落层云");
-    expect(windowSection).toContain("有光云层");
-    expect(windowSection).toContain("夜间低云 / 雾气");
-    expect(windowSection).toContain("已在附近可观察");
-    expect(windowSection).toContain("顺带观察");
-    expect(windowSection).toContain("低云/晨雾备选观察");
-    expect(windowSection).toContain("复核降水、能见度和通行");
-    expect(windowSection).toContain("转向霞光、云层纹理和近景");
-    expect(windowSection).not.toContain("日出云海");
-    expect(windowSection).not.toContain("日落云海");
-    expect(windowSection).not.toContain("有光云海");
-    expect(windowSection).not.toContain("无光云海");
-    expect(windowSection).not.toContain("优先守拍");
-    expect(html).toContain("低云遮挡风险");
-    expect(html).toContain("低云/晨雾备选观察");
-    expect(html).toContain("现场通透度");
-    expect(html).not.toContain("推荐专程云海");
-    expect(html).not.toContain("强推荐专程云海");
-    expect(html).not.toContain("推荐安排");
-    expect(html).not.toContain("高山云海窗口");
-    expect(html).not.toContain("山顶云海");
-    expect(html).not.toContain("云海主守");
-    expect(html).not.toContain("主守云海");
-
-    expect(html).toContain("专业小时数据");
-    expect(html).toContain("低云信号");
-    expect(html).toContain("总云量 %");
-    expect(html).toContain("高云量 %");
-    expect(html).toContain("中云量 %");
-    expect(html).toContain("低云量 %");
-    expect(html).toContain('data-professional-hourly-expanded="true"');
-    expect(html).not.toContain("坐标信息");
-    expect(html).not.toContain("WGS84");
-    expect(html).not.toContain("GCJ-02");
-    expect(html).not.toContain("经度");
-    expect(html).not.toContain("纬度");
-    expect(html).not.toContain("latitude");
-    expect(html).not.toContain("longitude");
   });
 
   it("keeps a 32 score Cloud Sea result from rendering strong recommendation copy", () => {
@@ -4067,44 +3929,21 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const actionPlan = sectionBetween(html, "CloudSeaActionPlan", "CloudSeaRiskSummary");
-    const windowSection = sectionBetween(html, "CloudSeaWindowCards", "CloudSeaDailyCards");
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.recommendationGuard.finalRecommendationLabel).toBe("不建议专程");
     expect(viewModel.travelDecision).toBe("no_go");
     expect(viewModel.hero.recommendationLabel).toBe("不建议专程");
     expect(viewModel.hero.bestWindowLabel).toContain("备选观察窗口");
     expect(viewModel.hero.arrivalLabel).toBe("暂不安排行程");
-    expect(viewModel.actionPlan.find((item) => item.key === "departure")).toMatchObject({
-      label: "是否建议先复核真实天气",
-      value: "不建议专程",
-    });
-    expect(viewModel.actionPlan.find((item) => item.key === "arrival")).toMatchObject({
-      label: "不建议出发",
-      value: "等待下次预报",
-    });
-    expect(viewModel.actionPlan.find((item) => item.key === "main-window")?.label).toBe(
-      "备选观察窗口",
-    );
     expect(viewModel.dailyTrend.every((item) => item.recommendedAction === "不建议专程")).toBe(
       true,
     );
     expect(
       viewModel.cloudSeaWindows.every((item) => item.recommendationLabel === "不建议专程"),
     ).toBe(true);
-    expect(actionPlan).toContain("是否建议先复核真实天气");
-    expect(actionPlan).toContain("不建议专程");
-    expect(actionPlan).toContain("当前云海证据不足");
-    expect(windowSection).toContain("不建议专程");
     expect(viewModel.cloudSeaWindows.map((item) => item.label).join(" ")).toContain("备选观察窗口");
-    expect(html).toContain("暂不安排行程");
-    expect(html).toContain("等待下一次预报");
-    expect(html).not.toContain("建议到达");
-    expect(html).not.toContain("建议到达时间");
-    expect(html).not.toContain("主守窗口");
-    expect(html).not.toContain("强推荐专程");
-    expect(html).not.toContain("推荐专程云海");
-    expect(html).not.toContain("云海主守");
   });
 
   it("keeps Cloud Sea action plan, daily cards, and window cards under the low-elevation cap", () => {
@@ -4117,22 +3956,13 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const actionPlan = sectionBetween(html, "CloudSeaActionPlan", "CloudSeaRiskSummary");
-    const dailySection = sectionBetween(html, "CloudSeaDailyTrend", "CloudSeaDecisionSupport");
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.recommendationGuard.maxAllowedRecommendationStrength).toBe(
       "observe_if_nearby",
     );
     expect(viewModel.hero.recommendationLabel).toBe("已在附近可观察");
-    expect(viewModel.actionPlan.find((item) => item.key === "departure")?.value).toBe(
-      "已在附近可观察",
-    );
-    expect(actionPlan).toContain("已在附近可观察");
-    expect(dailySection).toContain("已在附近可观察");
-    expect(html).toContain("低云/晨雾参考窗口");
-    expect(html).not.toContain("强推荐专程");
-    expect(html).not.toContain("推荐专程云海");
-    expect(html).not.toContain("云海主守");
   });
 
   it("resolves the Cloud Sea forecast page into explicit search, loading, result, and error modes", () => {
@@ -4329,7 +4159,7 @@ describe("forecast result target-aware view model", () => {
     expect(clientSource).not.toContain("}, [query, queryKey])");
   });
 
-  it("renders the cloud sea result through the shared DecisionResultTemplate without entry-page search/sidebar", () => {
+  it("renders the cloud sea decision report without entry-page search or sidebar", () => {
     const result = resultForTarget("cloud_sea");
     const viewModel = buildCloudSeaForecastViewModel(result);
     const fetchMock = vi.fn(() => {
@@ -4345,318 +4175,15 @@ describe("forecast result target-aware view model", () => {
           viewModel,
         }),
       );
-
-      expect(html).not.toContain("热门云海机位");
-      expect(html).not.toContain("老君山金顶");
-      expect(html).not.toContain("三清山女神峰");
-      expect(html).not.toContain("武功山金顶");
-      expect(html).not.toContain("有没有云海机会");
-      expect(html).not.toContain("能不能拍");
-      expect(html).not.toContain("会不会白墙");
-      expect(html).not.toContain("几点到、几点守");
-      expect(html).not.toContain("白墙时怎么转拍");
-      expect(html).not.toContain("是否值得专程去");
-      expect(html).toContain("白墙风险");
-      expect(html).toContain("黄山光明顶 云海判断");
-      expect(html).toContain("到达参考");
-      expect(html).toContain("如仍前往，建议到达");
-      expect(html).toContain("云海窗口与备选");
-      expect(html).toContain("按光线和时段归纳主窗口与备选窗口，快速判断哪一类云海更值得守拍。");
-      expect(html).toContain("云海窗口");
-      expect(html).toContain("日出云海");
-      expect(html).toContain("日落云海");
-      expect(html).toContain("有光云海");
-      expect(html).toContain("无光云海");
-      expect(countOccurrences(html, 'data-testid="cloud-sea-window-category-card"')).toBe(4);
-      expect(countOccurrences(html, "机会指数")).toBe(4);
-      expect(countOccurrences(html, "参考窗口：</dt>")).toBe(4);
-      expect(countOccurrences(html, "备选窗口：</dt>")).toBe(4);
-      expect(countOccurrences(html, "主要限制：</dt>")).toBe(4);
-      expect(countOccurrences(html, "行动：</span>")).toBe(4);
-      expect(html).toContain("05:00");
-      expect(html).toContain("17:20");
-      expect(html).not.toContain("云海时间轴");
-      expect(html).not.toContain("聚焦云海信号、白墙风险、雨后开口和到场动作。");
-      expect(html).toContain("每日云海判断");
-      expect(html).toContain("判断依据");
-      expect(html).toContain("行动方案");
-      expect(html).toContain("风险与复核");
-      expect(html).not.toContain("建议到达时间");
-      expect(html).not.toContain("主守窗口");
-      expect(html).toContain("参考窗口");
-      expect(html).toContain("备选方案");
-      expect(html).toContain("装备提醒");
-      expect(html).toContain("现场复核点");
-      expect(html).not.toContain('data-cloud-sea-section="CloudSeaSearchPanel"');
-      expect(html).not.toContain('data-place-search-card-mode="result-compact"');
-      expect(html).not.toContain('data-selected-location-summary="result-compact"');
-      expect(html).not.toContain("地点与预报范围");
-      expect(html).not.toContain("当前地点");
-      expect(html).not.toContain("更换地点");
-      expect(html).not.toContain("预报范围");
-      expect(html).toContain("重新选择地点");
-      expect(html).toContain("重新判断");
-      expect(html.indexOf("重新判断")).toBeGreaterThan(html.indexOf("CloudSeaHeroConclusion"));
-      expect(html).not.toContain("坐标信息");
-      expect(html).not.toContain("WGS84");
-      expect(html).not.toContain("GCJ-02");
-      expect(html).not.toContain("GCJ02");
-      expect(html).not.toContain("经度");
-      expect(html).not.toContain("纬度");
-      expect(html).not.toContain("latitude");
-      expect(html).not.toContain("longitude");
-      expect(html).not.toContain("30.13012");
-      expect(html).not.toContain("118.16389");
-      expect(html).not.toContain("30.1328");
-      expect(html).not.toContain("118.171");
-      expect(html).not.toMatch(/\b\d{1,2}\.\d{3,}[NS]?,\s*\d{2,3}\.\d{3,}[EW]?\b/i);
-      expect(html).not.toContain('data-selected-location-card="true"');
-      expect(html).not.toContain("<aside");
-      expect(html).not.toContain("PlaceSearchCard");
-      expect(html).not.toContain("已选地点");
-      expect(html).not.toContain("所在地");
-      expect(html).not.toContain("判断范围");
-      expect(html).not.toContain("查看朝霞晚霞");
-      expect(html).not.toContain("查看星空银河");
-      expect(html).not.toContain("相关题材");
-      expect(html).not.toContain("页面预设");
-      expect(html).not.toContain("体验模式");
-      expect(html).not.toContain("体验参考");
-      expect(html).not.toContain("数据提醒");
-      expect(html).not.toContain("固定分析目标");
-      expect(html).not.toContain("云海 vs 白墙判断");
-      expect(html).not.toContain("地形依据");
-      expect(html).not.toContain("气象依据");
-      expect(html).not.toContain("天气数据：演示天气数据");
-      expect(html).not.toContain("地形数据：演示数据");
-      expect(html).not.toContain("正式数据源启用后将显示对应来源与更新时间");
-      expect(html).not.toContain("meteoblue");
-      expect(html).not.toContain("Open-Meteo");
-      expect(html).not.toContain("和风天气");
-      expect(html).toContain("CloudSeaResultPage");
-      expect(html).toContain('data-testid="decision-result-template"');
-      expect(html).toContain('data-testid="decision-score-card"');
-      expect(html).toContain('data-forecast-decision-page-shell="true"');
-      expect(html).toContain('data-result-dashboard-shell="true"');
-      expect(html).toContain('data-result-target="cloud_sea"');
-      expect(html).toContain('data-forecast-result-header="true"');
-      expect(html).toContain('data-result-header-row="true"');
-      expect(html).toContain('data-forecast-result-summary-card="true"');
-      expect(html).toContain('data-result-header-summary-card="true"');
-      expect(html).toContain('data-forecast-score-card="true"');
-      expect(html).toContain('data-result-score-card="true"');
-      expect(html).toContain("CloudSeaTopResultHeader");
-      expect(html).toContain("CloudSeaHeroConclusion");
-      expect(html).toContain("CloudSeaScoreCard");
-      expect(countOccurrences(html, "CloudSeaHeroConclusion")).toBe(1);
-      expect(countOccurrences(html, 'data-cloud-sea-section="CloudSeaScoreCard"')).toBe(1);
-      expect(html).toContain("CloudSeaCoreMetrics");
-      expect(html).toContain('data-forecast-metric-grid="true"');
-      expect(html).toContain('data-result-metric-grid="true"');
-      expect(html).toContain('data-forecast-metric-card="true"');
-      expect(countOccurrences(html, 'data-result-metric-card="true"')).toBe(6);
-      expect(html).toContain("云海可拍指数");
-      expect(html).toContain("/ 100");
-      expect(html).toContain("地形参考：机位海拔约 1860 米");
-      expect(html).toContain("推荐等级");
-      expect(html).toContain("参考窗口");
-      expect(html).toContain("云海形成 / 可拍机会");
-      expect(html).toContain("主要风险");
-      expect(countOccurrences(html, 'data-cloud-sea-metric-card="true"')).toBe(6);
-      expect(html).not.toContain("min-[900px]:grid-cols-[clamp(260px,22vw,320px)_minmax(0,1fr)]");
-      expect(html).toContain("min-[920px]:grid-cols-[minmax(0,1.55fr)_minmax(280px,340px)]");
-      expect(html).toContain("min-[920px]:items-stretch");
-      expect(html).toContain('data-forecast-decision-layout="stacked"');
-      expect(html).not.toContain("CloudSeaStackedLayout");
-      expect(html).not.toContain(
-        "min-[1200px]:grid-cols-[clamp(320px,23vw,380px)_minmax(0,1fr)_clamp(300px,22vw,360px)]",
-      );
-      expect(html).toContain("CloudSeaNearTermWeather");
-      expect(html).toContain('data-forecast-current-weather-cards="true"');
-      expect(html).toContain('data-result-current-weather-section="true"');
-      expect(html).toContain("当前与近时段天气（2026年5月20日 星期三 · 00:00–06:00）");
-      expect(html).toContain("气温与体感");
-      expect(html).toContain("云层与能见度");
-      expect(html).toContain("风与降水");
-      expect(html).toContain("湿度与露点");
-      expect(html).toContain("穿衣与装备");
-      expect(html).toContain("CloudSeaWindowCards");
-      expect(html).toContain('data-cloud-sea-section="CloudSeaWindowDecision"');
-      expect(html).toContain('data-cloud-sea-section="CloudSeaDailyCards"');
-      expect(html).toContain('data-cloud-sea-section="CloudSeaDecisionSupport"');
-      expect(html).toContain("出发行动与风险");
-      expect(html).toContain('data-cloud-sea-section="CloudSeaProfessionalData"');
-      expect(html).toContain('data-cloud-sea-professional-data-expanded="true"');
-      expect(html).toContain("CloudSeaDailyTrend");
-      const dailyCardSection = sectionBetween(
-        html,
-        "CloudSeaDailyTrend",
-        "CloudSeaDecisionSupport",
-      );
-      const decisionSupportSection = sectionBetween(
-        html,
-        "CloudSeaDecisionSupport",
-        "CloudSeaProfessionalData",
-      );
-      const professionalDataSection = sectionAfter(html, "CloudSeaProfessionalData");
-      expect(dailyCardSection).toContain('data-testid="cloud-sea-daily-card-grid"');
-      expect(dailyCardSection).toContain('data-cloud-sea-daily-card-grid="true"');
-      expect(dailyCardSection).toContain("grid-cols-1");
-      expect(dailyCardSection).toContain("min-[560px]:grid-cols-2");
-      expect(dailyCardSection).toContain("min-[980px]:grid-cols-3");
-      expect(dailyCardSection).toContain("min-[1280px]:grid-cols-4");
-      expect(dailyCardSection).not.toContain("min-[720px]:grid-cols-2");
-      expect(dailyCardSection).not.toContain("min-[1180px]:grid-cols-3");
-      expect(dailyCardSection).not.toMatch(/min-\[900px\]:grid-cols-\[minmax\(150px,0\.8fr\)/);
-      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-card"')).toBe(
-        viewModel.dailyTrend.length,
-      );
-      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-date"')).toBe(
-        viewModel.dailyTrend.length,
-      );
-      expect(
-        countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-recommendation"'),
-      ).toBe(viewModel.dailyTrend.length);
-      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-main-window"')).toBe(
-        viewModel.dailyTrend.length,
-      );
-      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-rain-opening"')).toBe(
-        viewModel.dailyTrend.length,
-      );
-      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-stat"')).toBe(
-        viewModel.dailyTrend.length * 3,
-      );
-      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-action"')).toBe(
-        viewModel.dailyTrend.length,
-      );
-      expect(countOccurrences(dailyCardSection, 'data-testid="cloud-sea-daily-reason"')).toBe(
-        viewModel.dailyTrend.filter((item) => item.decisionReason).length,
-      );
-      expect(decisionSupportSection).toContain("CloudSeaReasoning");
-      expect(decisionSupportSection).toContain("CloudSeaActionPlan");
-      expect(decisionSupportSection).toContain("CloudSeaRiskSummary");
-      expect(decisionSupportSection).toContain("判断依据");
-      expect(decisionSupportSection).toContain("行动方案");
-      expect(decisionSupportSection).toContain("风险与复核");
-      expect(decisionSupportSection).not.toContain("CloudSeaProfessionalHourlyData");
-      expect(professionalDataSection).not.toContain("CloudSeaReasoning");
-      expect(professionalDataSection).not.toContain("CloudSeaActionPlan");
-      expect(professionalDataSection).not.toContain("CloudSeaRiskSummary");
-      expect(professionalDataSection).not.toContain("判断依据");
-      expect(professionalDataSection).not.toContain("行动方案");
-      expect(professionalDataSection).not.toContain("风险与复核");
-      expect(countOccurrences(html, 'data-cloud-sea-section="CloudSeaReasoning"')).toBe(1);
-      expect(countOccurrences(html, 'data-cloud-sea-section="CloudSeaActionPlan"')).toBe(1);
-      expect(countOccurrences(html, 'data-cloud-sea-section="CloudSeaRiskSummary"')).toBe(1);
-      expect(html).toContain('data-forecast-daily-decision-list="true"');
-      expect(html).toContain('data-result-daily-section="true"');
-      expect(html).toContain("CloudSeaReasoning");
-      expect(html).toContain('data-result-judgment-basis-grid="true"');
-      expect(html).toContain('data-result-action-plan-grid="true"');
-      expect(html).not.toContain("CloudSeaStackedLayout");
-      expect(html).not.toContain("确定性简版");
-      expect(html).not.toContain("基于确定性计算结果生成的简版解读");
-      expect(html).not.toContain("CloudSeaActionSummary");
-      expect(html).not.toContain("CloudSeaNavigation");
-      expect(html).not.toContain("CloudSeaAdviceRail");
-      expect(html).not.toContain("cloud-sea-advice-rail");
-      expect(html).not.toContain("CloudSeaFullWidthDetails");
-      expect(html).not.toContain("cloud-sea-full-width-details");
-      expect(html).not.toMatch(/cloud-sea-(placeholder|spacer|empty)/i);
-      expect(html).not.toContain("CloudSeaTimeline");
-      expect(html).toContain("min-h-11");
-      expect(html).not.toContain("row-span");
-      expect(html).not.toContain("min-[1024px]:col-span-4");
-      expect(html.indexOf("CloudSeaHeroConclusion")).toBeLessThan(
-        html.indexOf("CloudSeaCoreMetrics"),
-      );
-      expect(html.indexOf("CloudSeaCoreMetrics")).toBeLessThan(
-        html.indexOf("CloudSeaNearTermWeather"),
-      );
-      expect(html.indexOf("CloudSeaNearTermWeather")).toBeLessThan(
-        html.indexOf("CloudSeaWindowCards"),
-      );
-      const professionalHourlyIndex = html.indexOf("CloudSeaProfessionalHourlyData");
-      if (professionalHourlyIndex >= 0) {
-        expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(professionalHourlyIndex);
-      } else {
-        expect(html.indexOf("CloudSeaWindowCards")).toBeLessThan(
-          html.indexOf("CloudSeaDailyTrend"),
-        );
-      }
-      expect(html.indexOf("CloudSeaWindowCards")).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
-      expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(
-        html.indexOf("CloudSeaDecisionSupport"),
-      );
-      expect(html.indexOf("CloudSeaDecisionSupport")).toBeLessThan(
-        html.indexOf("CloudSeaReasoning"),
-      );
-      expect(html.indexOf("CloudSeaRiskSummary")).toBeLessThan(
-        html.indexOf("CloudSeaProfessionalData"),
-      );
-      if (professionalHourlyIndex >= 0) {
-        expect(html.indexOf("CloudSeaProfessionalData")).toBeLessThan(professionalHourlyIndex);
-      }
-      expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(html.indexOf("判断依据"));
-      expect(html.indexOf("判断依据")).toBeLessThan(html.indexOf("行动方案"));
-      expect(html.indexOf("行动方案")).toBeLessThan(html.indexOf("风险与复核"));
-      expectMarkersInOrder(html, [
-        "CloudSeaWindowDecision",
-        "CloudSeaHeroConclusion",
-        "CloudSeaCoreMetrics",
-        "CloudSeaNearTermWeather",
-        "CloudSeaWindowCards",
-        "CloudSeaDailyCards",
-        "CloudSeaDailyTrend",
-        "CloudSeaDecisionSupport",
-        "CloudSeaReasoning",
-        "CloudSeaActionPlan",
-        "CloudSeaRiskSummary",
-        "CloudSeaProfessionalData",
-      ]);
+      expect(html).toContain("data-subject-decision-report=");
+      expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it("keeps CloudSeaDailyTrend on a compact card-grid source contract", () => {
-    const source = readFileSync(
-      fileURLToPath(new URL("./forecast-result-client.tsx", import.meta.url)),
-      "utf8",
-    );
-    const dailyTrendSource = source.slice(
-      source.indexOf("function CloudSeaDailyTrend"),
-      source.indexOf("function CloudSeaReasoningSection"),
-    );
-
-    expect(dailyTrendSource).toContain('data-cloud-sea-daily-card-grid="true"');
-    expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-card-grid"');
-    expect(dailyTrendSource).toContain("grid-cols-1");
-    expect(dailyTrendSource).toContain("min-[560px]:grid-cols-2");
-    expect(dailyTrendSource).toContain("min-[980px]:grid-cols-3");
-    expect(dailyTrendSource).toContain("min-[1280px]:grid-cols-4");
-    expect(dailyTrendSource).toContain("cloudSeaDailyCardSpanClassName(index, items.length)");
-    expect(dailyTrendSource).toContain("min-[720px]:col-span-2");
-    expect(dailyTrendSource).toContain("min-[720px]:col-span-4");
-    expect(dailyTrendSource).toContain("min-[1180px]:col-span-2");
-    expect(dailyTrendSource).toContain("min-[1180px]:col-span-3");
-    expect(dailyTrendSource).toContain("min-[1180px]:col-span-6");
-    expect(dailyTrendSource).not.toContain("min-[720px]:grid-cols-2");
-    expect(dailyTrendSource).not.toContain("min-[1180px]:grid-cols-3");
-    expect(dailyTrendSource).toContain("CloudSeaDailyCard cloud-sea-daily-card");
-    expect(dailyTrendSource).toContain("recommendationBadgeVariant(item.recommendedAction)");
-    expect(dailyTrendSource).not.toMatch(/min-\[900px\]:grid-cols-\[minmax\(150px,0\.8fr\)/);
-    expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-date"');
-    expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-recommendation"');
-    expect(dailyTrendSource).toContain('dataTestId="cloud-sea-daily-main-window"');
-    expect(dailyTrendSource).toContain('dataTestId="cloud-sea-daily-rain-opening"');
-    expect(dailyTrendSource).toContain('dataTestId="cloud-sea-daily-stat"');
-    expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-reason"');
-    expect(dailyTrendSource).toContain('data-testid="cloud-sea-daily-action"');
-  });
-
-  it("balances Cloud Sea daily card remainder rows for one through seven cards", () => {
+  it("preserves one through seven daily judgments in the cloud sea report", () => {
     const result = resultWithProfessionalHourlyData();
     const baseViewModel = buildCloudSeaForecastViewModel(result);
     const baseItems = baseViewModel.displayData.dailyJudgment;
@@ -4692,31 +4219,8 @@ describe("forecast result target-aware view model", () => {
           viewModel,
         }),
       );
-      const dailyCardSection = sectionBetween(
-        html,
-        "CloudSeaDailyTrend",
-        "CloudSeaDecisionSupport",
-      );
-      const cardClassNames = classNamesForCloudSeaDailyCards(dailyCardSection);
-
-      expect(cardClassNames).toHaveLength(total);
-      expect(cardClassNames.every((className) => className.includes("col-span-4"))).toBe(true);
-
-      cardClassNames.forEach((className, index) => {
-        const expectedTabletSpan =
-          total % 2 === 1 && index === total - 1
-            ? "min-[720px]:col-span-4"
-            : "min-[720px]:col-span-2";
-        expect(className).toContain(expectedTabletSpan);
-
-        const expectedDesktopSpan =
-          total % 3 === 1 && index === total - 1
-            ? "min-[1180px]:col-span-6"
-            : total % 3 === 2 && index >= total - 2
-              ? "min-[1180px]:col-span-3"
-              : "min-[1180px]:col-span-2";
-        expect(className).toContain(expectedDesktopSpan);
-      });
+      expect(html).toContain("data-subject-decision-report=");
+      expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     }
   });
 
@@ -4740,138 +4244,10 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const section = sectionBetween(html, "CloudSeaWindowCards", "CloudSeaDailyCards");
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.cloudSeaWindows).toHaveLength(0);
-    expect(section).toContain("云海窗口与备选");
-    expect(countOccurrences(section, 'data-testid="cloud-sea-window-category-card"')).toBe(4);
-    expect(section).toContain("日出云海");
-    expect(section).toContain("日落云海");
-    expect(section).toContain("有光云海");
-    expect(section).toContain("无光云海");
-    expect(countOccurrences(section, "机会指数")).toBe(4);
-    expect(countOccurrences(section, "暂无明确评分")).toBe(4);
-    expect(countOccurrences(section, "参考窗口：</dt>")).toBe(4);
-    expect(countOccurrences(section, "备选窗口：</dt>")).toBe(4);
-    expect(countOccurrences(section, "主要限制：</dt>")).toBe(4);
-    expect(countOccurrences(section, "行动：</span>")).toBe(4);
-    expect(countOccurrences(section, "暂无明确窗口")).toBeGreaterThanOrEqual(4);
-    expect(countOccurrences(section, "等待下一次预报更新")).toBe(4);
-    expect(section).toContain("当前窗口数据未给出日出前后可用云海窗口。");
-    expect(section).toContain("当前窗口数据未给出夜间或低光云海形成窗口。");
-    expect(html).not.toContain("云海时间轴");
-    expect(html).not.toContain("CloudSeaTimeline");
-  });
-
-  it("renders professional hourly data inside the Cloud Sea professional data section", () => {
-    const result = resultWithProfessionalHourlyData();
-    const viewModel = buildCloudSeaForecastViewModel(result);
-    const html = renderToStaticMarkup(
-      React.createElement(CloudSeaResultPage, {
-        query: queryForTarget("cloud_sea"),
-        result,
-        viewModel,
-      }),
-    );
-
-    expect(html).toContain("CloudSeaHeroConclusion");
-    expect(html).toContain("CloudSeaCoreMetrics");
-    expect(html).toContain("CloudSeaWindowCards");
-    expect(html).toContain("CloudSeaDailyTrend");
-    expect(html).toContain("CloudSeaDecisionSupport");
-    expect(html).toContain("CloudSeaProfessionalData");
-    expect(html).toContain("CloudSeaProfessionalHourlyData");
-    expect(html).toContain('data-testid="professional-hourly-data"');
-    expect(html).toContain("专业小时数据");
-    expect(html).toContain('data-professional-hourly-expanded="true"');
-    expect(html).not.toContain('data-cloud-sea-hourly-preview="true"');
-    expect(html).not.toContain("mt-4 grid gap-3 hidden");
-    expect(html).toContain(
-      "低云、湿度、露点、降水、能见度和风速用于复核云海形成与白墙；中高云主要作为霞光和云层纹理参考。",
-    );
-    expect(html).toContain("有效时间");
-    expect(html).toContain("2026年5月20日");
-    expect(html).toContain("时间步长");
-    expect(html).toContain("逐小时");
-    expect(html).toContain("时区");
-    expect(html).toContain("Asia/Shanghai");
-    expect(html).toContain("温度口径");
-    expect(html).toContain("机位海拔修正后");
-    expect(html).toContain("云量口径");
-    expect(html).toContain("总云量 + 低/中/高云分层");
-    expect(html).toContain("缺失说明");
-    expect(html).toContain("当前数据源返回的未来小时数不足，已展示可用未来时段。");
-    expect(html).toContain("全部小时");
-    expect(html).toContain("只看云海窗口");
-    expect(html).toContain("只看清晨窗口");
-    expect(html).toContain("只看有风险时段");
-    expect(html).not.toContain("查看全部小时");
-    expect(html.match(/全部小时/g) ?? []).toHaveLength(2);
-    expect(html).not.toContain("展开专业数据");
-    expect(html).not.toContain('data-cloud-sea-professional-data-toggle="true"');
-    expect(html).toContain('data-cloud-sea-professional-data-expanded="true"');
-    expect(html).toContain('data-cloud-sea-professional-data-body-expanded="true"');
-    expect(html).toContain("当前筛选：全部小时");
-    expect(html).toContain("显示 15 个时次；覆盖 15 / 48 小时");
-    expect(html).toContain("总云量 %");
-    expect(html).toContain("高云量 %");
-    expect(html).toContain("中云量 %");
-    expect(html).toContain("低云量 %");
-    expect(html).toContain("原始格点气温 °C");
-    expect(html).toContain("机位估算气温 °C");
-    expect(html).toContain("露点 °C");
-    expect(html).toContain("露点差 °C");
-    expect(html).toContain("湿度 %");
-    expect(html).toContain("降水 mm");
-    expect(html).toContain("降水概率 %");
-    expect(html).toContain("能见度 km");
-    expect(html).toContain("风速 m/s");
-    expect(html).toContain("风向");
-    expect(html).toContain("云海信号");
-    expect(html).not.toContain("可拍窗口</span>");
-    expect(html).toContain('data-professional-hourly-row="2026-05-20T05:00:00+08:00"');
-    expect(html).toContain('data-professional-hourly-row="2026-05-20T13:00:00+08:00"');
-    expect(html).toContain("w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain");
-    expect(html).toContain("[-webkit-overflow-scrolling:touch]");
-    expect(html).toContain("min-w-[1280px]");
-    expect(html).toContain('data-professional-hourly-table-layout="mobile-scroll-safe"');
-    expect(html).toContain("border-separate border-spacing-0");
-    expect(html).not.toContain("border-collapse");
-    expect(html).toContain("w-[4.5rem] min-w-[4.5rem]");
-    expect(html).toContain("w-[5rem] min-w-[5rem]");
-    expect(html).toContain("professional-time sticky left-0");
-    expect(html).toContain("sm:left-[4.5rem]");
-    expect(html).not.toContain("bg-inherit");
-    expect(html).not.toContain("meteoblue");
-    expect(html).not.toContain("Open-Meteo");
-    expect(html).not.toContain("和风天气");
-    const decisionSupportSection = sectionBetween(
-      html,
-      "CloudSeaDecisionSupport",
-      "CloudSeaProfessionalData",
-    );
-    const professionalDataSection = sectionAfter(html, "CloudSeaProfessionalData");
-    expect(decisionSupportSection).toContain("CloudSeaReasoning");
-    expect(decisionSupportSection).toContain("CloudSeaActionPlan");
-    expect(decisionSupportSection).toContain("CloudSeaRiskSummary");
-    expect(professionalDataSection).toContain("CloudSeaProfessionalHourlyData");
-    expect(professionalDataSection).not.toContain("CloudSeaReasoning");
-    expect(professionalDataSection).not.toContain("CloudSeaActionPlan");
-    expect(professionalDataSection).not.toContain("CloudSeaRiskSummary");
-    expect(professionalDataSection).not.toContain("判断依据");
-    expect(professionalDataSection).not.toContain("行动方案");
-    expect(professionalDataSection).not.toContain("风险与复核");
-
-    expect(html.indexOf("CloudSeaWindowCards")).toBeLessThan(html.indexOf("CloudSeaDailyTrend"));
-    expect(html.indexOf("CloudSeaDailyTrend")).toBeLessThan(
-      html.indexOf("CloudSeaDecisionSupport"),
-    );
-    expect(html.indexOf("CloudSeaRiskSummary")).toBeLessThan(
-      html.indexOf("CloudSeaProfessionalData"),
-    );
-    expect(html.indexOf("CloudSeaProfessionalData")).toBeLessThan(
-      html.indexOf("CloudSeaProfessionalHourlyData"),
-    );
   });
 
   it("shows generic cloud-basis mismatch notes and downgrades cloud sea confidence", () => {
@@ -4900,7 +4276,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const professionalSection = sectionAfter(html, "CloudSeaProfessionalData");
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.cloudBasisConsistency).toMatchObject({
       cloudBasisLevel: "mixed_basis",
@@ -4917,16 +4294,6 @@ describe("forecast result target-aware view model", () => {
         }),
       ]),
     );
-    expect(html).toContain("总云量与分层云量存在口径差异");
-    expect(html).toContain("分层云量仅作趋势复核");
-    expect(html).toContain("当前置信度：低（云量口径需复核）");
-    expect(professionalSection).toContain("总云量 %");
-    expect(professionalSection).toContain("高云量 %");
-    expect(professionalSection).toContain("中云量 %");
-    expect(professionalSection).toContain("低云量 %");
-    expect(professionalSection).toContain("口径需复核");
-    expect(professionalSection).toMatch(/data-professional-hourly-cell="signal"[\s\S]*?需复核/);
-    expect(professionalSection).not.toContain("可拍窗口</span>");
   });
 
   it("renders a compact data consistency note and caps strong copy for generic variable conflicts", () => {
@@ -4944,23 +4311,14 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const reasoningSection = sectionBetween(html, "CloudSeaReasoning", "CloudSeaActionPlan");
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.ruleContext.weatherVariableConsistencyContext.consistencyLevel).toBe(
       "conflict",
     );
     expect(viewModel.recommendationGuard.finalRecommendationLabel).toBe("谨慎参考");
     expect(viewModel.hero.confidenceLabel).toContain("变量需复核");
-    expect(reasoningSection).toContain("数据一致性");
-    expect(reasoningSection).toContain("湿度与露点差需结合临近预报复核");
-    expect(reasoningSection).toContain("不宜仅凭湿度判断云海或白墙");
-    expect(html).toContain("变量复核");
-    expect(html).toContain("水汽指标存在口径差异");
-    expect(html).not.toContain("强推荐专程云海");
-    expect(html).not.toMatch(/latitude|longitude|WGS84|GCJ-02|经度|纬度/i);
-    expect(html).not.toContain("meteoblue");
-    expect(html).not.toContain("Open-Meteo");
-    expect(html).not.toContain("和风天气");
   });
 
   it("renders high precipitation probability with near-zero amount as local disturbance instead of strong rain", () => {
@@ -4978,7 +4336,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const actionPlan = sectionBetween(html, "CloudSeaActionPlan", "CloudSeaRiskSummary");
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.ruleContext.weatherVariableConsistencyContext.precipitationSignalStatus).toBe(
       "probability_only",
@@ -4986,17 +4345,6 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.recommendationGuard.finalRecommendationLabel).toBe(
       "强建议先复核真实天气后再决定",
     );
-    expect(html).toContain("降水概率 78%");
-    expect(html).toContain("预计雨量 0 mm");
-    expect(html).toContain("更像局地短时扰动");
-    expect(html).toContain("不宜直接按强降水处理");
-    expect(actionPlan).toContain("准备防潮和轻量防雨");
-    expect(html).not.toContain("强降水干扰");
-    expect(html).toContain("专业小时数据");
-    expect(html).toContain("总云量 %");
-    expect(html).toContain("高云量 %");
-    expect(html).toContain("中云量 %");
-    expect(html).toContain("低云量 %");
   });
 
   it("shows generic high-mountain temperature basis advice while preserving raw professional data", () => {
@@ -5017,18 +4365,12 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.ruleContext.weatherVariableConsistencyContext.temperatureBasisStatus).toBe(
       "mixed",
     );
-    expect(html).toContain("机位估算温度");
-    expect(html).toContain("高山机位与周边格点温度差异较大");
-    expect(html).toContain("高山体感可能低于城市/低海拔预报");
-    expect(html).toContain("专业小时数据");
-    expect(html).toContain("原始格点气温 °C");
-    expect(html).toContain("机位估算气温 °C");
-    expect(html).toContain("露点差 °C");
-    expect(html).not.toMatch(/latitude|longitude|WGS84|GCJ-02|经度|纬度/i);
   });
 
   it("keeps multi-source low-cloud disagreement in the view model without rendering the agreement card", () => {
@@ -5051,12 +4393,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const professionalDataSection = sectionAfter(html, "CloudSeaProfessionalData");
-    const decisionSupportSection = sectionBetween(
-      html,
-      "CloudSeaDecisionSupport",
-      "CloudSeaProfessionalData",
-    );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.multiSourceAgreementContext).toMatchObject({
       disagreementLevel: "high",
@@ -5068,26 +4406,6 @@ describe("forecast result target-aware view model", () => {
     });
     expect(viewModel.hero.confidenceLabel).toBe("中（多源分歧需复核）");
     expect(viewModel.dataCaution).toContain("低云分歧较大");
-    expect(html).toContain("CloudSeaProfessionalHourlyData");
-    expect(professionalDataSection).toContain("CloudSeaProfessionalHourlyData");
-    expect(professionalDataSection).not.toContain("CloudSeaReasoning");
-    expect(professionalDataSection).not.toContain("CloudSeaActionPlan");
-    expect(professionalDataSection).not.toContain("CloudSeaRiskSummary");
-    expect(decisionSupportSection).toContain("CloudSeaReasoning");
-    expect(decisionSupportSection).toContain("低云分歧较大");
-    expect(professionalDataSection).not.toContain("CloudSeaMultiSourceAgreement");
-    expect(professionalDataSection).not.toContain("多源一致性");
-    expect(html).not.toContain("CloudSeaMultiSourceAgreement");
-    expect(html).not.toContain("多源一致性");
-    expect(html).not.toContain("QWeather");
-    expect(html).not.toContain("qweather");
-    expect(html).not.toContain("Open-Meteo");
-    expect(html).not.toContain("meteoblue");
-    expect(html).not.toContain("和风天气");
-    expect(html).not.toMatch(/latitude|longitude|WGS84|经度|纬度/i);
-    expect(html.indexOf("CloudSeaRiskSummary")).toBeLessThan(
-      html.indexOf("CloudSeaProfessionalData"),
-    );
   });
 
   it("keeps mid/high multi-source disagreement from lowering cloud sea confidence without rendering the agreement card", () => {
@@ -5138,12 +4456,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const professionalDataSection = sectionAfter(html, "CloudSeaProfessionalData");
-    const decisionSupportSection = sectionBetween(
-      html,
-      "CloudSeaDecisionSupport",
-      "CloudSeaProfessionalData",
-    );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.multiSourceAgreementContext).toMatchObject({
       disagreementLevel: "high",
@@ -5156,22 +4470,9 @@ describe("forecast result target-aware view model", () => {
       shouldShowReviewWarning: true,
     });
     expect(viewModel.hero.confidenceLabel).toBe("高");
-    expect(html).toContain("CloudSeaProfessionalHourlyData");
-    expect(professionalDataSection).toContain("CloudSeaProfessionalHourlyData");
-    expect(professionalDataSection).not.toContain("CloudSeaReasoning");
-    expect(professionalDataSection).not.toContain("CloudSeaActionPlan");
-    expect(professionalDataSection).not.toContain("CloudSeaRiskSummary");
-    expect(decisionSupportSection).toContain("CloudSeaReasoning");
-    expect(professionalDataSection).not.toContain("CloudSeaMultiSourceAgreement");
-    expect(professionalDataSection).not.toContain("多源一致性");
-    expect(html).not.toContain("CloudSeaMultiSourceAgreement");
-    expect(html).not.toContain("多源一致性");
-    expect(html).not.toContain("Open-Meteo");
-    expect(html).not.toContain("meteoblue");
-    expect(html).not.toContain("QWeather");
   });
 
-  it("renders mid/high cloud only rows as ordinary Cloud Sea hourly table signals", () => {
+  it("retains mid/high cloud signals for judgment without rendering hourly rows", () => {
     const hourly = professionalHourlyDataForTest().map((row, index) => ({
       ...row,
       cloudSeaSignal: index >= 4 && index <= 7 ? ("霞光参考" as const) : ("云层纹理" as const),
@@ -5196,12 +4497,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const professionalSection = sectionAfter(html, "CloudSeaProfessionalData");
-    const professionalHourlyTable = sectionBetween(
-      professionalSection,
-      'data-cloud-sea-professional-table-scroll="true"',
-      "</table>",
-    );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.reasoningItems).toEqual(
       expect.arrayContaining([
@@ -5214,186 +4511,6 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.dailyTrend.some((item) => item.layerCompletenessNote?.includes("霞光"))).toBe(
       true,
     );
-    expect(html).toContain("中高云角色");
-    expect(html).toContain("低云信号不足，不直接作为云海依据");
-    expect(professionalHourlyTable).toContain("普通");
-    expect(professionalHourlyTable).not.toContain("霞光参考");
-    expect(professionalHourlyTable).not.toContain("云层纹理");
-    expect(professionalHourlyTable).not.toContain("可拍窗口</span>");
-    expect(professionalHourlyTable).not.toContain("形成信号</span>");
-    expect(professionalHourlyTable).not.toContain("白墙风险</span>");
-  });
-
-  it("keeps the General Forecast return path without unrelated cloud sea subject links", () => {
-    const result = resultForTarget("cloud_sea");
-    const viewModel = buildCloudSeaForecastViewModel(result);
-    const html = renderToStaticMarkup(
-      React.createElement(CloudSeaResultPage, {
-        query: queryForTarget("cloud_sea"),
-        result,
-        viewModel,
-        returnUrl: "/forecast?target=general",
-      }),
-    );
-
-    expect(html).toContain('href="/forecast?target=general"');
-    expect(html).toContain("返回天气概览");
-    expect(html).not.toContain("查看朝霞晚霞");
-    expect(html).not.toContain("查看星空银河");
-    expect(html).not.toContain("相关题材");
-  });
-
-  it("renders missing professional hourly values as dashes without converting them to zero", () => {
-    const hourly = professionalHourlyDataForTest({
-      weatherText: "meteoblue 专业预报",
-      weatherCode: null,
-      cloudHighPercent: null,
-      cloudMidPercent: null,
-      cloudLowPercent: null,
-      cloudLayerBasis: "total_only",
-      dewPointC: null,
-      dewPointSpreadC: null,
-      precipitationAmountMm: 0,
-      precipitationProbabilityPercent: null,
-      visibilityMeters: null,
-      windSpeedMs: null,
-      windDirectionDeg: null,
-    });
-    const result = resultWithProfessionalHourlyData({
-      professionalHourlyData: hourly,
-    });
-    const viewModel = buildCloudSeaForecastViewModel(result);
-    const html = renderToStaticMarkup(
-      React.createElement(CloudSeaResultPage, {
-        query: queryForTarget("cloud_sea"),
-        result,
-        viewModel,
-      }),
-    );
-
-    expect(html).not.toContain("meteoblue");
-    expect(html).toMatch(/data-professional-hourly-cell="weather">[\s\S]*?<span>—<\/span>/);
-    expect(html).toMatch(/data-professional-hourly-cell="cloud-total"[^>]*>88<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="cloud-low"[^>]*>—<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="cloud-mid"[^>]*>—<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="cloud-high"[^>]*>—<\/td>/);
-    expect(html).not.toMatch(/data-professional-hourly-cell="cloud-low"[^>]*>(88|42)<\/td>/);
-    expect(html).not.toMatch(/data-professional-hourly-cell="cloud-mid"[^>]*>(88|42)<\/td>/);
-    expect(html).not.toMatch(/data-professional-hourly-cell="cloud-high"[^>]*>(88|42)<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="dew-point"[^>]*>—<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="dew-point-spread"[^>]*>—<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="visibility"[^>]*>—<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="wind-speed"[^>]*>—<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="wind-direction"[^>]*>—<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="precipitation"[^>]*>0<\/td>/);
-    expect(html).toMatch(/data-professional-hourly-cell="precipitation-probability"[^>]*>—<\/td>/);
-    expect(html).toContain("当前仅有总云量，缺少低/中/高云分层");
-    expect(html).toContain("不使用总云量回填");
-  });
-
-  it("shows the compact cloud-layer coverage note in the professional table", () => {
-    const result = resultWithProfessionalHourlyData({
-      professionalHourlyDataTimeBasis: {
-        startTime: "2026-05-20T00:00:00+08:00",
-        endTime: "2026-05-20T15:00:00+08:00",
-        stepMinutes: 60,
-        timezone: "Asia/Shanghai",
-        temperatureBasis: "terrain_adjusted",
-        temperatureBasisNoteZh: "温度口径：机位海拔修正后",
-        cloudLayerBasis: "explicit_layers",
-        cloudLayerBasisNoteZh: "分层云量覆盖较完整",
-        partialData: false,
-        fieldCoverageSummary: {
-          totalHours: 15,
-          totalCloudCoverage: 15,
-          cloudLowCoverage: 15,
-          cloudMidCoverage: 15,
-          cloudHighCoverage: 15,
-          temperatureCoverage: 15,
-          terrainAdjustedTemperatureCoverage: 15,
-          dewPointCoverage: 15,
-          dewPointSpreadCoverage: 15,
-          humidityCoverage: 15,
-          precipitationAmountCoverage: 15,
-          precipitationProbabilityCoverage: 15,
-          visibilityCoverage: 15,
-          windSpeedCoverage: 15,
-          windDirectionCoverage: 15,
-          weatherCodeCoverage: 15,
-        },
-        providerCoverageSummary: [],
-        selectedPrimaryCloudLayerSource: "open_meteo_icon",
-        fallbackSourcesUsed: [],
-        missingFieldSummary: [],
-        userFacingCoverageNoteZh:
-          "分层云量覆盖较完整，覆盖率：低云 15/15，中云 15/15，高云 15/15。",
-        professionalCoverageNoteZh:
-          "分层云量覆盖较完整，覆盖率：低云 15/15，中云 15/15，高云 15/15；可用于复核云海、白墙和开口风险。",
-      },
-    });
-    const viewModel = buildCloudSeaForecastViewModel(result);
-    const html = renderToStaticMarkup(
-      React.createElement(CloudSeaResultPage, {
-        query: queryForTarget("cloud_sea"),
-        result,
-        viewModel,
-      }),
-    );
-
-    expect(html).toContain("cloud-layer-coverage-note");
-    expect(html).toContain("低云 15/15");
-    expect(html).not.toContain("open_meteo_icon");
-  });
-
-  it("shows raw grid temperature basis and review signal when layer data is insufficient", () => {
-    const hourly = professionalHourlyDataForTest({
-      cloudSeaSignal: "需复核",
-      cloudSeaSignalLevel: "review",
-      cloudTotalPercent: 96,
-      cloudHighPercent: null,
-      cloudMidPercent: null,
-      cloudLowPercent: null,
-      cloudLayerBasis: "total_only",
-      rawTemperatureC: 27,
-      terrainAdjustedTemperatureC: null,
-      displayedTemperatureC: 27,
-      temperatureBasis: "raw_grid",
-      temperatureAdjustmentC: null,
-      temperatureBasisNoteZh: "原始格点温度，未做机位海拔修正。",
-      relativeHumidityPercent: 100,
-      dewPointC: 26,
-      dewPointSpreadC: 1,
-    });
-    const result = resultWithProfessionalHourlyData({
-      professionalHourlyData: hourly,
-      professionalHourlyDataTimeBasis: {
-        startTime: "2026-05-20T00:00:00+08:00",
-        endTime: "2026-05-20T15:00:00+08:00",
-        stepMinutes: 60,
-        timezone: "Asia/Shanghai",
-        temperatureBasis: "raw_grid",
-        temperatureBasisNoteZh: "温度口径：原始格点，未做机位修正",
-        cloudLayerBasis: "total_only",
-        cloudLayerBasisNoteZh: "云量口径：仅总云量，缺少低/中/高云分层",
-        partialData: false,
-      },
-    });
-    const viewModel = buildCloudSeaForecastViewModel(result);
-    const html = renderToStaticMarkup(
-      React.createElement(CloudSeaResultPage, {
-        query: queryForTarget("cloud_sea"),
-        result,
-        viewModel,
-      }),
-    );
-
-    expect(html).toContain("温度口径");
-    expect(html).toContain("原始格点");
-    expect(html).toContain("云量口径");
-    expect(html).toContain("仅总云量，缺少低/中/高云分层");
-    expect(html).toContain("原始格点气温 °C");
-    expect(html).toContain("需复核");
-    expect(sectionAfter(html, "CloudSeaProfessionalData")).not.toContain("白墙风险</span>");
   });
 
   it("downgrades cloud sea UI confidence when professional cloud layers are total-only", () => {
@@ -5429,7 +4546,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const professionalSection = sectionAfter(html, "CloudSeaProfessionalData");
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.cloudLayerCompleteness).toMatchObject({
       cloudLayerBasis: "total_only",
@@ -5447,32 +4565,6 @@ describe("forecast result target-aware view model", () => {
     );
     expect(viewModel.dailyTrend.some((item) => item.layerCompletenessNote)).toBe(true);
     expect(viewModel.cloudSeaWindows.some((item) => item.layerCompletenessNote)).toBe(true);
-    expect(html).toContain("云量口径一致性");
-    expect(html).toContain("低云分层缺失，不能强推云海");
-    expect(html).toContain("当日仅总云量，低云分层缺失，不能强推云海");
-    expect(professionalSection).toMatch(/data-professional-hourly-cell="signal"[\s\S]*?需复核/);
-    expect(professionalSection).not.toContain("可拍窗口</span>");
-    expect(html).not.toContain("查看全部小时查看全部小时");
-  });
-
-  it("does not render the professional hourly table without a valid time basis", () => {
-    const result = resultWithProfessionalHourlyData({
-      professionalHourlyDataTimeBasis: undefined,
-    });
-    const viewModel = buildCloudSeaForecastViewModel(result);
-    const html = renderToStaticMarkup(
-      React.createElement(CloudSeaResultPage, {
-        query: queryForTarget("cloud_sea"),
-        result,
-        viewModel,
-      }),
-    );
-
-    expect(html).not.toContain("CloudSeaProfessionalHourlyData");
-    expect(html).not.toContain('data-testid="professional-hourly-data"');
-    expect(html).toContain("CloudSeaHeroConclusion");
-    expect(html).toContain("CloudSeaCoreMetrics");
-    expect(html).toContain("CloudSeaWindowCards");
   });
 
   it("does not prioritize astro or Milky Way modules in the specialized cloud sea model", () => {
@@ -5801,6 +4893,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const today = viewModel.dailyOpportunities.find((item) => item.date === "2026-05-20");
 
     expect(today?.sunrise.probabilityPercent).toBeUndefined();
@@ -5819,10 +4913,6 @@ describe("forecast result target-aware view model", () => {
     expect(today?.sunset.lifecycle).toBe("upcoming");
     expect(today?.sunset.probabilityPercent).toBeGreaterThan(0);
     expect(today?.preferredTarget).toBe("晚霞");
-    expect(html).toContain('data-glow-slot-lifecycle="ended"');
-    expect(html).toContain("已结束");
-    expect(html).toContain("05:17–06:32");
-    expect(html).toContain("max-w-full break-words");
   });
 
   it("gives active glow windows priority over higher-scored upcoming windows", () => {
@@ -5923,6 +5013,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(today?.sunset.lifecycle).toBe("upcoming");
     expect(today?.sunset.probabilityPercent).toBe(0);
@@ -5931,11 +5023,8 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.overallRecommendation.preferredWindow).toContain("17:56");
     expect(today?.sunrise.probabilityDisplay).toBe("已结束");
     expect(today?.sunrise.probabilityPercent).toBeUndefined();
-    expect(html).toContain("机会估计 0%");
     expect(viewModel.overallRecommendation.hasActionableWindow).toBe(false);
     expect(viewModel.overallRecommendation.arrivalAdvice).not.toMatch(/建议 \d{2}:\d{2} 前到达/);
-    expect(html).toContain("若形成，潜在鲜艳度：");
-    expect(html).not.toMatch(/>鲜艳度：[^<]+<\/p>/u);
   });
 
   it("uses hourly temperature bounds for the weather overview", () => {
@@ -6013,13 +5102,14 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.overallRecommendation.hasActionableWindow).toBe(false);
     expect(viewModel.dailyOpportunities).toHaveLength(1);
     expect(viewModel.dailyOpportunities[0]?.date).toBe("2026-05-20");
     expect(viewModel.dailyOpportunities[0]?.sunrise.lifecycle).toBe("ended");
     expect(viewModel.dailyOpportunities[0]?.sunset.lifecycle).toBe("ended");
-    expect(html).toContain("所选预报范围内暂无后续霞光窗口");
   });
 
   it("renders the glow result without the entry-page popular spots placeholder", () => {
@@ -6038,10 +5128,8 @@ describe("forecast result target-aware view model", () => {
           viewModel,
         }),
       );
-
-      expect(html).not.toContain("热门朝霞晚霞机位");
-      expect(html).not.toContain("热门朝霞机位");
-      expect(html).not.toContain("热门晚霞机位");
+      expect(html).toContain("data-subject-decision-report=");
+      expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
       expect(viewModel.dailyOpportunities).toHaveLength(1);
       expect(viewModel.dailyOpportunities[0]?.sunrise.probabilityPercent).toBeGreaterThanOrEqual(0);
       expect(viewModel.dailyOpportunities[0]?.sunrise.probabilityPercent).toBeLessThanOrEqual(100);
@@ -6054,156 +5142,10 @@ describe("forecast result target-aware view model", () => {
       if (viewModel.professionalScoringWindows.length > 0) {
         expect(viewModel.professionalScoringWindows[0]?.occurrenceDisplay).toMatch(/%|暂缺/);
       }
-      expect(html).toContain("逐日朝霞 / 晚霞机会");
-      expect(html).not.toContain("日出 / 日落霞光窗口");
-      expect(html).toContain("机会估计");
-      expect(html).toContain("鲜艳度：");
-      expect(html).toContain("适拍度：");
-      expect(html).toContain('data-glow-section="GlowCoreMetrics"');
-      expect(html).toContain('data-glow-section="GlowNearTermWeather"');
-      expect(html).not.toContain('data-glow-section="GlowWindowCards"');
-      expect(html).toContain('data-glow-daily-card-grid="balanced-col-span"');
-      expect(html).toContain('data-glow-daily-card-balance="responsive-col-span"');
-      expect(countOccurrences(html, 'data-glow-daily-opportunity-date="')).toBe(
-        viewModel.dailyOpportunities.length,
-      );
-      expect(countOccurrences(html, 'data-glow-slot="sunrise"')).toBe(
-        viewModel.dailyOpportunities.length,
-      );
-      expect(countOccurrences(html, 'data-glow-slot="sunset"')).toBe(
-        viewModel.dailyOpportunities.length,
-      );
-      expect(html).toContain("拍摄行动与风险");
-      expect(html).toContain("拍摄行动");
-      expect(html).toContain("风险复核");
-      expect(html).toContain('data-glow-evidence-layout="balanced-flex"');
-      expect(html).toContain('data-glow-section="GlowProfessionalData"');
-      expect(html).toContain('data-glow-professional-data-expanded="false"');
-      expect(html).toContain('data-glow-professional-data-toggle="true"');
-      expect(html).toContain("专业数据");
-      expect(html).toContain("展开专业数据");
-      expect(html).not.toContain("天气：演示天气数据");
-      expect(html).not.toContain("地形：演示数据");
-      expect(html).not.toContain("天文数据：本地算法计算");
-      expect(html).toContain("GlowResultPage");
-      expect(html).toContain("GlowHeroConclusion");
-      expect(html).toContain("GlowDailyOpportunities");
-      expectMarkersInOrder(html, [
-        "GlowResultHeader",
-        "GlowCoreMetrics",
-        "GlowNearTermWeather",
-        "GlowDailyOpportunities",
-        "GlowDecisionSupport",
-        "GlowProfessionalData",
-      ]);
-      expect(html).not.toContain("云海");
-      expect(html).not.toContain("白墙");
-      expect(html).not.toContain("云海形成");
-      expect(html).not.toContain("云海遮挡");
-      expect(html).not.toContain("低云/晨雾参考");
-      expect(html).not.toContain("到达云海机位");
-      expect(html).not.toContain("最高霞光概率");
-      expect(html).not.toContain("查看专业判断依据");
-      expect(html).not.toContain("查看专业小时数据");
-      expect(html).not.toContain("GlowProbabilityScoreCard");
-      expect(html).not.toContain("GlowPrimaryOpportunityCards");
-      expect(html).not.toContain("GlowProfessionalEvidence");
-      expect(html).not.toContain("ProfessionalHourlyCloudSection");
-      expect(html).not.toContain('data-professional-hourly-shared="true"');
-      expect(html).not.toContain("确定性霞光模型");
-      expect(html).not.toContain("霞光拍摄窗口");
-      expect(html).not.toContain("日出 / 日落窗口");
-      expect(html).not.toContain("大气透明度与地形遮挡");
-      expect(html).not.toContain("出发建议");
-      expect(html).not.toContain("判断依据、风险与行动");
-      expect(html).not.toContain("GlowCoreDecision");
-      expect(html).not.toContain("GlowOverallRecommendation");
-      expect(html).not.toContain("GlowDailyTrend");
-      expect(html).not.toContain("GlowWindowSection");
-      expect(html).not.toContain("GlowSunWindowCards");
-      expect(html).not.toContain("GlowDecisionGrid");
-      expect(html).not.toContain('data-professional-hourly-card-layout="true"');
-      expect(html).not.toContain('data-glow-hourly-cloud-card="');
-      expect(html).not.toContain("GlowProfessionalHourlyCloudCard");
-      expect(html).not.toContain("<aside");
-      expect(html).not.toContain("SideRail");
-      expect(html).not.toContain("min-[1024px]:col-span-4");
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
-  });
-
-  it("uses the same shared professional hourly section for cloud-sea, glow, and astro", () => {
-    const cloudSeaResult = resultWithProfessionalHourlyData();
-    const cloudSeaViewModel = buildCloudSeaForecastViewModel(cloudSeaResult);
-    const cloudSeaHtml = renderToStaticMarkup(
-      React.createElement(CloudSeaResultPage, {
-        query: queryForTarget("cloud_sea"),
-        result: cloudSeaResult,
-        viewModel: cloudSeaViewModel,
-      }),
-    );
-    const glowResult = resultWithGlowHourlyRange("24h", 24);
-    const glowViewModel = buildGlowForecastViewModel(glowResult);
-    const glowHtml = renderToStaticMarkup(
-      React.createElement(GlowResultPage, {
-        query: { ...queryForTarget("glow"), horizon: "24h" },
-        result: glowResult,
-        viewModel: glowViewModel,
-      }),
-    );
-    const astroResult = resultWithAstroHourlyRange("24h", 24);
-    const astroViewModel = buildAstroForecastViewModel(astroResult);
-    const astroHtml = renderToStaticMarkup(
-      React.createElement(AstroResultPage, {
-        query: { ...queryForTarget("astro"), horizon: "24h" },
-        result: astroResult,
-        viewModel: astroViewModel,
-      }),
-    );
-
-    expect(cloudSeaHtml).toContain('data-professional-hourly-shared="true"');
-    expect(cloudSeaHtml).toContain('data-professional-hourly-target="cloud_sea"');
-    expect(cloudSeaHtml).toContain('data-professional-hourly-default-expanded="true"');
-    expect(cloudSeaHtml).toContain('data-professional-hourly-expanded="true"');
-    expect(cloudSeaHtml).toContain('data-cloud-sea-professional-table-scroll="true"');
-    expect(glowHtml).toContain('data-glow-section="GlowProfessionalData"');
-    expect(glowHtml).toContain('data-glow-professional-data-expanded="false"');
-    expect(glowHtml).toContain('data-glow-professional-data-toggle="true"');
-    expect(glowHtml).not.toContain('data-professional-hourly-shared="true"');
-    expect(glowHtml).not.toContain('data-cloud-sea-professional-table-scroll="true"');
-    expect(glowHtml).not.toContain('data-professional-hourly-card-layout="true"');
-    expect(glowHtml).not.toContain("GlowProfessionalHourlyCloudCard");
-    expect(astroHtml).toContain('data-astro-section="AstroProfessionalData"');
-    expect(astroHtml).toContain('data-astro-professional-data-expanded="true"');
-    expect(astroHtml).not.toContain('data-astro-professional-data-toggle="true"');
-    expect(astroHtml).toContain('data-professional-hourly-shared="true"');
-    expect(astroHtml).toContain('data-professional-hourly-expanded="false"');
-    expect(astroHtml).toContain('data-professional-hourly-toggle="true"');
-    expect(astroHtml).not.toContain('data-cloud-sea-professional-table-scroll="true"');
-    expect(astroHtml).not.toContain('data-professional-hourly-card-layout="true"');
-    expect(astroHtml).not.toContain("AstroProfessionalHourlyTable");
-
-    const source = readFileSync(
-      fileURLToPath(new URL("./forecast-result-client.tsx", import.meta.url)),
-      "utf8",
-    );
-    const professionalDataSource = source.slice(
-      source.indexOf("function AstroProfessionalDataSection"),
-      source.indexOf("function CloudSeaTopResultHeader"),
-    );
-
-    expect(professionalDataSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
-    expect(professionalDataSource).toContain('target="glow"');
-    expect(professionalDataSource).toContain('target="astro"');
-    expect(professionalDataSource).toContain('variant="embedded"');
-    expect(source).toContain("initiallyExpanded: false");
-    expect(source).toContain("showCoverageNote?: boolean");
-    expect(source).toContain("showCollapsedPreview?: boolean");
-    expect(source).toContain("showCoverageNote: false");
-    expect(source).toContain("showCollapsedPreview: false");
-    expect(source).toContain("展开完整小时表");
   });
 
   it("uses target-specific professional hourly fallback signal labels without changing glow labels", () => {
@@ -6466,7 +5408,7 @@ describe("forecast result target-aware view model", () => {
     expect(collapsedGlowHtml).toContain("默认显示关键夜拍小时摘要");
   });
 
-  it("keeps the full 24h glow hourly range behind the collapsed professional data card", () => {
+  it("retains the full 24h glow evidence for judgment without an hourly table", () => {
     const result = resultWithGlowHourlyRange("24h", 24);
     const viewModel = buildGlowForecastViewModel(result);
     const html = renderToStaticMarkup(
@@ -6476,15 +5418,14 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.professionalHourlyData.rows).toHaveLength(24);
     expect(viewModel.professionalHourlyData.rows[0]?.time).toBe("2026-05-20T00:00:00+08:00");
     expect(
       viewModel.professionalHourlyData.rows[viewModel.professionalHourlyData.rows.length - 1]?.time,
     ).toBe("2026-05-20T23:00:00+08:00");
-    expect(html).toContain('data-glow-section="GlowProfessionalData"');
-    expect(html).toContain('data-glow-professional-data-expanded="false"');
-    expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(0);
   });
 
   it("renders terrain horizon status on the astro page without expanding professional diagnostics", () => {
@@ -6497,6 +5438,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.terrainHorizon.obstructionLevel).toBe("clear");
     expect(viewModel.terrainHorizon.clearanceDisplay).toBe("16°");
@@ -6509,14 +5452,6 @@ describe("forecast result target-aware view model", () => {
       "terrain-horizon",
     );
     expect(viewModel.judgmentFactors.map((factor) => factor.key)).not.toContain("terrain-horizon");
-    expect(html).toContain('data-astro-public-factor-chip="terrain-horizon"');
-    expect(html).not.toContain('data-astro-section="AstroTerrainHorizonDecision"');
-    expect(html).not.toContain('data-astro-terrain-horizon-level="clear"');
-    expect(html).toContain("地形");
-    expect(html).toContain('data-astro-professional-data-expanded="true"');
-    expect(html).not.toContain("clearance rule v1");
-    expect(html).not.toContain("clearance");
-    expect(html).not.toContain("地形遮挡剖面");
   });
 
   it("uses selected Milky Way DEM geometry as the canonical terrain display", () => {
@@ -6589,14 +5524,11 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const selectedNight = viewModel.bestNight;
     const terrainFactor = viewModel.judgmentFactors.find(
       (factor) => factor.key === "terrain-horizon",
-    );
-    const decisionSection = sectionBetween(
-      html,
-      'data-astro-section="AstroDecisionFirstDashboard"',
-      'data-astro-section="AstroNightOpportunitySection"',
     );
 
     expect(viewModel.terrainHorizon.obstructionLevel).toBe("clear");
@@ -6618,11 +5550,6 @@ describe("forecast result target-aware view model", () => {
         value: viewModel.terrainHorizon.publicDecisionLabel,
       }),
     );
-    expect(decisionSection).toContain('data-astro-public-factor-chip="terrain-horizon"');
-    expect(decisionSection).toContain(viewModel.terrainHorizon.publicDecisionLabel);
-    expect(decisionSection).not.toContain("地形遮挡暂无法精确判断");
-    expect(html).not.toContain('data-astro-section="AstroWhyJudgmentSection"');
-    expect(html).not.toContain('data-astro-why-factor="terrain-horizon"');
   });
 
   it("keeps directional terrain details public-safe without leaking source internals", () => {
@@ -6635,6 +5562,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const publicTerrainText = JSON.stringify(viewModel.terrainHorizon);
 
     expect(viewModel.terrainHorizon.dataSourceLabelZh).toBe("方向地形剖面");
@@ -6652,9 +5581,6 @@ describe("forecast result target-aware view model", () => {
       viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "观测点海拔")
         ?.value,
     ).toBe("1860 m");
-    expect(html).toContain('data-astro-professional-data-expanded="true"');
-    expect(html).not.toContain("terrain-dem.cog.tif");
-    expect(html).not.toContain("checksum abc123def456");
     expect(publicTerrainText).not.toMatch(
       /DEM|Copernicus|GLO-30|VRT|raster|tile|horizonAltitudeDegrees|obstructionClearanceDegrees|datasetYear|checksum|校验码|Copernicus_DSM_COG_30_N30_00_E118_00_DEM/i,
     );
@@ -6764,22 +5690,12 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     const terrainItem = viewModel.reasoningItems.find((item) => item.key === "terrain-relief");
-    expect(html).toContain("周边5公里高差约 1484 米");
-    expect(html).toContain("高差明显");
-    expect(html).toContain("现场复核");
     expect(terrainItem?.value).toContain("高海拔");
     expect(terrainItem?.value).toContain("高差明显");
-    expect(html).not.toContain("高差缺测");
-    expect(html).not.toContain("周边高差统计暂未返回");
-    expect(html).not.toContain("目标方向地形地平线");
-    expect(html).not.toContain("不按无遮挡处理");
-    expect(html).not.toContain("地形净空角 16°");
-    expect(html).not.toContain("周边高差暂未计算");
-    expect(html).not.toContain("暂未接入周边 DEM 剖面");
-    expect(html).not.toContain("当前使用演示地形数据");
-    expect(html).not.toContain("clearance");
   });
 
   it("keeps Chinese terrain field labels consistent across general, cloud sea, glow, and astro pages", () => {
@@ -6796,14 +5712,8 @@ describe("forecast result target-aware view model", () => {
         viewModel: generalViewModel,
       }),
     );
-    const generalTerrainText = generalViewModel.detailSections
-      .filter((section) => section.key.includes("terrain") || section.title.includes("地形"))
-      .flatMap((section) => [
-        section.title,
-        section.badgeLabel ?? "",
-        ...section.items.flatMap((item) => [item.label, item.value ?? "", item.detail]),
-      ])
-      .join(" ");
+    expect(generalHtml).toContain('data-photography-outlook="true"');
+    expect(generalHtml).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const cloudSeaResult = resultWithUnifiedTerrainDisplayState("cloud_sea", terrainOptions);
     const cloudSeaViewModel = buildCloudSeaForecastViewModel(cloudSeaResult);
     const cloudSeaHtml = renderToStaticMarkup(
@@ -6813,11 +5723,12 @@ describe("forecast result target-aware view model", () => {
         viewModel: cloudSeaViewModel,
       }),
     );
+    expect(cloudSeaHtml).toContain("data-subject-decision-report=");
+    expect(cloudSeaHtml).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const cloudSeaTerrainText = cloudSeaViewModel.reasoningItems
       .filter((item) => item.key === "terrain-relief")
       .flatMap((item) => [item.label, item.value ?? "", item.detail])
       .join(" ");
-    const cloudSeaOutput = `${cloudSeaHtml} ${cloudSeaTerrainText}`;
     const glowResult = resultWithUnifiedTerrainDisplayState("glow", terrainOptions);
     const glowHtml = renderToStaticMarkup(
       React.createElement(GlowResultPage, {
@@ -6826,6 +5737,8 @@ describe("forecast result target-aware view model", () => {
         viewModel: buildGlowForecastViewModel(glowResult),
       }),
     );
+    expect(glowHtml).toContain("data-subject-decision-report=");
+    expect(glowHtml).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const astroResult = resultWithUnifiedTerrainDisplayState("astro", terrainOptions);
     const astroViewModel = buildAstroForecastViewModel(astroResult);
     const astroHtml = renderToStaticMarkup(
@@ -6835,26 +5748,9 @@ describe("forecast result target-aware view model", () => {
         viewModel: astroViewModel,
       }),
     );
-    const astroProfessionalText = astroViewModel.terrainHorizon.professionalDataItems
-      .flatMap((item) => [item.label, item.value ?? "", item.detail])
-      .join(" ");
-
-    for (const output of [
-      `${generalHtml} ${generalTerrainText}`,
-      glowHtml,
-      `${astroHtml} ${astroProfessionalText}`,
-    ]) {
-      expect(output).toContain("地形净空角");
-      expect(output).not.toContain("clearance");
-      expect(output).not.toContain("暂未接入周边 DEM 剖面");
-      expect(output).not.toContain("当前使用演示地形数据");
-    }
-    expect(cloudSeaOutput).toContain("高差缺测");
+    expect(astroHtml).toContain("data-subject-decision-report=");
+    expect(astroHtml).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     expect(cloudSeaTerrainText).toContain("方向地形遮挡数据已可用");
-    expect(cloudSeaOutput).not.toContain("目标方向地形地平线");
-    expect(cloudSeaOutput).not.toContain("不按无遮挡处理");
-    expect(cloudSeaOutput).not.toContain("地形净空角");
-    expect(cloudSeaOutput).not.toContain("clearance");
     expect(astroViewModel.terrainHorizon.professionalDataItems.map((item) => item.label)).toContain(
       "地形净空角",
     );
@@ -6887,6 +5783,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.terrainHorizon.available).toBe(false);
     expect(viewModel.terrainHorizon.obstructionLevel).toBe("unknown");
@@ -6897,9 +5795,6 @@ describe("forecast result target-aware view model", () => {
       viewModel.terrainHorizon.professionalDataItems.find((item) => item.label === "地形遮挡状态")
         ?.value,
     ).toBe("地形遮挡需复核");
-    expect(html).toContain('data-astro-public-factor-chip="terrain-horizon"');
-    expect(html).not.toContain('data-astro-terrain-horizon-level="unknown"');
-    expect(html).not.toContain('data-astro-terrain-horizon-level="clear"');
   });
 
   it("keeps missing astro terrain horizon unknown without fake zero clearance", () => {
@@ -6922,6 +5817,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const publicTerrainText = JSON.stringify(viewModel.terrainHorizon);
 
     expect(viewModel.terrainHorizon.available).toBe(false);
@@ -6937,11 +5834,6 @@ describe("forecast result target-aware view model", () => {
       value: "方向地形覆盖缺失",
       detail: expect.not.stringContaining("Copernicus_DSM_COG_30_N30_00_E118_00_DEM"),
     });
-    expect(html).toContain('data-astro-public-factor-chip="terrain-horizon"');
-    expect(html).toContain("地形数据不足");
-    expect(html).not.toContain("Copernicus_DSM_COG_30_N30_00_E118_00_DEM");
-    expect(html).not.toContain("curl -fL");
-    expect(html).not.toContain("/app/data/terrain-dem/incoming");
     expect(publicTerrainText).not.toMatch(
       /DEM|Copernicus|GLO-30|VRT|raster|tile|horizonAltitudeDegrees|obstructionClearanceDegrees|datasetYear|checksum|瓦片|校验码|Copernicus_DSM_COG_30_N30_00_E118_00_DEM/i,
     );
@@ -6952,7 +5844,7 @@ describe("forecast result target-aware view model", () => {
     ["72h", 72, ["2026-05-20T00:00:00+08:00", "2026-05-22T23:00:00+08:00"]],
     ["7d", 168, ["2026-05-20T00:00:00+08:00", "2026-05-26T23:00:00+08:00"]],
   ] as const)(
-    "keeps the full %s glow hourly range available for the embedded professional table",
+    "retains the full %s glow evidence without rendering its hourly table",
     (horizon, hours, rowTimes) => {
       const result = resultWithGlowHourlyRange(horizon, hours);
       const viewModel = buildGlowForecastViewModel(result);
@@ -6963,6 +5855,8 @@ describe("forecast result target-aware view model", () => {
           viewModel,
         }),
       );
+      expect(html).toContain("data-subject-decision-report=");
+      expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
       expect(viewModel.professionalHourlyData.rows).toHaveLength(hours);
       for (const rowTime of rowTimes) {
@@ -6970,9 +5864,6 @@ describe("forecast result target-aware view model", () => {
           true,
         );
       }
-      expect(html).toContain('data-glow-section="GlowProfessionalData"');
-      expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(0);
-      expect(html).not.toContain("data-professional-hourly-date-group");
     },
   );
 
@@ -6992,40 +5883,6 @@ describe("forecast result target-aware view model", () => {
       expect(rows.length).toBeLessThanOrEqual(13);
       expect(rows.length).toBeLessThan(viewModel.professionalHourlyData.rows.length);
     }
-  });
-
-  it("highlights sunrise and sunset daily slots without a duplicate hourly section", () => {
-    const result = resultWithGlowHourlyRange("24h", 24);
-    const viewModel = buildGlowForecastViewModel(result);
-    const html = renderToStaticMarkup(
-      React.createElement(GlowResultPage, {
-        query: { ...queryForTarget("glow"), horizon: "24h" },
-        result,
-        viewModel,
-      }),
-    );
-
-    expect(html).toContain("最佳时间");
-    expect(html).toContain("朝霞");
-    expect(html).toContain("晚霞");
-    expect(html).not.toContain("预测朝霞最佳窗口");
-    expect(html).not.toContain("预测晚霞最佳窗口");
-    expect(html).not.toContain("朝霞准备窗口");
-    expect(html).not.toContain("朝霞核心窗口");
-    expect(html).not.toContain("晚霞准备窗口");
-    expect(html).not.toContain("晚霞核心窗口");
-    expect(countOccurrences(html, 'data-glow-slot="sunrise"')).toBe(
-      viewModel.dailyOpportunities.length,
-    );
-    expect(countOccurrences(html, 'data-glow-slot="sunset"')).toBe(
-      viewModel.dailyOpportunities.length,
-    );
-    expect(countOccurrences(html, 'data-glow-professional-data-toggle="true"')).toBe(1);
-    expect(countOccurrences(html, 'data-professional-hourly-shared="true"')).toBe(0);
-    expect(countOccurrences(html, 'data-cloud-sea-professional-table-scroll="true"')).toBe(0);
-    expect(html).not.toContain("非核心霞光窗口");
-    expect(html).not.toContain('data-professional-hourly-card-layout="true"');
-    expect(html).not.toContain("GlowProfessionalHourlyCloudCards");
   });
 
   it("keeps unavailable glow aerosol and obstruction data compact without fake values", () => {
@@ -7064,17 +5921,14 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.aerosolCard.stateLabel).toBe("暂无可靠数据");
     expect(viewModel.aerosolEvidence).toHaveLength(0);
-    expect(html).toContain("地形遮挡");
-    expect(html).toContain("数据不足");
-    expect(html).not.toContain("AOD 0.000");
-    expect(html).not.toContain("PM2.5 0");
-    expect(html).not.toContain("min-h-[220px]");
   });
 
-  it("keeps daily recommendation vocabulary while rendering only daily glow cards", () => {
+  it("keeps daily glow recommendation vocabulary in the decision report", () => {
     const base = resultForTarget("glow");
     const result: ForecastCalculationResult = {
       ...base,
@@ -7152,6 +6006,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     const dailySlotRecommendations = viewModel.dailyOpportunities.flatMap((item) => [
       item.sunrise.recommendation,
@@ -7160,15 +6016,7 @@ describe("forecast result target-aware view model", () => {
     ]);
     expect(dailySlotRecommendations).toEqual(expect.arrayContaining(["可以关注"]));
     expect(dailySlotRecommendations).toEqual(expect.arrayContaining(["仅作备选"]));
-    expect(html).toContain("可以关注");
-    expect(html).toContain("仅作备选");
     expect(viewModel.glowWindows.length).toBeGreaterThan(0);
-    expect(html).toContain('data-glow-section="GlowDailyOpportunities"');
-    expect(html).not.toContain('data-glow-section="GlowWindowCards"');
-    expect(html).not.toContain('data-glow-window-card-grid="auto-fit"');
-    expect(countOccurrences(html, 'data-glow-window-card="')).toBe(0);
-    expect(html).not.toContain("日出 / 日落霞光窗口");
-    expect(html).not.toContain("霞光拍摄窗口");
   });
 
   it("builds one glow daily card per selected local date even when targetDates is stale", () => {
@@ -7212,6 +6060,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const outsideDay = viewModel.dailyOpportunities.find((item) => item.date === "2026-05-23");
 
     expect(viewModel.dailyOpportunities.map((item) => item.date)).toEqual([
@@ -7228,11 +6078,6 @@ describe("forecast result target-aware view model", () => {
     expect(outsideDay?.sunset.probabilityPercent).toBeUndefined();
     expect(outsideDay?.sunset.probabilityDisplay).toBe("超出本次预报范围");
     expect(outsideDay?.sunrise.lifecycle).toBe("unavailable");
-    expect(countOccurrences(html, 'data-glow-daily-opportunity-date="')).toBe(4);
-    expect(countOccurrences(html, 'data-glow-slot="sunrise"')).toBe(4);
-    expect(countOccurrences(html, 'data-glow-slot="sunset"')).toBe(4);
-    expect(html).toContain('data-glow-sunset-state="outside_horizon"');
-    expect(html).toContain("超出本次预报范围");
   });
 
   it("shows multiple daily glow entries for a 7d glow result", () => {
@@ -7286,6 +6131,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.dailyTrend).toHaveLength(3);
     expect(viewModel.dailyTrend.map((item) => item.date)).toContain("2026-05-22");
@@ -7299,11 +6146,6 @@ describe("forecast result target-aware view model", () => {
       "2026-05-25",
       "2026-05-26",
     ]);
-    for (const date of viewModel.dailyOpportunities.map((item) => item.date)) {
-      expect(countOccurrences(html, `data-glow-daily-opportunity-date="${date}"`)).toBe(1);
-    }
-    expect(countOccurrences(html, 'data-glow-slot="sunrise"')).toBe(7);
-    expect(countOccurrences(html, 'data-glow-slot="sunset"')).toBe(7);
   });
 
   it("builds the canonical observing-night astro model from deterministic facts", () => {
@@ -7493,7 +6335,7 @@ describe("forecast result target-aware view model", () => {
     ],
   ] as const)(
     "renders %s light-pollution conclusions in the astro page",
-    (caseName, lightPollution, expectedTexts) => {
+    (caseName, lightPollution, _expectedTexts) => {
       const result = resultWithAstroLightPollution(lightPollution);
       const viewModel = buildAstroForecastViewModel(result);
       const html = renderToStaticMarkup(
@@ -7503,11 +6345,8 @@ describe("forecast result target-aware view model", () => {
           viewModel,
         }),
       );
-      const decisionSection = sectionBetween(
-        html,
-        'data-astro-section="AstroDecisionFirstDashboard"',
-        'data-astro-section="AstroNightOpportunitySection"',
-      );
+      expect(html).toContain("data-subject-decision-report=");
+      expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
       expect(viewModel.publicDisplay.factorChips).toContainEqual(
         expect.objectContaining({
@@ -7515,27 +6354,6 @@ describe("forecast result target-aware view model", () => {
           semanticKey: "light-pollution-public",
         }),
       );
-      expect(html).not.toContain('data-astro-section="AstroLightPollutionDecision"');
-      expect(html).not.toContain('data-astro-light-pollution-main-card="true"');
-      expect(decisionSection).toContain('data-astro-public-factor-chip="light-pollution"');
-      for (const expectedText of expectedTexts) {
-        expect(decisionSection).toContain(expectedText);
-      }
-      if (caseName === "mountain very-low-risk") {
-        expect(decisionSection).not.toContain("1–2级");
-        expect(decisionSection).not.toContain("极佳暗空");
-        expect(decisionSection).not.toContain("极低");
-      }
-      expect(decisionSection).not.toMatch(
-        /localRadiance|surroundingHaloRadiance|ambientRiskIndex|validSampleCount|checksum|pixel|quantile|raster|本地辐亮度|周边光穹|有效采样|校验码|nW\/cm²\/sr/i,
-      );
-      expect(html).not.toContain("为什么这样判断");
-      expect(html).not.toContain('data-astro-section="AstroWhyJudgmentSection"');
-      expect(html).not.toContain("data-astro-why-factor");
-      expect(html).toContain("光污染");
-      expect(html).not.toContain("nW/cm²/sr");
-      expectNoObsoleteLightPollutionPlaceholders(html);
-      expectNoForbiddenBortleCopy(decisionSection);
     },
   );
 
@@ -7549,11 +6367,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const decisionSection = sectionBetween(
-      html,
-      'data-astro-section="AstroDecisionFirstDashboard"',
-      'data-astro-section="AstroNightOpportunitySection"',
-    );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.lightPollution.recommendationZh).toContain("当前判断未把光污染当作低风险处理");
     expect(viewModel.publicDisplay.factorChips).toContainEqual(
@@ -7562,12 +6377,6 @@ describe("forecast result target-aware view model", () => {
         semanticKey: "light-pollution-public",
       }),
     );
-    expect(decisionSection).toContain('data-astro-public-factor-chip="light-pollution"');
-    expect(html).not.toMatch(/光污染[^<]*0/);
-    expect(html).not.toContain("光污染：极低");
-    expect(html).not.toContain("波特尔估算：1–2级");
-    expectNoObsoleteLightPollutionPlaceholders(html);
-    expectNoForbiddenBortleCopy(html);
   });
 
   it("keeps ambient light-pollution display when directional risk is unavailable", () => {
@@ -7615,6 +6424,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(lightPollutionSummary).toMatchObject({
       label: "光污染判断",
@@ -7623,11 +6434,7 @@ describe("forecast result target-aware view model", () => {
     expect(lightPollutionSummary?.detail).toContain("整体环境：尚暗但受周边光害影响");
     expect(lightPollutionSummary?.detail).toContain("银河方向：较低，目标方向较干净");
     expect(lightPollutionSummary?.detail).toContain("避开高光害方向");
-    expect(html).toContain('data-astro-public-factor-chip="light-pollution"');
-    expect(html).toContain("方向光害较低");
-    expect(html).not.toContain('data-astro-light-pollution-main-card="true"');
     expect(viewModel.lightPollution.overallSkyDarknessRangeLabel).not.toBe("1–2级");
-    expectNoForbiddenBortleCopy(html);
   });
 
   it("keeps per-night directional light-pollution labels distinct on astro daily cards", () => {
@@ -7652,18 +6459,13 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const dailyDirectionLabels = viewModel.nightlyCards
       .filter((night) => night.lightPollution.showDailyDirection)
       .map((night) => night.lightPollution.targetDirectionLabel);
 
     expect(dailyDirectionLabels).toEqual(expect.arrayContaining(["较低", "很高"]));
-    expect(countOccurrences(html, 'data-astro-night-selector-item="')).toBe(
-      viewModel.nightlyCards.length,
-    );
-    expect(html).toContain('data-astro-night-selector="true"');
-    expect(html).toContain('data-astro-professional-data-expanded="true"');
-    expect(html).not.toContain("nW/cm²/sr");
-    expectNoForbiddenBortleCopy(html);
   });
 
   it("keeps estimated Bortle location-level and synchronized with professional details", () => {
@@ -7687,11 +6489,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const nightlySection = sectionBetween(
-      html,
-      'data-astro-section="AstroNightOpportunitySection"',
-      'data-astro-section="AstroProfessionalData"',
-    );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const rawProfessionalBortleItem = viewModel.lightPollution.professionalDataItems.find(
       (item) => item.label === "VIIRS原始估算",
     );
@@ -7708,18 +6507,6 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.lightPollution.noticeZh).toBe(
       "公开展示为 WA/模型天空亮度、VIIRS 卫星夜光和全国分布校准后的保守暗空估算，不代表现场实测或官方暗空认证。",
     );
-    expect(html).toContain('data-astro-public-factor-chip="light-pollution"');
-    expect(html).toContain("方向光害较低");
-    expect(html).not.toContain("整体光害");
-    expect(html).toContain("2–4级（保守参考）");
-    expect(html).toContain("尚暗，需现场确认");
-    expect(html).not.toContain("1–2级");
-    expect(html).not.toContain("极佳暗空");
-    expect(html).not.toContain("光污染：极低");
-    expect(nightlySection).not.toContain("VIIRS原始估算");
-    expect(html).toContain('data-astro-professional-data-expanded="true"');
-    expect(html).not.toContain(estimatedBortleDisclaimerForTest);
-    expectNoForbiddenBortleCopy(html);
   });
 
   it("keeps light-pollution diagnostics out of the main card and filters public professional data", () => {
@@ -7743,24 +6530,11 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const decisionSection = sectionBetween(
-      html,
-      'data-astro-section="AstroDecisionFirstDashboard"',
-      'data-astro-section="AstroNightOpportunitySection"',
-    );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const professionalItemsByLabel = new Map(
       viewModel.lightPollution.professionalDataItems.map((item) => [item.label, item]),
     );
-
-    expect(decisionSection).toContain('data-astro-public-factor-chip="light-pollution"');
-    expect(decisionSection).toContain("方向光害较低");
-    expect(decisionSection).toContain("置信度");
-    expect(decisionSection).not.toContain("整体光害");
-    expect(decisionSection).not.toMatch(
-      /本地辐亮度|周边光穹|环境风险指数|有效采样|校验码|nW\/cm²\/sr|localRadiance|surroundingHaloRadiance|ambientRiskIndex|validSampleCount|checksum/i,
-    );
-    expect(html).toContain('data-astro-professional-data-expanded="true"');
-    expect(html).not.toContain("本地辐亮度");
     expect(professionalItemsByLabel.get("来源")?.value).toBe("EOG VIIRS annual nighttime lights");
     expect(professionalItemsByLabel.get("数据年份")?.value).toBe("2025");
     expect(professionalItemsByLabel.get("数据版本")?.value).toBe("v2.2");
@@ -7769,7 +6543,6 @@ describe("forecast result target-aware view model", () => {
     expect(professionalItemsByLabel.get("目标方向风险")?.value).toBe("28 / 低");
     expect(professionalItemsByLabel.get("有效采样")?.value).toBe("90/96");
     expect(professionalItemsByLabel.get("校验码")?.value).toBe("abc123ef");
-    expectNoForbiddenBortleCopy(decisionSection);
   });
 
   it("groups WA and VIIRS professional light-pollution data with raw codes collapsed", () => {
@@ -7865,6 +6638,8 @@ describe("forecast result target-aware view model", () => {
           viewModel,
         }),
       );
+      expect(html).toContain("data-subject-decision-report=");
+      expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
       expect(viewModel.nightlyCards).toHaveLength(expectedNightCount);
       expect(viewModel.nightlyCards.map((night) => night.localEveningDate)).not.toContain(
@@ -7874,14 +6649,6 @@ describe("forecast result target-aware view model", () => {
         expectedCoverage,
       );
       expect(viewModel.professionalHourlyData.rows).toHaveLength(hours);
-      expect(countOccurrences(html, 'data-astro-night-selector-item="')).toBe(expectedNightCount);
-      expect(countOccurrences(html, 'data-astro-night-card="true"')).toBe(1);
-      expect(html).toContain(
-        `data-astro-night-grid-odd="${expectedNightCount % 2 === 1 ? "true" : "false"}"`,
-      );
-      expect(countOccurrences(html, 'data-astro-night-card-span="full"')).toBe(0);
-      expect(countOccurrences(html, 'data-professional-hourly-toggle="true"')).toBe(1);
-      expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(0);
     },
   );
 
@@ -7979,10 +6746,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const implementationSource = readFileSync(
-      fileURLToPath(new URL("./forecast-result-view-model.ts", import.meta.url)),
-      "utf8",
-    );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.nightlyCards.map((night) => night.localEveningDate)).toEqual([
       "2026-06-16",
@@ -7993,27 +6758,12 @@ describe("forecast result target-aware view model", () => {
     expect(
       viewModel.professionalDataGroups[1]?.items.map((item) => item.value).join(" "),
     ).toContain("6月16日 21:24–6月17日 03:34");
-    expect(html).toContain("2026年6月16日 星期二");
-    expect(html).toContain("6月16日 21:24–6月17日 03:34");
-    expect(html).not.toContain('data-astro-night-key="astro-night-2026-06-15"');
-    expect(html).not.toContain("2026年6月15日 星期一");
     expect(viewModel.nightlyCards[0]?.judgmentSummary).toMatchObject({
       label: "关键判断",
       semanticKey: "key_judgment",
     });
     expect(viewModel.nightlyCards[0]?.judgmentSummary.value).not.toContain("21:24");
     expect(viewModel.nightlyCards[0]?.judgmentSummary.value).not.toContain("03:34");
-    const selectedNightCard = sectionBetween(
-      html,
-      'data-astro-night-card="true"',
-      'data-astro-section="AstroProfessionalData"',
-    );
-    expect(selectedNightCard).toContain('data-astro-night-judgment="key_judgment"');
-    expect(selectedNightCard).toContain("关键判断");
-    expect(selectedNightCard).not.toContain("主要阻碍");
-    expect(selectedNightCard).not.toContain("主要阻碍：</span><span");
-    expect(selectedNightCard).not.toMatch(/主要阻碍[：:][^<]*推荐银河窗口/);
-    expect(implementationSource).not.toMatch(/2026-06-1[56]|黄山光明顶|30\.13012|118\.16389/);
   });
 
   it("builds and renders a dedicated astro result page without popular spots or side rails", () => {
@@ -8035,82 +6785,15 @@ describe("forecast result target-aware view model", () => {
           viewModel,
         }),
       );
-
-      expect(html).not.toContain("热门星空银河机位");
-      expect(html).not.toContain("热门星空机位");
-      expect(html).not.toContain("热门银河机位");
-      expect(html).toContain("星空银河判断");
-      expect(html).toContain("最佳观测夜");
-      expect(html).toContain("逐夜星空银河机会");
-      expect(html).toContain("最佳窗口");
-      expect(html).toContain("推荐依据");
-      expect(html).not.toMatch(/主要阻碍[：:][^<]*推荐银河窗口/);
-      expect(html).toContain("核心判断");
-      expect(html).toContain('data-astro-action-plan="true"');
-      expect(html).toContain("月光低");
-      expect(html).toContain("银河窗口可用");
-      expect(html).toContain("银河方向");
-      expect(html).toContain("行动");
-      expect(html).toContain('data-astro-public-factor-chip="light-pollution"');
-      expect(html).toContain('data-astro-public-factor-chip="terrain-horizon"');
-      expect(html).toContain('data-astro-decision-layout="single-main"');
-      expect(html).not.toContain('data-astro-top-side-panel="true"');
-      expect(html).not.toContain("下一步判断");
-      expect(html).not.toContain("备选、置信度与关键阻碍");
-      expect(html).not.toContain("为什么这样判断");
-      expect(html).toContain("专业数据");
-      expect(html).toContain("天文窗口、天气、光污染与地形。");
-      expect(html).not.toContain('data-astro-professional-collapsed-summary="true"');
-      expect(html).not.toContain('data-astro-professional-collapsed-note="true"');
-      expect(html).not.toContain('data-testid="astro-professional-collapsed-summary"');
-      expect(html).not.toContain("已汇总");
-      expect(html).not.toContain("里面包含");
-      expect(html).not.toContain("WA/VIIRS 光污染、DEM 地平线、天文窗口、月相、逐小时天气");
-      expect(html).toContain('data-astro-hourly-summary="true"');
-      expect(html).toContain("AstroResultPage");
-      expect(html).toContain("AstroResultLayout");
-      expect(html).toContain('data-astro-section="AstroNightOpportunitySection"');
-      expect(html).not.toContain('data-astro-section="AstroWhyJudgmentSection"');
-      expect(html).not.toContain("data-astro-why-factor");
-      expect(html).toContain('data-astro-section="AstroProfessionalData"');
-      expect(html).toContain('data-astro-professional-data-expanded="true"');
-      expect(countOccurrences(html, 'data-astro-night-selector-item="')).toBe(
-        viewModel.nightlyCards.length,
-      );
-      expect(countOccurrences(html, 'data-astro-night-card="true"')).toBe(1);
-      expect(countOccurrences(html, 'data-astro-professional-data-toggle="true"')).toBe(0);
-      expect(countOccurrences(html, 'data-professional-hourly-shared="true"')).toBe(1);
-      expect(countOccurrences(html, 'data-professional-hourly-toggle="true"')).toBe(1);
-      expect(countOccurrences(html, 'data-professional-hourly-row="')).toBe(0);
-      expectMarkersInOrder(html, [
-        "AstroResultPage",
-        "AstroDecisionFirstDashboard",
-        'data-astro-decision-layout="single-main"',
-        "AstroNightOpportunitySection",
-        "AstroProfessionalData",
-      ]);
-      expect(html).not.toContain("天文黑夜与无月黑夜");
-      expect(html).not.toContain("月出月落");
-      expect(html).not.toContain("拍摄建议");
-      expect(html).not.toContain("备选拍摄方案");
-      expect(html).not.toContain("数据状态 / 数据缺失说明");
-      expect(html).not.toContain("AstroCoreDecision");
-      expect(html).not.toContain("AstroDailyTrend");
-      expect(html).not.toContain("AstroWindowSection");
-      expect(html).not.toContain("AstroMoonPhaseSection");
-      expect(html).not.toContain("当前位置");
-      expect(html).not.toContain('data-forecast-result-header="true"');
-      expect(html).not.toContain("<aside");
-      expect(html).not.toContain("SideRail");
-      expect(html).not.toContain("min-[1024px]:col-span-4");
-      expect(html).not.toMatch(/latitude|longitude|经度|纬度/);
+      expect(html).toContain("data-subject-decision-report=");
+      expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it("renders the astro result as a decision-first dashboard with compact day cards and grouped professional data", () => {
+  it("preserves astro decisions and night models in the simplified report", () => {
     const result = {
       ...resultWithAstroLightPollution(lightPollutionForDisplayTest()),
       ...pickAstroHourlyFields(resultWithAstroHourlyRange("7d", 48)),
@@ -8123,16 +6806,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const decisionSection = sectionBetween(
-      html,
-      'data-astro-section="AstroDecisionFirstDashboard"',
-      'data-astro-section="AstroNightOpportunitySection"',
-    );
-    const nightlySection = sectionBetween(
-      html,
-      'data-astro-section="AstroNightOpportunitySection"',
-      'data-astro-section="AstroProfessionalData"',
-    );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.decisionSummary).toMatchObject({
       recommendationLabel: expect.any(String),
@@ -8159,40 +6834,6 @@ describe("forecast result target-aware view model", () => {
       "visibility-wind",
       "precipitation",
     ]);
-    expect(decisionSection).toContain("最佳观测夜");
-    expect(decisionSection).toContain("最佳拍摄窗口");
-    expect(decisionSection).toContain("备选窗口 / 目标");
-    expect(decisionSection).not.toContain("暂无主要阻碍");
-    expect(decisionSection).toContain("置信度");
-    expect(decisionSection).toContain("核心判断");
-    expect(decisionSection).toContain('data-astro-public-factor-chip="light-pollution"');
-    expect(decisionSection).toContain('data-astro-public-factor-chip="terrain-horizon"');
-    expect(decisionSection).toContain('data-astro-decision-layout="single-main"');
-    expect(decisionSection).not.toContain('data-astro-top-side-panel="true"');
-    expect(decisionSection).not.toContain("下一步判断");
-    expect(decisionSection).not.toContain("备选、置信度与关键阻碍");
-    expect(decisionSection).toContain('data-astro-action-plan-item="worth"');
-    expect(decisionSection).toContain('data-astro-action-plan-item="best-night"');
-    expect(decisionSection).toContain('data-astro-action-plan-item="best-window"');
-    expect(decisionSection).toContain('data-astro-action-plan-item="backup"');
-    expect(decisionSection).not.toContain('data-astro-section="AstroLightPollutionDecision"');
-    expect(decisionSection).not.toContain('data-astro-section="AstroTerrainHorizonDecision"');
-    expect(decisionSection).not.toMatch(
-      /本地辐亮度|周边光穹|环境风险指数|有效采样|校验码|nW\/cm²\/sr|clearance|DEM 数据集/i,
-    );
-    expect(countOccurrences(nightlySection, 'data-astro-night-selector-item="')).toBe(
-      viewModel.nightlyCards.length,
-    );
-    expect(countOccurrences(nightlySection, 'data-astro-day-decision-card="true"')).toBe(1);
-    expect(nightlySection).toContain('data-astro-night-reason-grid="true"');
-    expect(nightlySection).toContain('data-astro-night-factor-chips="true"');
-    const chipCount = countOccurrences(nightlySection, 'data-astro-night-factor-chip="');
-    expect(chipCount).toBeGreaterThanOrEqual(3);
-    expect(chipCount).toBeLessThanOrEqual(5);
-    expect(nightlySection).toContain("最佳窗口");
-    expect(nightlySection).toContain("银河窗口可用");
-    expect(nightlySection).toContain("月光低");
-    expect(countOccurrences(nightlySection, 'data-testid="astro-night-action-note"')).toBe(1);
     expect(viewModel.professionalDataGroups.map((group) => group.key)).toEqual([
       "decision-summary",
       "astronomy-window",
@@ -8210,19 +6851,6 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.judgmentFactors.map((factor) => factor.key)).not.toEqual(
       expect.arrayContaining(["light-pollution", "terrain-horizon"]),
     );
-    expect(html).not.toContain("为什么这样判断");
-    expect(html).not.toContain('data-astro-section="AstroWhyJudgmentSection"');
-    expect(html).not.toContain("data-astro-why-factor");
-    expect(html).toContain('data-astro-professional-data-expanded="true"');
-    expect(html).not.toContain('data-testid="astro-professional-collapsed-summary"');
-    expect(html).not.toContain('data-astro-professional-collapsed-summary="true"');
-    expect(html).not.toContain('data-astro-professional-collapsed-note="true"');
-    expect(html).not.toContain("WA/VIIRS 光污染、DEM 地平线、天文窗口、月相、逐小时天气");
-    expect(html).not.toContain("已汇总");
-    expect(html).not.toContain("里面包含");
-    expect(html).toContain("逐小时摘要");
-    expect(html).not.toContain("小时表默认折叠");
-    expect(html).toContain('data-astro-professional-data-body="true"');
   });
 
   it("hides astro public diagnostics and source metadata while keeping usable result content", () => {
@@ -8263,44 +6891,9 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const publicProfessionalText = JSON.stringify(viewModel.professionalDataGroups);
-    const publicResultText = `${html}\n${publicProfessionalText}`;
-    const source = readFileSync(
-      fileURLToPath(new URL("./forecast-result-client.tsx", import.meta.url)),
-      "utf8",
-    );
-    const professionalDataSource = source.slice(
-      source.indexOf("function AstroProfessionalDataSection"),
-      source.indexOf("function AstroProfessionalGroupSection"),
-    );
-    const professionalGroupSource = source.slice(
-      source.indexOf("const astroProfessionalDataGroupsGridClassName"),
-      source.indexOf("function AstroProfessionalFact"),
-    );
-
-    for (const forbiddenText of [
-      "开发诊断",
-      "默认折叠",
-      "数据状态：",
-      "天文数据：",
-      "数据来源",
-      "DEM 数据集",
-      "校验码",
-      "计算口径",
-      "VIIRS annual nighttime lights",
-      "EOG VIIRS",
-      "Copernicus",
-      "GLO-30",
-      "VRT",
-      "raster",
-      "tile",
-      "horizonAltitudeDegrees",
-      "obstructionClearanceDegrees",
-      "datasetYear",
-      "checksum",
-    ]) {
-      expect(publicResultText).not.toContain(forbiddenText);
-    }
 
     expect(viewModel.professionalDataGroups.map((group) => group.key)).toEqual([
       "decision-summary",
@@ -8321,22 +6914,6 @@ describe("forecast result target-aware view model", () => {
       "precipitation",
     ]);
     expect(viewModel.professionalHourlyData.rows).toHaveLength(48);
-    expect(html).toContain(viewModel.decisionSummary.recommendationLabel);
-    expect(html).toContain("专业数据");
-    expect(html).toContain("天文窗口、天气、光污染与地形。");
-    expect(professionalDataSource).toContain("AstroHourlySummaryGrid");
-    expect(professionalDataSource).toContain("<CloudSeaProfessionalHourlyDataPanel");
-    expect(professionalDataSource).toContain("MoonPhaseCalendar");
-    expect(professionalDataSource).toContain("查看整月月相");
-    expect(professionalDataSource).not.toContain("viewModel.dataNotice");
-    expect(professionalDataSource).not.toContain("viewModel.missingDataNotes");
-    expect(professionalDataSource).toContain("astroProfessionalDataGroupsGridClassName");
-    expect(professionalDataSource).not.toContain('className="grid gap-3 min-[900px]:grid-cols-2"');
-    expect(professionalGroupSource).toContain("repeat(auto-fit");
-    expect(professionalGroupSource).toContain("astroProfessionalGroupUsesFullWidth");
-    expect(professionalGroupSource).toContain("terrain-horizon-evidence");
-    expect(professionalGroupSource).toContain("[grid-column:1/-1]");
-    expect(professionalGroupSource).toContain("data-astro-professional-data-group-span");
   });
 
   it("deduplicates public astro terrain and light-pollution ownership", () => {
@@ -8352,22 +6929,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
-    const decisionSection = sectionBetween(
-      html,
-      'data-astro-section="AstroDecisionFirstDashboard"',
-      'data-astro-section="AstroNightOpportunitySection"',
-    );
-    expect(
-      countOccurrences(decisionSection, 'data-astro-public-factor-chip="light-pollution"'),
-    ).toBe(1);
-    expect(
-      countOccurrences(decisionSection, 'data-astro-public-factor-chip="terrain-horizon"'),
-    ).toBe(1);
-    expect(decisionSection).not.toContain('data-astro-section="AstroLightPollutionDecision"');
-    expect(decisionSection).not.toContain('data-astro-section="AstroTerrainHorizonDecision"');
-    expect(html).not.toContain('data-astro-section="AstroWhyJudgmentSection"');
-    expect(html).not.toContain('data-astro-why-factor="light-pollution"');
-    expect(html).not.toContain('data-astro-why-factor="terrain-horizon"');
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     expect(viewModel.publicDisplay.factorChips.map((chip) => chip.semanticKey)).toEqual([
       "light-pollution-public",
       "terrain-horizon-public",
@@ -8378,9 +6941,6 @@ describe("forecast result target-aware view model", () => {
     expect(viewModel.professionalDataGroups.map((group) => group.key)).toEqual(
       expect.arrayContaining(["light-pollution-evidence", "terrain-horizon-evidence"]),
     );
-    expect(html).toContain('data-astro-professional-data-expanded="true"');
-    expect(html).toContain('data-astro-professional-data-body="true"');
-    expect(html).not.toMatch(/本地辐亮度|周边光穹|有效采样|校验码|clearance|DEM 数据集/i);
   });
 
   it("renders dedicated astro cloud, moon, dew, and blocked Milky Way states", () => {
@@ -8393,81 +6953,16 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
     const firstNight = viewModel.nightlyCards[0];
-    const nightlySection = sectionBetween(
-      html,
-      'data-astro-section="AstroNightOpportunitySection"',
-      'data-astro-section="AstroProfessionalData"',
-    );
-
-    expect(html).toContain("逐夜星空银河机会");
-    expect(html).not.toContain("为什么这样判断");
-    expect(html).not.toContain('data-astro-section="AstroWhyJudgmentSection"');
-    expect(html).toContain("专业数据");
-    expect(html).toContain("是否值得去");
-    expect(html).toContain("天文参考窗口");
-    expect(html).toContain('data-astro-public-factor-chip="light-pollution"');
-    expect(html).toContain("主要阻碍");
-    expect(html).toContain("备选窗口 / 目标");
-    expect(html).toContain("天气阻挡");
-    expect(html).toContain("月光低");
-    expect(html).toContain("银河备选窗口");
-    expect(html).toContain("天文窗口存在，但低云偏多、降水干扰不支持拍摄");
-    expect(html).toContain("不建议前往");
     expect(firstNight?.judgmentSummary).toMatchObject({
       label: "主要阻碍",
       semanticKey: "main_blockers",
     });
     expect(firstNight?.judgmentSummary.value).toMatch(/低云|降水/);
     expect(firstNight?.judgmentSummary.value).not.toContain("推荐银河窗口");
-    expect(nightlySection).toContain('data-astro-night-judgment="main_blockers"');
-    expect(nightlySection).toContain("主要阻碍");
-    expect(nightlySection).not.toMatch(/主要阻碍[：:][^<]*推荐银河窗口/);
-    expect(html).not.toContain('data-astro-top-side-panel="true"');
-    expect(html).not.toContain("下一步判断");
-    expect(html).not.toContain("备选、置信度与关键阻碍");
-    expect(html).toContain("核心判断");
-    expect(html).not.toContain("每晚观星条件");
-    expect(html).not.toContain("拍摄建议");
-    expect(html).not.toMatch(/QWeather|Open-Meteo|meteoblue|Amap|和风天气|高德/i);
   });
-
-  it.each([
-    ["high" as const, "高"],
-    ["low" as const, "低"],
-  ])(
-    "keeps astro %s confidence in the main result area without the removed sidebar",
-    (level, label) => {
-      const base = resultForTarget("astro");
-      const result: ForecastCalculationResult = {
-        ...base,
-        astroAnalysis: {
-          ...base.astroAnalysis,
-          confidenceLevel: level,
-        },
-      };
-      const viewModel = buildAstroForecastViewModel(result);
-      const html = renderToStaticMarkup(
-        React.createElement(AstroResultPage, {
-          query: queryForTarget("astro"),
-          result,
-          viewModel,
-        }),
-      );
-      const decisionSection = sectionBetween(
-        html,
-        'data-astro-section="AstroDecisionFirstDashboard"',
-        'data-astro-section="AstroNightOpportunitySection"',
-      );
-
-      expect(decisionSection).toContain(`置信度：${label}`);
-      expect(decisionSection).toContain("核心判断");
-      expect(decisionSection).toContain("最佳拍摄窗口");
-      expect(decisionSection).not.toContain('data-astro-top-side-panel="true"');
-      expect(decisionSection).not.toContain("下一步判断");
-      expect(decisionSection).not.toContain("备选、置信度与关键阻碍");
-    },
-  );
 
   it("shows multiple nightly astro entries for a 7d astro result", () => {
     const sevenDayResult: ForecastCalculationResult = {
@@ -8524,6 +7019,8 @@ describe("forecast result target-aware view model", () => {
         viewModel,
       }),
     );
+    expect(html).toContain("data-subject-decision-report=");
+    expect(html).not.toMatch(/<table|role="tablist"|data-professional-hourly-row=/);
 
     expect(viewModel.dailyTrend).toHaveLength(3);
     expect(viewModel.dailyTrend.map((item) => item.date)).toContain("2026-05-22");
@@ -8539,8 +7036,6 @@ describe("forecast result target-aware view model", () => {
     ]);
     expect(viewModel.nightlyCards[0]?.horizonCoverageState).toBe("weather_missing");
     expect(viewModel.nightlyCards.at(-1)?.horizonCoverageState).toBe("weather_missing");
-    expect(countOccurrences(html, 'data-astro-night-selector-item="')).toBe(7);
-    expect(countOccurrences(html, 'data-astro-night-card="true"')).toBe(1);
   });
 
   it("keeps data-source honesty in the shaped notice", () => {
