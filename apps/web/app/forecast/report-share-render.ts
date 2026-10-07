@@ -154,7 +154,6 @@ export async function renderShareImages(
       context.textBaseline = "alphabetic";
       context.font = `400 13px ${FONT}`;
       context.fillStyle = "#52696b";
-      context.fillText("zhuguangweather.com", 44, 764);
       context.textAlign = "right";
       context.fillText(`${index + 1} / ${pages.length}`, 556, 764);
       context.textAlign = "left";
