@@ -148,7 +148,7 @@ Web 服务的 IP 白名单填**服务器访问高德时的真实出口 IP**，�
 
 源站 80/443 只接受 Cloudflare 公布的 IPv4/IPv6 网段和明确的维护通道；SSH 单独限制管理来源。更新网段时保留恢复通道，并用外部网络实测容器端口不可直接访问。[Cloudflare 源站 IP 说明](https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/)。
 
-Caddy 只信任官方网段的 `CF-Connecting-IP`，以 `{client_ip}` 重写转发头。API 通过 `API_TRUSTED_PROXIES` 仅信任 Caddy 默认地址 `172.30.80.2/32`；生产禁止 `API_TRUST_PROXY=true`。默认 Docker 子网为 `172.30.80.0/24`，若与现有网络冲突，需同时修改子网、Caddy 地址和可信代理值。网段更新时同步修改 `deploy/cloudflare.caddy` 中两处列表。伪造头与限流已本地测试，公网仍需验证。
+Caddy 只信任官方网段的 `CF-Connecting-IP`，以 `{client_ip}` 重写转发头。API 通过 `API_TRUSTED_PROXIES` 仅信任 Caddy 默认地址 `172.30.80.2/32`；生产禁止 `API_TRUST_PROXY=true`。默认 Docker 子网为 `172.30.80.0/24`，动态地址池为 `172.30.80.128/25`，避免数据库先启动时占用 Caddy 固定地址。若与现有网络冲突，需同时修改子网、动态地址池、Caddy 地址和可信代理值；地址池必须位于子网内且排除 Caddy。网段更新时同步修改 `deploy/cloudflare.caddy` 中两处列表。伪造头与限流已本地测试，公网仍需验证。
 
 Caddy 标准镜像内置的是 `trusted_proxies static`，不能直接照搬需要额外插件的 `trusted_proxies cloudflare` 示例。官方建议对追加式代理链使用严格解析；具体配置需和最终 Caddy 版本一起验证。[Caddy 可信代理说明](https://caddyserver.com/docs/caddyfile/options#trusted-proxies)。
 

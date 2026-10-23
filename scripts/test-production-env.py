@@ -46,6 +46,11 @@ class ProductionEnvironmentTests(unittest.TestCase):
             with self.subTest(raw=raw), self.assertRaises(ValueError):
                 self.parse("VALUE=" + raw)
 
+    def test_dynamic_addresses_cannot_take_the_trusted_proxy_ip(self):
+        for value in ["172.30.80.0/25", "172.30.81.128/25", "172.30.80.128/30", "2001:db8::/64"]:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validator.validate({**self.valid(), "APP_NETWORK_IP_RANGE": value})
+
     def test_decodes_installer_quoted_values(self):
         self.assertEqual(self.parse('VALUE="text \\$ \\` \\\" \\\\"')['VALUE'], 'text $ ` " \\')
 

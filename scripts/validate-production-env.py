@@ -77,8 +77,11 @@ def validate(env):
         require(redis.scheme == "redis" and redis.hostname == "redis" and redis.port == 6379
                 and unquote(redis.password or "") == env.get("REDIS_PASSWORD"), "REDIS_URL 与密码一致性")
         network = ipaddress.ip_network(env.get("APP_NETWORK_SUBNET", ""))
+        dynamic_range = ipaddress.ip_network(env.get("APP_NETWORK_IP_RANGE", ""))
         proxy = ipaddress.ip_address(env.get("CADDY_INTERNAL_IP", ""))
         require(network.version == 4 and network.is_private and network.prefixlen >= 24 and proxy in network and proxy not in (network.network_address, network.broadcast_address), "Caddy 私有网络")
+        require(dynamic_range.version == network.version and dynamic_range.subnet_of(network)
+                and proxy not in dynamic_range and dynamic_range.num_addresses >= 16, "Docker 动态地址范围")
         require(env.get("API_TRUSTED_PROXIES") == f"{proxy}/32", "API_TRUSTED_PROXIES")
     except ValueError:
         errors.append("连接地址或可信代理格式")
