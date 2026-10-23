@@ -9,7 +9,7 @@ export COMPOSE_PROJECT_NAME="free-ci-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
 umask 077
 python3 - <<'PY'
 from pathlib import Path
-import base64, secrets
+import base64, os, secrets
 values = {
     'DOMAIN': 'weather.example.test', 'POSTGRES_DB': 'free_ci', 'POSTGRES_USER': 'free_ci',
     'POSTGRES_PASSWORD': secrets.token_hex(24), 'REDIS_PASSWORD': secrets.token_hex(24),
@@ -20,7 +20,9 @@ values = {
 text = Path('deploy/env.production.template').read_text()
 for key, value in values.items():
     text = text.replace(key+'_PLACEHOLDER', value)
-Path('.env.production').write_text(text)
+# Nested maintenance scripts may use sudo, which drops exported shell variables.
+# Store the isolated Compose project identity in the explicit environment file too.
+Path('.env.production').write_text(text+'\nCOMPOSE_PROJECT_NAME='+os.environ['COMPOSE_PROJECT_NAME']+'\n')
 Path('deploy/Caddyfile').write_text(Path('deploy/Caddyfile.template').read_text().replace('DOMAIN_PLACEHOLDER', values['DOMAIN']))
 PY
 bash scripts/check-env-production.sh >/dev/null
