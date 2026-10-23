@@ -1,20 +1,21 @@
 import type { Metadata } from "next";
-import { ScenarioModulePage } from "../../components/scenario-module-page";
+import { readPublicSiteConfig } from "../../lib/public-site-config";
+import { FreeWeatherWorkbench } from "../../components/free-weather-workbench";
 import { SubjectDetailDeepLinkClient } from "../../components/subject-detail-deep-link-client";
 import { ForecastResultClient } from "../forecast/forecast-result-client";
 import { parseAccountHistoryForecastSearchParams } from "../forecast/account-history-deep-link";
 import { parseSubjectDetailSearchParams } from "../forecast/subject-detail-links";
-import { glowScenarioConfig } from "../scenario-configs";
 
-export const metadata: Metadata = {
-  title: "朝霞晚霞 - 逐光天气",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: `朝霞晚霞 - ${(await readPublicSiteConfig()).name}` };
+}
 
 type GlowPageProps = {
-  readonly searchParams?: Record<string, string | readonly string[] | undefined>;
+  readonly searchParams?: Promise<Record<string, string | readonly string[] | undefined>>;
 };
 
-export default function GlowPage({ searchParams }: GlowPageProps) {
+export default async function GlowPage({ searchParams: pendingParams }: GlowPageProps) {
+  const searchParams = await pendingParams;
   const historyParsed = parseAccountHistoryForecastSearchParams("glow", searchParams ?? {});
   if (historyParsed.kind === "ready") {
     return (
@@ -33,5 +34,5 @@ export default function GlowPage({ searchParams }: GlowPageProps) {
     return <SubjectDetailDeepLinkClient target="glow" parsed={parsed} />;
   }
 
-  return <ScenarioModulePage config={glowScenarioConfig} />;
+  return <FreeWeatherWorkbench view="sun" />;
 }

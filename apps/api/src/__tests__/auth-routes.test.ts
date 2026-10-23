@@ -2095,3 +2095,10 @@ describe("auth routes", () => {
     expect(forbiddenDelete.statusCode).toBe(404);
   });
 });
+
+// Retained modules are tested in isolation from the free edition's retirement gate.
+// public-edition.test.ts verifies that the shipping server rejects these public routes.
+vi.mock("../public-edition.js", () => ({
+  isRetiredPublicRoute: () => false,
+  isRetiredProviderRoute: () => false,
+}));

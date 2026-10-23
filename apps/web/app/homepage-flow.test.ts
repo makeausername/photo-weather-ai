@@ -428,7 +428,7 @@ describe("homepage forecast flow", () => {
 
   it("keeps the homepage focused on selecting location and range", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
-    expect(html).toContain("查看报告");
+    expect(html).toContain("查询");
     expect(html).toContain("预报范围");
     expect(html).not.toContain('data-homepage-guidance-panel="true"');
     expect(html).not.toContain('data-forecast-entry-help="true"');
@@ -605,9 +605,9 @@ describe("homepage forecast flow", () => {
     expect(panelHtml).not.toContain("三清山女神峰");
     expect(panelHtml).not.toContain("武功山金顶");
     expect(pageHtml).not.toContain("精选机位");
-    expect(pageHtml).not.toContain("黄山光明顶");
-    expect(pageHtml).not.toContain("老君山金顶");
-    expect(pageHtml).not.toContain("三清山女神峰");
+    expect(pageHtml).toContain("黄山光明顶");
+    expect(pageHtml).toContain("老君山金顶");
+    expect(pageHtml).toContain("三清山女神峰");
     expect(pageHtml).not.toContain("武功山金顶");
     expect(pageHtml).not.toContain("专项拍摄场景");
     expect(pageHtml).not.toContain("三步得出判断");
@@ -974,7 +974,7 @@ describe("homepage forecast flow", () => {
   it("keeps public homepage copy product-friendly", () => {
     const html = renderToStaticMarkup(React.createElement(HomePage));
 
-    expect(html).toContain("选择地点和时间范围，查看拍摄建议。");
+    expect(html).toContain("朝霞与晚霞预报");
     expect(html).not.toContain("如何查看天气预报");
     expect(html).not.toContain("地点与窗口");
     expect(html).not.toContain("云海判断需要关注什么");
@@ -983,8 +983,8 @@ describe("homepage forecast flow", () => {
     expect(html).not.toContain("精选机位");
     expect(html).not.toContain("出发前重点");
     expect(html).not.toContain("常见题材判断");
-    expect(html).not.toContain("黄山光明顶");
-    expect(html).not.toContain("老君山金顶");
+    expect(html).toContain("黄山光明顶");
+    expect(html).toContain("老君山金顶");
     expect(html).not.toContain("实时决策工作台");
     expect(html).not.toContain("多源数据");
     expect(html).not.toContain("数据源未完全配置");

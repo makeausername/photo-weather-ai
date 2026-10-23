@@ -36,7 +36,7 @@ export function StickyDataScroller({
   children,
   showHint = true,
 }: {
-  readonly children: ReactElement;
+  readonly children: ReactElement<{ children?: ReactNode; className?: string }>;
   readonly showHint?: boolean;
 }) {
   const root = useRef<HTMLDivElement>(null);

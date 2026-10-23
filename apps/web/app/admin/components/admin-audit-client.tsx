@@ -1,8 +1,8 @@
 ﻿"use client";
+import { useAdminRequest } from "./admin-data-context";
 
 import { useEffect, useState } from "react";
-import { Badge, Card, EmptyState, Table } from "../../../components/ui";
-import { adminApiFetch } from "../admin-api";
+import { Button, Card, EmptyState, Table } from "../../../components/ui";
 import type { AdminAuditLog } from "../admin-api";
 
 type AuditResponse = {
@@ -16,16 +16,21 @@ function formatDate(value: string): string {
 }
 
 export function AdminAuditClient() {
+  const adminApiFetch = useAdminRequest();
   const [logs, setLogs] = useState<AdminAuditLog[]>([]);
-  const [status, setStatus] = useState("正在加载审计日志...");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   async function loadAuditLogs() {
+    setLoading(true);
+    setError("");
     try {
       const response = await adminApiFetch<AuditResponse>("/admin/audit-logs?limit=50");
       setLogs(response.logs);
-      setStatus(response.logs.length > 0 ? "审计日志已加载。" : "暂无审计日志。");
     } catch (error) {
-      setStatus((error as Error).message);
+      setError((error as Error).message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -40,8 +45,15 @@ export function AdminAuditClient() {
           <h2 className="text-lg font-bold">近期操作</h2>
           <p className="mt-1 text-sm text-muted-foreground">展示最近 50 条后台操作记录。</p>
         </div>
-        <Badge variant="muted">{status}</Badge>
+        <Button variant="secondary" disabled={loading} onClick={() => void loadAuditLogs()}>
+          {loading ? "读取中…" : "刷新记录"}
+        </Button>
       </div>
+      {error && (
+        <div role="alert" className="border-b border-border px-5 py-4 text-sm text-danger">
+          读取失败：{error}
+        </div>
+      )}
       {logs.length > 0 ? (
         <Table aria-label="近期后台审计日志">
           <thead className="bg-muted text-xs font-semibold text-muted-foreground">
@@ -70,8 +82,12 @@ export function AdminAuditClient() {
         </Table>
       ) : (
         <EmptyState
-          title="暂无审计日志"
-          description="后台产生配置、校准或审计事件后会显示在这里。"
+          title={loading ? "正在读取操作记录" : error ? "暂时无法读取记录" : "暂无操作记录"}
+          description={
+            error
+              ? "请确认服务连接和管理员权限，然后刷新重试。"
+              : "保存配置或执行校准任务后，记录会显示在这里。"
+          }
         />
       )}
     </Card>

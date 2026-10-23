@@ -227,7 +227,8 @@ export function selectedLocationFromSearchResult(result: SearchResultLike): Sele
     district: result.district ?? undefined,
     scenicArea: result.address ?? (area || undefined),
     dataStatus: result.isVerified ? "verified" : "pending",
-    coordinateSource: coordinateSourceLabel(source),
+    coordinateSource:
+      result.source === "open_meteo" ? "Open-Meteo 地点坐标" : coordinateSourceLabel(source),
     locationId: result.matchedLocationId,
     photoSpotId: result.matchedPhotoSpotId,
   };

@@ -22,33 +22,15 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("location-only admin surfaces", () => {
-  it("removes fixed location management from the admin shell", () => {
-    const html = renderToStaticMarkup(
-      React.createElement(AdminShell, {
-        title: "控制台",
-        description: "后台状态",
-        children: React.createElement("div", null, "content"),
-      }),
-    );
-
-    for (const label of ["地图服务", "天气数据", "支付收款", "邮箱短信", "对象存储"]) {
-      expect(html).toContain(label);
-    }
-    expect(html).not.toContain("智能解读");
-
-    expect(html).toContain("历史校准");
-    expect(html).not.toContain("服务商配置");
-    expect(html).not.toContain('/admin/providers"');
-    expect(html).not.toContain("地点管理");
+  it("removes location management from the primary navigation", () => {
+    const html = renderToStaticMarkup(React.createElement(AdminShell, {title:"运行总览",description:"后台状态",children:React.createElement("div")}));
+    expect(html).not.toContain("地点与机位");
     expect(html).not.toContain("/admin/locations");
-    expect(html).not.toContain("机位管理");
     expect(html).not.toContain("/admin/photo-spots");
+    expect(html).toContain("天气数据");
   });
-
-  it("redirects the retired location page to historical calibration", () => {
-    expect(() => AdminLocationsPage()).toThrow("redirect:/admin/calibration");
-
-    expect(redirectMock).toHaveBeenCalledWith("/admin/calibration");
+  it("redirects the removed location page without touching historical data", () => {
+    expect(() => AdminLocationsPage()).toThrow("redirect:/admin");
   });
 
   it("renders manual calibration location fields without a fixed location dropdown", () => {
@@ -64,16 +46,11 @@ describe("location-only admin surfaces", () => {
     expect(html).not.toContain("地点列表");
   });
 
-  it("keeps the dashboard focused on active admin modules", () => {
-    const html = renderToStaticMarkup(React.createElement(AdminDashboardClient));
-
-    expect(html).toContain("服务商配置");
-    expect(html).not.toContain("地点数量");
-    expect(html).not.toContain("地点资料");
-    expect(html).not.toContain("新增地点");
-    expect(html).not.toContain("机位数量");
-    expect(html).not.toContain("/admin/locations");
-    expect(html).not.toContain("/admin/photo-spots");
+  it("keeps revenue and commercial metrics off the dashboard", () => {
+    const html=renderToStaticMarkup(React.createElement(AdminDashboardClient));
+    expect(html).toContain("天气数据源");
+    expect(html).not.toContain("订单收入");
+    expect(html).not.toContain("活跃用户");
   });
 
   it("redirects the retired photo spot page to the admin console", () => {

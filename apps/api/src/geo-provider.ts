@@ -1,6 +1,6 @@
 import { getRuntimeProviderConfig } from "@photo-weather/db";
 import type { DatabaseClient, JsonValue, ProviderConfigRecord } from "@photo-weather/db";
-import { AmapProvider, MockGeoProvider } from "@photo-weather/geo";
+import { AmapProvider, OpenMeteoGeoProvider } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
 import { weatherDefaultRetryCount, weatherDefaultTimeoutMs } from "@photo-weather/shared";
 
@@ -172,18 +172,7 @@ export async function resolveGeoProvider(
     return options.geoProvider;
   }
 
-  const config = await readRuntimeAmapConfig(options);
-  if (!config.providerEnabled || !config.realModeEnabled) {
-    return new MockGeoProvider();
-  }
-
-  return new AmapProvider({
-    enabled: true,
-    apiKey: config.apiKey,
-    baseUrl: config.baseUrl,
-    timeoutMs: config.timeoutMs,
-    retryCount: config.retryCount,
-  });
+  return new OpenMeteoGeoProvider();
 }
 
 export async function resolveReverseGeocodeProvider(
@@ -193,18 +182,7 @@ export async function resolveReverseGeocodeProvider(
     return options.geoProvider;
   }
 
-  const config = await readRuntimeAmapConfig(options);
-  if (!config.providerEnabled || !config.realModeEnabled || !config.apiKey) {
-    return null;
-  }
-
-  return new AmapProvider({
-    enabled: true,
-    apiKey: config.apiKey,
-    baseUrl: config.baseUrl,
-    timeoutMs: config.timeoutMs,
-    retryCount: config.retryCount,
-  });
+  return null;
 }
 
 export async function createRealAmapProvider(

@@ -30,7 +30,9 @@ docker_cmd() {
 }
 
 compose() {
-  docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+  local profiles=()
+  if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then profiles=(--profile astro); fi
+  docker_cmd compose "${profiles[@]}" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
 mask_database_url() {
@@ -100,7 +102,9 @@ compose_service_exists() {
 
 build_production_images() {
   local service
-  for service in astro-service api web worker; do
+  local services=(api web)
+  if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then services=(astro-service "${services[@]}"); fi
+  for service in "${services[@]}"; do
     if compose_service_exists "${service}"; then
       run_logged "构建 ${service} 镜像" compose build "${service}"
     fi
@@ -181,26 +185,8 @@ run_migrations() {
 }
 
 create_and_verify_admin() {
-  if [[ -z "${ADMIN_EMAIL:-}" ]]; then
-    echo "ADMIN_EMAIL 未配置，无法继续管理员创建与验证。"
-    exit 1
-  fi
-
-  if ! prepare_admin_password_b64_from_env; then
-    echo "ADMIN_INITIAL_PASSWORD_B64、ADMIN_PASSWORD 或 ADMIN_INITIAL_PASSWORD 未配置或校验失败，无法继续管理员创建与验证。"
-    exit 1
-  fi
-
-  ADMIN_DISPLAY_NAME="${ADMIN_DISPLAY_NAME:-Super Admin}"
-  export ADMIN_EMAIL ADMIN_INITIAL_PASSWORD_B64 ADMIN_DISPLAY_NAME
-
-  run_logged "创建或更新管理员账号" compose run --rm \
-    -e ADMIN_EMAIL \
-    -e ADMIN_INITIAL_PASSWORD_B64 \
-    -e ADMIN_DISPLAY_NAME \
-    api pnpm bootstrap:admin
-
-  run_logged "验证管理员角色与权限" bash "${SCRIPT_DIR}/verify-admin-bootstrap.sh"
+  compose run --rm --no-deps api corepack pnpm db:seed:free
+  VERIFY_ADMIN_PASSWORD=false bash "${SCRIPT_DIR}/verify-admin-bootstrap.sh"
 }
 
 ensure_light_pollution_directories() {
@@ -265,19 +251,22 @@ set +a
 ensure_light_pollution_directories
 compose config >/dev/null
 
+bash "${SCRIPT_DIR}/check-cloudflare.sh"
 build_production_images
 
-run_logged "启动数据库、Redis 和星历服务" compose up -d postgres redis astro-service
+run_logged "启动数据库和 Redis" compose up -d postgres redis
 
-ensure_ephemeris_available
+if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then
+  compose up -d astro-service
+  ensure_ephemeris_available
+fi
 
 preflight_database_connection
 run_migrations
-run_logged "写入数据库种子数据" compose run --rm api corepack pnpm db:seed
 create_and_verify_admin
 
-run_logged "启动完整生产服务" compose up -d --remove-orphans postgres redis astro-service api web caddy worker
-run_logged "重启应用服务" compose restart api web worker caddy
+run_logged "启动免费版生产服务" compose up -d --remove-orphans postgres redis api web caddy
+run_logged "重启应用服务" compose restart api web caddy
 
 echo "部署恢复完成。"
 echo "Website: https://${DOMAIN:-}"

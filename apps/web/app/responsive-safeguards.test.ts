@@ -51,8 +51,8 @@ describe("responsive safeguards", () => {
     expect(html).toContain("min-h-screen bg-background");
     expect(html).not.toContain("overflow-x-hidden bg-background");
     expect(html).toContain("mx-auto w-full max-w-[1440px] min-w-0 px-[clamp(16px,4vw,48px)]");
-    expect(html).toContain("mx-auto flex min-h-[72px] w-full max-w-[1440px] min-w-0 items-center");
-    expect(html).toContain("mx-auto flex w-full max-w-[1440px] min-w-0");
+    expect(html).toContain('class="pw-header"');
+    expect(html).toContain('class="pw-footer"');
     expect(html).not.toContain("px-[clamp(24px,4vw,72px)]");
   });
 
@@ -110,12 +110,11 @@ describe("responsive safeguards", () => {
     expect(forecastSource).not.toContain('import("./hourly-weather-timeline")');
     expect(forecastSource).toContain("<SubjectDecisionReportView");
     expect(forecastSource).not.toContain('data-astro-night-selector="true"');
-    expect(adminShellSource).toContain("@radix-ui/react-dialog");
-    expect(adminShellSource).toContain('data-admin-mobile-navigation="sheet"');
+    expect(adminShellSource).toContain("aw-mobile-nav");
+    expect(adminShellSource).toContain('aria-label="移动端后台导航"');
     expect(adminShellSource).not.toContain("overflow-x-auto pb-2");
-    expect(adminSettingsSource).toContain("@radix-ui/react-accordion");
-    expect(adminSettingsSource).toContain('data-admin-settings-groups="accordion"');
-    expect(adminSettingsSource).toContain("设置：展开或收起`");
+    expect(adminSettingsSource).toContain('data-admin-settings-groups="sections"');
+    expect(adminSettingsSource).toContain("aw-setting-row");
     expect(forecastSource).toContain("<StickyDataScroller>");
     expect(forecastSource).toContain('data-professional-hourly-table-layout="mobile-scroll-safe"');
     expect(forecastSource).toContain("border-separate border-spacing-0");

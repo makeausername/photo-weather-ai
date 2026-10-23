@@ -121,6 +121,14 @@ function adminSession(accessToken = "paid-access-token"): AdminAuthSession {
 }
 
 describe("forecast request client", () => {
+  it("does not revive cached weather when a free-page refresh rejects stale fallback", async () => {
+    const query = { ...baseQuery, name: "configuration-change" };
+    await requestForecastCalculation(query, { fetcher: vi.fn().mockResolvedValue(jsonResponse(resultForTarget("general"))) as unknown as typeof fetch, useSessionStorage: false });
+    await expect(requestForecastCalculation(query, {
+      fetcher: vi.fn().mockResolvedValue(jsonResponse({ message: "真实天气数据证据不足" }, 503)) as unknown as typeof fetch,
+      forceRefresh: true, allowStaleFallback: false, retryCount: 0, useSessionStorage: false,
+    })).rejects.toMatchObject({ status: 503 });
+  });
   it("ends a stalled network request at the deadline with a visible timeout error", async () => {
     vi.useFakeTimers();
     try {
@@ -500,7 +508,7 @@ describe("forecast request client", () => {
     expect(init?.headers).not.toHaveProperty("Authorization");
   });
 
-  it("sends Authorization for logged-in forecast calculations", async () => {
+  it("does not send stored admin credentials for public forecasts", async () => {
     installBrowserStorage();
     storeAdminSession(adminSession("forecast-access-token"));
     const recovered = resultForTarget("general");
@@ -521,13 +529,13 @@ describe("forecast request client", () => {
       "http://localhost:4000/forecast/calculate",
       expect.objectContaining({
         headers: expect.objectContaining({
-          Authorization: "Bearer forecast-access-token",
+          "Content-Type": "application/json",
         }),
       }),
     );
   });
 
-  it("keeps guest forecast cache separate from logged-in full-access cache", async () => {
+  it("reuses the same public forecast regardless of account state", async () => {
     const { sessionStorage } = installBrowserStorage();
     storeAdminSession(adminSession("full-access-token"));
     const loggedInResult = {
@@ -560,11 +568,27 @@ describe("forecast request client", () => {
         successCacheTtlMs: 60_000,
         staleCacheTtlMs: 60_000,
       }),
-    ).resolves.toEqual(guestResult);
+    ).resolves.toEqual(loggedInResult);
 
     expect(loggedInFetcher).toHaveBeenCalledTimes(1);
-    expect(guestFetcher).toHaveBeenCalledTimes(1);
+    expect(guestFetcher).not.toHaveBeenCalled();
     expect(sessionStorage.dumpKeys().join(" ")).not.toContain("full-access-token");
+  });
+
+  it("refreshes an existing cached result when explicitly requested", async () => {
+    installBrowserStorage();
+    const first = resultForTarget("glow"),
+      second = { ...first, summary: "updated" };
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(first))
+      .mockResolvedValueOnce(jsonResponse(second));
+    const query = { ...baseQuery, target: "glow" } as const;
+    await requestForecastCalculation(query, { fetcher });
+    expect(await requestForecastCalculation(query, { fetcher, forceRefresh: true })).toEqual(
+      second,
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
   it("reuses an exact 7-day astro result instead of repeating the expensive analysis", async () => {
@@ -611,14 +635,14 @@ describe("forecast request client", () => {
 
     const currentKey = sessionStorage
       .dumpKeys()
-      .find((key) => key.startsWith("photo_weather_forecast_calculation:v10:"));
+      .find((key) => key.startsWith("photo_weather_forecast_calculation:v11:"));
     expect(currentKey).toBeDefined();
     const currentRecord = sessionStorage.getItem(currentKey!);
     expect(currentRecord).not.toBeNull();
     sessionStorage.removeItem(currentKey!);
     sessionStorage.setItem(
-      currentKey!.replace(":v10:", ":v8:"),
-      currentRecord!.replace('"version":10', '"version":8'),
+      currentKey!.replace(":v11:", ":v8:"),
+      currentRecord!.replace('"version":11', '"version":8'),
     );
     clearForecastRequestClientCachesForTest();
 
@@ -664,5 +688,17 @@ describe("forecast request client", () => {
     ).resolves.toEqual(currentResult);
 
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("retired paid forecast errors", () => {
+  it("does not relay legacy purchase copy from calculation endpoints", async () => {
+    const { normalizeForecastApiError } = await import("./forecast-request-client");
+    const error = await normalizeForecastApiError(new Response(JSON.stringify({
+      error: "upgrade_required", message: "开通会员后查看完整预报",
+    }), { status: 403 }));
+    expect(error.code).toBe("upgrade_required");
+    expect(error.publicMessage).toContain("免费开放");
+    expect(error.publicMessage).not.toMatch(/会员|套餐|注册|付费/);
   });
 });

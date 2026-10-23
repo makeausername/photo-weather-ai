@@ -11,13 +11,15 @@ export const usePublicFrame = () => useContext(PublicFrameContext);
 /** Keep navigation and account state mounted across public route transitions. */
 export function PublicFrame({ children }: { readonly children: ReactNode }) {
   const pathname = usePathname() ?? "/";
-  if (pathname === "/admin" || pathname.startsWith("/admin/")) return children;
+  if (pathname === "/admin" || pathname.startsWith("/admin/") || pathname === "/admin-preview" || pathname.startsWith("/admin-preview/")) return children;
   return (
     <PublicFrameContext.Provider value={true}>
-      <div className="flex min-h-screen flex-col bg-background text-foreground">
-        <PublicHeader />
-        <div className="min-w-0 flex-1">{children}</div>
-        <SiteFooter />
+      <div className="photo-app">
+        <div className="pw-app">
+          <PublicHeader />
+          <div className="min-w-0 flex-1">{children}</div>
+          <SiteFooter />
+        </div>
       </div>
     </PublicFrameContext.Provider>
   );

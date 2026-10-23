@@ -1,10 +1,4 @@
-import { HomepageWorkbench } from "../components/homepage-workbench";
-import { PublicShell } from "../components/public-shell";
-
+import { FreeWeatherWorkbench } from "../components/free-weather-workbench";
 export default function HomePage() {
-  return (
-    <PublicShell contentClassName="grid gap-6 pb-10">
-      <HomepageWorkbench />
-    </PublicShell>
-  );
+  return <FreeWeatherWorkbench view="sun" />;
 }

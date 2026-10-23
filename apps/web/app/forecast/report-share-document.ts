@@ -8,6 +8,7 @@ import type { SubjectDecisionReport } from "./subject-decision-report";
 
 export type ShareSection = { title: string; lines: readonly string[] };
 export type ShareDocument = {
+  siteName?: string;
   location: string;
   topic: string;
   updated: string;
@@ -82,7 +83,7 @@ export function buildShareDocument(
     });
   }
   return {
-    location: result.place?.name || "所选机位",
+    location: result.place?.name || "所选地点",
     topic: `${subject ? content.title : "天气概览"} · ${forecastHorizonLabels[result.horizon]}`,
     updated,
     sections,
@@ -91,7 +92,7 @@ export function buildShareDocument(
 
 export function shareFileStem(document: ShareDocument): string {
   return (
-    `逐光天气-${document.location}-${document.topic}`
+    `${document.siteName || "逐光天气"}-${document.location}-${document.topic}`
       // File names must strip ASCII control characters as well as reserved punctuation.
       // eslint-disable-next-line no-control-regex
       .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")

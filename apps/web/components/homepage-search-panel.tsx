@@ -37,7 +37,6 @@ export function HomepageSearchPanel({
       showSelectedLocationActions
       showQuickLocations={false}
       enableCurrentLocation
-      lockExtendedHorizonsForFree
       selectedLocation={selectedLocation}
       onSelectedLocationChange={onSelectedLocationChange}
       onForecastOptionsChange={onForecastOptionsChange}

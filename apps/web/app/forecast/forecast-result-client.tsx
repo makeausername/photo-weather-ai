@@ -39,7 +39,6 @@ import {
 import { PublicShell } from "../../components/public-shell";
 import { MoonPhaseCalendar } from "../../components/moon-phase-calendar";
 import { Badge, Button, Card, cn } from "../../components/ui";
-import { saveForecastHistory } from "../../components/account-session";
 import { upgradeRequiredDefaultMessage, upgradeRequiredTitle } from "../../components/api-client";
 import {
   buildForecastResultViewModel,
@@ -143,7 +142,6 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
   const latestQueryRef = useRef<ForecastQueryInput | null>(query);
   const resultRef = useRef<ForecastCalculationResult | null>(result);
   const resultQueryKeyRef = useRef("");
-  const historySaveKeyRef = useRef("");
   const requestSequenceRef = useRef(0);
 
   latestQueryRef.current = query;
@@ -184,7 +182,6 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
     if (!queryKey) {
       requestSequenceRef.current += 1;
       resultQueryKeyRef.current = "";
-      historySaveKeyRef.current = "";
       resultRef.current = null;
       setStatus("idle");
       setResult(null);
@@ -232,21 +229,6 @@ export function ForecastResultClient({ query, invalidReason }: ForecastResultCli
         resultRef.current = data;
         setResult(data);
         setStatus("ready");
-        const historySaveKey = `${activeQueryKey}:${data.generatedAt}`;
-        if (historySaveKeyRef.current !== historySaveKey) {
-          historySaveKeyRef.current = historySaveKey;
-          void saveForecastHistory({
-            query: requestQuery,
-            resultSummary: buildForecastHistorySummary(data),
-          }).catch((error) => {
-            if (process.env.NODE_ENV !== "production") {
-              console.debug(
-                "Forecast history save skipped.",
-                error instanceof Error ? error.name : "unknown",
-              );
-            }
-          });
-        }
       } catch (error) {
         if (isForecastRequestAbortError(error)) {
           return;
@@ -455,7 +437,7 @@ export function ForecastDecisionErrorState({
   readonly onRetry?: () => void;
 }) {
   if (code === "upgrade_required") {
-    return <ForecastUpgradeRequiredState query={query} message={message} />;
+    return <ForecastUpgradeRequiredState query={query} onRetry={onRetry} />;
   }
 
   const horizonLabel = decisionProgressHorizonLabel(query);
@@ -544,12 +526,12 @@ export function ForecastDecisionErrorState({
 
 function ForecastUpgradeRequiredState({
   query,
-  message,
+  onRetry,
 }: {
   readonly query: ForecastQueryInput;
-  readonly message: string;
+  readonly onRetry?: () => void;
 }) {
-  const description = message.trim() || upgradeRequiredDefaultMessage;
+  const description = upgradeRequiredDefaultMessage;
   const returnPath =
     query.target === "cloud_sea"
       ? "/cloud-sea"
@@ -579,10 +561,11 @@ function ForecastUpgradeRequiredState({
           variant="primary"
           size="sm"
           onClick={() => {
-            window.location.assign("/pricing");
+            if (onRetry) onRetry();
+            else window.location.reload();
           }}
         >
-          查看套餐
+          重新获取预报
         </Button>
         <Button
           type="button"

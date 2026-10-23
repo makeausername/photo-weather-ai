@@ -57,7 +57,12 @@ describe("public search routes", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const { client } = await createFakeDatabaseClient();
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      geoProvider: new MockGeoProvider(),
+    });
 
     const response = await app.inject({
       method: "GET",

@@ -60,32 +60,20 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("admin user and order console pages", () => {
-  it("adds first-class user and order modules to the AdminShell", () => {
-    const html = renderToStaticMarkup(
-      React.createElement(AdminShell, {
-        title: "控制台",
-        description: "后台状态",
-        children: React.createElement("div", null, "content"),
-      }),
-    );
-
-    expect(adminShellSource).toContain('{ href: "/admin/users", label: "用户管理" }');
-    expect(adminShellSource).toContain('{ href: "/admin/orders", label: "订单管理" }');
-    expect(adminShellSource).toContain('{ href: "/admin/products", label: "套餐定价" }');
-    expect(adminShellSource).toContain('label: "运营"');
-    expect(html).toContain("用户管理");
-    expect(html).toContain("订单管理");
-    expect(html).toContain("套餐定价");
-    expect(html).not.toContain('/admin/providers"');
+  it("keeps legacy modules outside the free admin navigation", () => {
+    const html = renderToStaticMarkup(React.createElement(AdminShell, {title:"运行总览", description:"后台状态", children:React.createElement("div", null, "content")}));
+    for (const label of ["用户管理", "订单管理", "套餐定价"]) expect(html).not.toContain(label);
+    for (const href of ["/admin/users", "/admin/orders", "/admin/products", "/admin/providers/billing", "/admin/history"]) {
+      expect(html).not.toContain(href);
+    }
+    expect(adminShellSource).toContain('label: "网站设置"');
   });
 
-  it("defines real user, order, and product pages instead of placeholder surfaces", () => {
-    expect(userPageSource).toContain('title="用户管理"');
-    expect(orderPageSource).toContain('title="订单管理"');
-    expect(productPageSource).toContain('title="套餐定价"');
-    expect(userPageSource).toContain("AdminUsersClient");
-    expect(orderPageSource).toContain("AdminOrdersClient");
-    expect(productPageSource).toContain("AdminProductsClient");
+  it("retires user, order, and product routes while leaving unused components intact", () => {
+    for (const source of [userPageSource, orderPageSource, productPageSource]) {
+      expect(source).toContain('redirect("/admin")');
+      expect(source).not.toContain("Client");
+    }
 
     const usersHtml = renderToStaticMarkup(React.createElement(AdminUsersClient));
     const ordersHtml = renderToStaticMarkup(React.createElement(AdminOrdersClient));

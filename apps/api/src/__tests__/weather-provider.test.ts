@@ -57,6 +57,34 @@ const baseMeteoblueProvider: ProviderConfigRecord = {
 };
 
 describe("weather runtime resolvers", () => {
+  it("enables QWeather with legacy host aliases or saved backend credentials", () => {
+    for (const key of ["QWEATHER_BASE_URL", "QWEATHER_API_BASE_URL"]) {
+      expect(
+        resolveQWeatherRuntimeConfig(null, {
+          NODE_ENV: "development",
+          QWEATHER_API_KEY: "test-only-secret",
+          [key]: "https://example.qweatherapi.com/v7",
+        }),
+      ).toMatchObject({ enabled: true, realCallEnabled: true, apiHost: "example.qweatherapi.com" });
+    }
+    const provider = {
+      ...baseQWeatherProvider,
+      configJson: { apiHost: "example.qweatherapi.com" },
+      secretJson: { apiKey: "test-only-secret" },
+    };
+    expect(resolveQWeatherRuntimeConfig(provider, { NODE_ENV: "production" }).realCallEnabled).toBe(
+      true,
+    );
+    expect(
+      resolveQWeatherRuntimeConfig(
+        { ...provider, configJson: { ...provider.configJson, realCallEnabled: false } },
+        { NODE_ENV: "production" },
+      ).realCallEnabled,
+    ).toBe(false);
+    expect(resolveQWeatherRuntimeConfig(null, { NODE_ENV: "production" }).realCallEnabled).toBe(
+      false,
+    );
+  });
   it("instantiates icon_global only once in the Open-Meteo runtime portfolio", async () => {
     const { client, state } = await createFakeDatabaseClient();
     const openMeteo = state.providers.get("weather:open_meteo");
@@ -67,8 +95,7 @@ describe("weather runtime resolvers", () => {
         ...(openMeteo?.configJson ?? {}),
         realCallEnabled: true,
         mode: "free",
-        modelList:
-          "best_match,gfs_seamless,gfs_global,icon_global,cma_grapes_global,ecmwf_ifs025",
+        modelList: "best_match,gfs_seamless,gfs_global,icon_global,cma_grapes_global,ecmwf_ifs025",
       },
     });
     const resolution = await resolveRuntimeWeatherProviders({
@@ -81,7 +108,9 @@ describe("weather runtime resolvers", () => {
       (provider) => provider.providerCode === "open_meteo",
     );
 
-    expect(openMeteoSnapshots.filter((provider) => provider.modelName === "icon_global")).toHaveLength(1);
+    expect(
+      openMeteoSnapshots.filter((provider) => provider.modelName === "icon_global"),
+    ).toHaveLength(1);
     expect(
       resolution.providers.filter((provider) => provider.source.providerCode === "open_meteo"),
     ).toHaveLength(openMeteoSnapshots.length);
@@ -116,15 +145,17 @@ describe("weather runtime resolvers", () => {
       target: "general",
     });
 
-    const summary = logs.find((entry) => entry.message === "Weather provider participation summary");
+    const summary = logs.find(
+      (entry) => entry.message === "Weather provider participation summary",
+    );
     const providers = summary?.fields.providers as readonly Record<string, unknown>[];
     expect(providers).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ providerCode: "qweather", enabled: true }),
         expect.objectContaining({ providerCode: "open_meteo", enabled: true }),
-        expect.objectContaining({ providerCode: "meteoblue", enabled: true, status: "skipped" }),
       ]),
     );
+    expect(providers.some((provider) => provider.providerCode === "meteoblue")).toBe(false);
     expect(JSON.stringify(summary)).not.toMatch(/apiKey|authorization/i);
   });
 

@@ -1,4 +1,5 @@
 "use client";
+import { useAdminRequest } from "./admin-data-context";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -12,7 +13,6 @@ import {
   Table,
   Textarea,
 } from "../../../components/ui";
-import { adminApiFetch } from "../admin-api";
 import type {
   AdminCalibrationComparison,
   AdminCalibrationStats,
@@ -313,6 +313,7 @@ function formFromReturnedLocation(
 }
 
 export function AdminCalibrationClient() {
+  const adminApiFetch = useAdminRequest();
   const [stats, setStats] = useState<AdminCalibrationStats[]>([]);
   const [results, setResults] = useState<AdminForecastReplayResult[]>([]);
   const [outcomes, setOutcomes] = useState<AdminObservedOutcome[]>([]);
@@ -816,7 +817,7 @@ export function AdminCalibrationClient() {
         </div>
       </Card>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.8fr)]">
+      <div className="grid gap-4">
         <Card className="overflow-hidden">
           <div className="border-b border-border px-5 py-4">
             <h2 className="text-lg font-bold">回放结果</h2>
@@ -860,7 +861,7 @@ export function AdminCalibrationClient() {
                         <div>{formatWindow(result.bestWindowStart, result.bestWindowEnd)}</div>
                       </td>
                       <td className="px-4 py-3">{result.bestSubject ?? "暂无"}</td>
-                      <td className="px-4 py-3">{result.confidenceLabel ?? "暂无"}</td>
+                      <td className="px-4 py-3">{({ high: "高", medium: "中", low: "低" } as Record<string, string>)[result.confidenceLabel ?? ""] ?? result.confidenceLabel ?? "暂无"}</td>
                       <td className="px-4 py-3">
                         {outcome ? observedResultLabels[outcome.observedResult] : "未标注"}
                       </td>
@@ -891,6 +892,7 @@ export function AdminCalibrationClient() {
           )}
         </Card>
 
+        <details className="aw-help aw-observation"><summary>新增观测标注</summary>
         <Card className="overflow-hidden">
           <div className="border-b border-border px-5 py-4">
             <h2 className="text-lg font-bold">观测标注</h2>
@@ -1035,6 +1037,7 @@ export function AdminCalibrationClient() {
             <Button type="submit">保存标注</Button>
           </form>
         </Card>
+        </details>
       </div>
 
       <Card className="overflow-hidden">
@@ -1048,9 +1051,9 @@ export function AdminCalibrationClient() {
           <div className="grid gap-4 p-5">
             <div className="grid gap-3 md:grid-cols-4">
               <OverviewMetric label="已标注样本" value={selectedStats.labeledCount} />
-              <OverviewMetric label="命中率" value={formatPercent(selectedStats.hitRate)} />
-              <OverviewMetric label="误报率" value={formatPercent(selectedStats.falsePositiveRate)} />
-              <OverviewMetric label="漏报率" value={formatPercent(selectedStats.falseNegativeRate)} />
+              <OverviewMetric label="命中率" value={formatPercent(selectedStats.labeledCount ? selectedStats.hitRate : null)} />
+              <OverviewMetric label="误报率" value={formatPercent(selectedStats.labeledCount ? selectedStats.falsePositiveRate : null)} />
+              <OverviewMetric label="漏报率" value={formatPercent(selectedStats.labeledCount ? selectedStats.falseNegativeRate : null)} />
             </div>
             <div className="grid gap-3 xl:grid-cols-[1fr_1fr]">
               <div className="rounded-lg border border-border bg-muted p-4">

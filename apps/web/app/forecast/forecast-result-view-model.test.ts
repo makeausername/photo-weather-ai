@@ -4014,7 +4014,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toContain('data-cloud-sea-loading="full-width"');
     expect(html).not.toContain('data-cloud-sea-loading-card="true"');
     expect(html).not.toContain("<aside");
-    expect(html).toContain("首页");
+    expect(html).toContain("朝霞晚霞");
     expect(html).toContain("云海拍摄判断");
     expect(html).toContain("正在读取云海拍摄条件");
     expect(html).not.toContain("云海判断基础");
@@ -4123,7 +4123,7 @@ describe("forecast result target-aware view model", () => {
     expect(html).not.toMatch(/provider|cache key|stack|AbortError|C:\\|\/app\/|https?:\/\//i);
   });
 
-  it("renders upgrade_required as a dedicated forecast access state", () => {
+  it("offers retry instead of purchase when an old API returns upgrade_required", () => {
     const html = renderToStaticMarkup(
       React.createElement(ForecastDecisionErrorState, {
         target: "general",
@@ -4137,6 +4137,8 @@ describe("forecast result target-aware view model", () => {
     expect(html).toContain('data-forecast-upgrade-required="true"');
     expect(html).toContain(upgradeRequiredTitle);
     expect(html).toContain(upgradeRequiredDefaultMessage);
+    expect(html).toContain("重新获取预报");
+    expect(html).not.toMatch(/查看套餐|开通会员|href="\/pricing/);
     expect(html).not.toContain('data-testid="decision-error-card"');
     expect(html).not.toMatch(/stack|AbortError|C:\\|\/app\/|passwordHash|refreshTokenHash/i);
   });

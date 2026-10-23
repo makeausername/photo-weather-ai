@@ -411,7 +411,7 @@ export const providerFieldPresets = [
   {
     providerCode: "amap",
     helpText:
-      "高德 Web 服务 Key 用于地点搜索、地理编码和逆地理编码。启用真实调用后，前台地点搜索会请求高德地图服务。",
+      "沿用高德地图账户。Web 服务 Key 用于服务端地点接口；地图底图另外需要 Web 端（JS API）Key 和配套安全密钥，两种 Key 不可混用。",
     fields: [
       {
         key: "realCallEnabled",
@@ -419,7 +419,7 @@ export const providerFieldPresets = [
         target: "configJson",
         control: "boolean",
         defaultValue: false,
-        helpText: "启用后，前台地点搜索和测试连接会请求高德地图服务。",
+        helpText: "启用后允许测试高德 Web 服务接口。前台地点搜索目前使用 Open-Meteo，地图底图使用单独的 JS API Key。",
       },
       {
         key: "apiKey",
@@ -427,6 +427,23 @@ export const providerFieldPresets = [
         target: "secretJson",
         placeholder: keepExistingSecretPlaceholder,
         password: true,
+      },
+      {
+        key: "jsApiKey",
+        label: "高德 Web 端（JS API）Key",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
+        helpText:
+          "云海地图底图使用。JS Key 会按 SDK 要求发送至浏览器，请在高德控制台设置域名白名单。",
+      },
+      {
+        key: "securityJsCode",
+        label: "高德 JS API 安全密钥",
+        target: "secretJson",
+        placeholder: keepExistingSecretPlaceholder,
+        password: true,
+        helpText: "与 JS API Key 配套，保留在服务端，地图请求通过同源代理转发。",
       },
       {
         key: "baseUrl",

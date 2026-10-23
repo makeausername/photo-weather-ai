@@ -49,8 +49,6 @@ export function SubjectControlPanel({
         showQuickLocations={false}
         showForecastSectionDivider={false}
         enableCurrentLocation
-        requiresFullAccess
-        lockExtendedHorizonsForFree
         selectedLocation={selectedLocation}
         onSelectedLocationChange={onSelectedLocationChange}
         onForecastOptionsChange={onForecastOptionsChange}

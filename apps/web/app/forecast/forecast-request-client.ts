@@ -1,8 +1,8 @@
 import type { ForecastCalculationResult, ForecastQueryInput } from "@photo-weather/shared";
 import {
   ApiClientError,
-  currentAuthCacheScope,
-  optionalAuthApiFetch,
+  upgradeRequiredDefaultMessage,
+  publicApiFetch,
   rateLimitedMessage,
   retryAfterSecondsFromResponse,
 } from "../../components/api-client";
@@ -14,7 +14,7 @@ const defaultRetryCount = 2;
 const defaultRetryDelayMs = [600, 1200, 2400] as const;
 const defaultSuccessCacheTtlMs = 5 * 60 * 1000;
 const defaultStaleCacheTtlMs = 30 * 60 * 1000;
-const forecastCacheVersion = 10 as const;
+const forecastCacheVersion = 11 as const;
 const sessionCachePrefix = `photo_weather_forecast_calculation:v${forecastCacheVersion}:`;
 const maxSessionCachePayloadChars = 2_000_000;
 
@@ -90,6 +90,8 @@ export type RequestForecastCalculationOptions = {
   readonly fetcher?: typeof fetch;
   readonly retryCount?: number;
   readonly retryDelayMs?: readonly number[];
+  readonly forceRefresh?: boolean;
+  readonly allowStaleFallback?: boolean;
   readonly successCacheTtlMs?: number;
   readonly staleCacheTtlMs?: number;
   readonly useSessionStorage?: boolean;
@@ -127,9 +129,9 @@ export async function requestForecastCalculation(
 ): Promise<ForecastCalculationResult> {
   throwIfAborted(options.signal);
   const cacheable = isFrontendForecastCacheable(query);
-  const authCacheKey = currentAuthCacheScope();
+  const authCacheKey = "free-public";
   const queryKey = `${stableForecastQueryKey(query)}|auth:${authCacheKey}`;
-  if (cacheable) {
+  if (cacheable && !options.forceRefresh) {
     const cached = readCachedForecastResult(queryKey, {
       allowStale: false,
       useSessionStorage: options.useSessionStorage ?? true,
@@ -159,7 +161,7 @@ export async function requestForecastCalculation(
       throwIfAborted(controller.signal);
       let result: ForecastCalculationResult;
       for (;;) {
-        const response = await optionalAuthApiFetch<
+        const response = await publicApiFetch<
           ForecastCalculationResult | { status: "processing"; retryAfterMs: number }
         >(
           "/forecast/calculate",
@@ -210,7 +212,7 @@ export async function requestForecastCalculation(
       });
     }
     if (isForecastRequestAbortError(error)) throw error;
-    if (cacheable && isTransientForecastError(error)) {
+    if (cacheable && options.allowStaleFallback !== false && isTransientForecastError(error)) {
       const stale = readCachedForecastResult(queryKey, {
         allowStale: true,
         useSessionStorage: options.useSessionStorage ?? true,
@@ -294,7 +296,7 @@ export async function normalizeForecastApiError(response: Response): Promise<For
     status === 429
       ? rateLimitedMessage(retryAfterSecondsFromResponse(response))
       : code === "upgrade_required"
-        ? safeValidationMessage(payload)
+        ? upgradeRequiredDefaultMessage
         : status === 400
           ? safeValidationMessage(payload)
           : transient

@@ -31,7 +31,9 @@ docker_cmd() {
 }
 
 compose() {
-  docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+  local profiles=()
+  if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then profiles=(--profile astro); fi
+  docker_cmd compose "${profiles[@]}" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
 render_caddyfile() {
@@ -92,7 +94,9 @@ compose_service_exists() {
 
 build_production_images() {
   local service
-  for service in astro-service api web worker; do
+  local services=(api web)
+  if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then services=(astro-service "${services[@]}"); fi
+  for service in "${services[@]}"; do
     if compose_service_exists "${service}"; then
       echo "Building ${service}..."
       compose build "${service}"
@@ -237,28 +241,8 @@ run_migrations() {
 }
 
 create_and_verify_admin() {
-  if [[ -z "${ADMIN_EMAIL:-}" ]]; then
-    echo "ADMIN_EMAIL 未配置，跳过管理员账号更新。"
-    return
-  fi
-
-  if ! prepare_admin_password_b64_from_env; then
-    echo "ADMIN_INITIAL_PASSWORD_B64、ADMIN_PASSWORD 或 ADMIN_INITIAL_PASSWORD 未配置，跳过管理员账号更新。"
-    return
-  fi
-
-  ADMIN_DISPLAY_NAME="${ADMIN_DISPLAY_NAME:-Super Admin}"
-  export ADMIN_EMAIL ADMIN_INITIAL_PASSWORD_B64 ADMIN_DISPLAY_NAME
-
-  echo "Creating or updating admin account..."
-  compose run --rm \
-    -e ADMIN_EMAIL \
-    -e ADMIN_INITIAL_PASSWORD_B64 \
-    -e ADMIN_DISPLAY_NAME \
-    api pnpm bootstrap:admin
-
-  echo "Verifying admin role and permissions..."
-  bash "${SCRIPT_DIR}/verify-admin-bootstrap.sh"
+  compose run --rm --no-deps api corepack pnpm db:seed:free
+  VERIFY_ADMIN_PASSWORD=false bash "${SCRIPT_DIR}/verify-admin-bootstrap.sh"
 }
 
 ensure_light_pollution_directories() {
@@ -299,6 +283,7 @@ if [[ ! -f "${COMPOSE_FILE}" ]]; then
   exit 1
 fi
 
+bash "${SCRIPT_DIR}/check-env-production.sh"
 set -a
 # shellcheck disable=SC1090
 . "${ENV_FILE}"
@@ -315,36 +300,21 @@ echo "Rebuilding production images..."
 build_production_images
 
 echo "Starting database dependencies..."
-compose up -d postgres redis astro-service
+compose up -d postgres redis
+if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then
+  compose up -d astro-service
+  bash "${SCRIPT_DIR}/download-ephemeris.sh"
+fi
+bash "${SCRIPT_DIR}/check-cloudflare.sh"
+preflight_database_connection
+# Snapshot before applying migrations; a failed migration never switches application containers.
+bash "${SCRIPT_DIR}/backup.sh"
+run_migrations
+create_and_verify_admin
 
-echo "Restarting services..."
-compose up -d --remove-orphans --force-recreate api web worker caddy
+echo "Restarting verified free-edition services..."
+compose up -d --remove-orphans --force-recreate api web caddy
 verify_web_revision
-
-db_steps_failed=0
-if ! preflight_database_connection; then
-  db_steps_failed=1
-fi
-if ! run_migrations; then
-  db_steps_failed=1
-fi
-
-echo "Running database seed..."
-if ! compose run --rm api corepack pnpm db:seed; then
-  db_steps_failed=1
-fi
-
-if ! create_and_verify_admin; then
-  db_steps_failed=1
-fi
-
-if [[ "${db_steps_failed}" -ne 0 ]]; then
-  echo
-  echo "ERROR: 数据库相关步骤失败；服务已用新代码重启（web revision 已验证），"
-  echo "但依赖数据库的功能可能不可用。请检查下方诊断，修复后重新运行 bash scripts/update.sh。"
-  print_database_diagnostics
-  exit 1
-fi
 
 echo "Update complete."
 compose ps

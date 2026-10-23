@@ -52,7 +52,18 @@ compose() {
 }
 
 run_psql() {
-  compose exec -T postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -At "$@"
+  # psql does not expand :'variables' inside -c; feed SQL through stdin instead.
+  local sql="" args=()
+  while [[ "$#" -gt 0 ]]; do
+    if [[ "$1" == "-c" ]]; then
+      sql="$2"
+      shift 2
+    else
+      args+=("$1")
+      shift
+    fi
+  done
+  printf '%s\n' "${sql}" | compose exec -T postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -At "${args[@]}" -f -
 }
 
 table_exists() {
@@ -161,7 +172,7 @@ else
 fi
 
 export ADMIN_EMAIL
-if prepare_admin_password_b64_from_env; then
+if [[ "${VERIFY_ADMIN_PASSWORD:-true}" == "true" ]] && prepare_admin_password_b64_from_env; then
   if compose run --rm \
     -e ADMIN_EMAIL \
     -e ADMIN_INITIAL_PASSWORD_B64 \

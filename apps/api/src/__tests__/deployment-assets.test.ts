@@ -147,17 +147,23 @@ describe("production deployment assets", () => {
     expect(compose).not.toContain('"4100:4100"');
   });
 
-  it("keeps Caddy routing same-domain API and billing traffic before the web catch-all", () => {
+  it("routes same-domain APIs without caching and closes retired billing paths", () => {
     const caddyfile = readRepoFile("deploy/Caddyfile.template");
     expect(caddyfile).toContain("DOMAIN_PLACEHOLDER");
     expect(caddyfile).toContain("encode zstd gzip");
-    expect(caddyfile).toContain("@billing_api path /billing/*");
-    expect(caddyfile).toContain("reverse_proxy @billing_api api:4000");
+    expect(caddyfile).toContain("@retired path /billing /billing/*");
+    expect(caddyfile).toContain("respond @retired 410");
+    expect(caddyfile).toContain('header @private >Cache-Control "no-store"');
+    expect(caddyfile).toContain("header_up X-Forwarded-For {client_ip}");
     expect(caddyfile).not.toContain("handle_path /billing");
     expect(caddyfile).toContain("handle_path /api/*");
+    expect(caddyfile).toContain("handle_path /api/service/*");
+    expect(caddyfile.indexOf("handle_path /api/service/*")).toBeLessThan(
+      caddyfile.indexOf("handle_path /api/*"),
+    );
     expect(caddyfile).toContain("reverse_proxy api:4000");
     expect(caddyfile).toContain("reverse_proxy web:3000");
-    expect(caddyfile.indexOf("reverse_proxy @billing_api api:4000")).toBeLessThan(
+    expect(caddyfile.indexOf("respond @retired 410")).toBeLessThan(
       caddyfile.indexOf("reverse_proxy web:3000"),
     );
 
@@ -179,7 +185,8 @@ describe("production deployment assets", () => {
       "APP_ENV=production",
       "SITE_URL=https://DOMAIN_PLACEHOLDER",
       "PUBLIC_SITE_URL=https://DOMAIN_PLACEHOLDER",
-      "NEXT_PUBLIC_API_BASE_URL=https://DOMAIN_PLACEHOLDER/api",
+      "NEXT_PUBLIC_API_BASE_URL=/api/service",
+      "API_BASE_URL=http://api:4000",
       "POSTGRES_DB=POSTGRES_DB_PLACEHOLDER",
       "POSTGRES_USER=POSTGRES_USER_PLACEHOLDER",
       "POSTGRES_PASSWORD=POSTGRES_PASSWORD_PLACEHOLDER",
@@ -193,7 +200,8 @@ describe("production deployment assets", () => {
       "API_REQUEST_TIMEOUT_MS=60000",
       "API_CONNECTION_TIMEOUT_MS=10000",
       "API_KEEP_ALIVE_TIMEOUT_MS=65000",
-      "API_TRUST_PROXY=true",
+      "API_TRUST_PROXY=false",
+      "API_TRUSTED_PROXIES=172.30.80.2/32",
       "API_RATE_LIMIT_ENABLED=true",
       "API_RATE_LIMIT_WINDOW_MS=60000",
       "API_RATE_LIMIT_MAX=60",
@@ -202,7 +210,7 @@ describe("production deployment assets", () => {
       "FORECAST_CALCULATE_CACHE_MAX_ENTRIES=256",
       "PUBLIC_SEARCH_CACHE_TTL_MS=300000",
       "PUBLIC_SEARCH_CACHE_MAX_ENTRIES=256",
-      "ENABLE_ASTRO_SERVICE=true",
+      "ENABLE_ASTRO_SERVICE=false",
       "ASTRO_SERVICE_URL=http://astro-service:4100",
       "ASTRO_SERVICE_TIMEOUT_MS=45000",
       "LIGHT_POLLUTION_DATASET_PATH=/app/data/light-pollution/current/light-pollution.cog.tif",
@@ -375,7 +383,8 @@ describe("production deployment assets", () => {
     expect(updater).toContain('git fetch origin "${DEPLOY_BRANCH}"');
     expect(updater).toContain('git switch -- "${DEPLOY_BRANCH}"');
     expect(updater).toContain('git pull --ff-only origin "${DEPLOY_BRANCH}"');
-    expect(updater).toContain("--force-recreate api web worker caddy");
+    expect(updater).toContain("--force-recreate api web caddy");
+    expect(updater.lastIndexOf("run_migrations")).toBeLessThan(updater.indexOf("--force-recreate api web caddy"));
     expect(updater).toContain("verify_web_revision");
     expect(compose).toContain("APP_GIT_SHA: ${APP_GIT_SHA:-unknown}");
     expect(webDockerfile).toContain("org.opencontainers.image.revision=${APP_GIT_SHA}");
@@ -517,7 +526,7 @@ describe("production deployment assets", () => {
       expect(source).toContain('ENV_FILE=".env.production"');
       expect(source).toContain('COMPOSE_FILE="docker-compose.prod.yml"');
       expect(source).toContain("compose() {");
-      expect(source).toContain('docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"');
+      expect(source).toMatch(/docker_cmd compose(?: "\$\{profiles\[@\]\}")? --env-file "\$ENV_FILE" -f "\$COMPOSE_FILE" "\$@"/);
 
       for (const line of source.split(/\r?\n/)) {
         const invokesDockerCompose = /\bdocker(?:_cmd)? compose\b/.test(line);
@@ -625,7 +634,7 @@ describe("production deployment assets", () => {
       "需要安装 Docker",
       "deploy/install.log",
       "--verbose",
-      "pnpm bootstrap:admin",
+      "pnpm db:seed:free",
       "verify-admin-bootstrap.sh",
       "管理员账号、角色或权限验证失败，部署未完成。",
       "可执行 bash scripts/reset-admin.sh 重新设置管理员密码。",
@@ -1166,14 +1175,16 @@ describe("production deployment assets", () => {
       const envPath = path.join(tempDir, ".env.production");
       writeFileSync(
         envPath,
-        [
-          "POSTGRES_DB=photo_weather_ai",
-          "POSTGRES_USER=photo_weather_ai",
-          "POSTGRES_PASSWORD=secret123",
-          "DATABASE_URL=postgresql://photo_weather_ai:secret123@postgres:5432/photo_weather_ai?schema=public",
-          "EMPTY_VALUE=",
-          "",
-        ].join("\n"),
+        readRepoFile("deploy/env.production.template")
+          .replaceAll("DOMAIN_PLACEHOLDER", "weather.example.com")
+          .replaceAll("POSTGRES_DB_PLACEHOLDER", "free_test")
+          .replaceAll("POSTGRES_USER_PLACEHOLDER", "free_test")
+          .replaceAll("POSTGRES_PASSWORD_PLACEHOLDER", "secret12345678901")
+          .replaceAll("REDIS_PASSWORD_PLACEHOLDER", "redis12345678901x")
+          .replaceAll("JWT_SECRET_PLACEHOLDER", "test-only-jwt-secret-32-characters-long")
+          .replaceAll("ADMIN_EMAIL_PLACEHOLDER", "admin@example.com")
+          .replaceAll("ADMIN_INITIAL_PASSWORD_B64_PLACEHOLDER", "")
+          .replaceAll("ADMIN_DISPLAY_NAME_PLACEHOLDER", "Admin") + "\nEMPTY_VALUE=\n",
         "utf8",
       );
 
@@ -1181,6 +1192,7 @@ describe("production deployment assets", () => {
         cwd: tempDir,
         encoding: "utf8",
         stdio: "pipe",
+        env: { ...process.env, PYTHON_BIN: process.env.PYTHON_BIN ?? (process.platform === "win32" ? path.join(process.env.LOCALAPPDATA!, "Programs/Python/Python312/python.exe").replace(/\\/g, "/") : "python3") },
       });
       expect(validOutput).toContain("POSTGRES_PASSWORD=***");
       expect(validOutput).toContain("DATABASE_URL=***");

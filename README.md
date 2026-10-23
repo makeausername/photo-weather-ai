@@ -1,5 +1,11 @@
 # Photo Weather AI
 
+## 免费版本地预览（2026-10-23）
+
+运行 `node scripts/dev-free-local.mjs`，打开 `http://127.0.0.1:3100`。无需注册、没有付费入口，天气仅使用和风天气与 Open-Meteo。当前阶段仅本地开发，未部署。
+
+启动方式、保留功能及地图 / 天文计算边界见 [免费版本地说明](docs/free-local-edition.md)。海外服务器与 Cloudflare 的当前方案、已修复项目和待验收边界见 [免费版上线说明](docs/free-production-readiness.md)。下文旧商业版功能说明仅作历史参考，免费版初始化只使用 `pnpm db:seed:free`，不要使用旧 `db:seed`。
+
 ## Documentation
 
 - [Product Scope](docs/product-scope.md)
@@ -15,7 +21,7 @@
 
 ## Production/Staging Deployment
 
-For an Ubuntu/Debian server with a domain pointed at it, run:
+For the free edition on Ubuntu/Debian, first prepare Cloudflare DNS, Full (strict), and the Origin CA certificate/key under `deploy/certs/origin.pem` and `deploy/certs/origin.key`. Follow the [free-edition deployment guide](docs/free-production-readiness.md); only run the following after deployment is authorized:
 
 ```bash
 bash scripts/install.sh
@@ -29,9 +35,9 @@ bash scripts/install-cn.sh
 
 The China wrapper defaults to Ubuntu/Debian Docker packages, Docker registry mirrors, an APT mirror, and a pip index mirror, so a fresh server does not need manual Docker installation first.
 
-The installer creates `.env.production`, renders the Caddy config, installs Docker if needed, creates optional local light-pollution, sky-brightness, and terrain DEM raster directories, starts PostgreSQL/Redis/astro-service, downloads and verifies `/app/data/de421.bsp`, runs migrations and seed data, creates the first admin account, starts web/API/worker/Caddy, and enables automatic HTTPS through Caddy. See [docs/deployment.md](docs/deployment.md) for update, backup, status, local raster import, uninstall, and troubleshooting commands.
+The installer validates `.env.production` and the origin certificate, builds dependencies before Web/API, starts PostgreSQL/Redis, runs migrations and the idempotent free initializer, then starts Web/API/Caddy. It creates no paid products and does not reset existing admin credentials or provider settings. The legacy worker is excluded by default; Python astronomy is optional (`ENABLE_ASTRO_SERVICE=true`). Updates back up data before migration and switch application containers only after initialization checks pass.
 
-Production updates regenerate the persistent `deploy/Caddyfile` from `deploy/Caddyfile.template`; `/billing/*` is routed to `api:4000` before the `web:3000` catch-all so mobile payment callbacks and page-pay URLs do not hit Next.js.
+Production updates regenerate `deploy/Caddyfile` from its template. `/api/service/*` and the compatible `/api/*` route reach the API; `/billing` is retired with HTTP 410. Only Cloudflare ranges are trusted at the origin, and API/admin responses are not cached. No Cloudflare account settings are changed by these scripts.
 
 Optional light-pollution data uses a local VIIRS-compatible nighttime-light GeoTIFF under `deploy/light-pollution/`; real raster files are ignored by Git. Import with:
 
@@ -153,7 +159,6 @@ These documents define the strategic product boundary for 逐光天气. Future C
 
 ## Forecast 计算核心 V1
 
-
 当前计算核心覆盖：
 
 - Calendar Core V1：`packages/calendar` 集中处理 `Asia/Shanghai` 时区、24h / 48h / 72h / 7d 预报范围、覆盖日期、中文日期时间格式、农历和节气信息。
@@ -225,7 +230,6 @@ These documents define the strategic product boundary for 逐光天气. Future C
 - 云海
 - 朝霞晚霞
 - 星空银河
-
 
 Scenario Module Pages V1：
 
@@ -406,8 +410,8 @@ AMAP_WEB_SERVICE_KEY=
 AMAP_BASE_URL=https://restapi.amap.com
 ```
 
-
 ```bash
+
 ```
 
 天气服务商也优先在后台服务商配置页填写。和风天气普通管理员只需要填写 API Key、API Host、启用服务商、启用真实调用、保存并测试连接；Open-Meteo 支持免费开发模式和商业客户模式，免费模式不需要 API Key，商业客户模式需要按账号要求填写 API Key 和 Customer Endpoint；meteoblue Free Weather API 可用于后台 Forecast API 测试，默认数据包为 `basic-1h,clouds-1h`。QWeather API Host 在和风天气控制台的开发者信息中查看，形如 `xxxxx.qweatherapi.com`，后台表单和环境变量都填写不带 `https://` 的主机名；请求超时、重试次数、语言、单位和原始配置默认折叠在“高级配置”中：
@@ -436,9 +440,7 @@ METEOBLUE_PACKAGES=basic-1h,clouds-1h
 
 后台 `geo/amap` 已启用、`configJson.realCallEnabled=true` 且已配置高德 Web 服务 Key 后，公开地点搜索和后台高德测试连接可以请求真实高德 Web Service。若数据库配置中没有 `realCallEnabled` 字段，才会读取 `ENABLE_REAL_AMAP` 作为兜底。高德返回坐标按 GCJ-02 处理，并同步归一化为 WGS84；天气、天文、地形和评分计算仍只使用 WGS84。
 
-
 和风天气真实连接测试已接入 `/v7/weather/now`，仅在后台已启用服务商、启用真实调用、API Key 和 API Host 均已保存后，由管理员点击“测试连接”触发。Open-Meteo 免费模式测试可由管理员手动触发安全公共端点，商业客户模式启用真实调用时必须填写 Key。meteoblue 在未启用真实调用时只返回“当前为模拟测试，未请求 meteoblue 服务。”，启用真实调用但缺少 Key 时返回“请先填写 meteoblue API Key。”，Key 已保存后会请求 Forecast API package URL。自动化测试不会调用真实 QWeather、Open-Meteo 或 meteoblue API。
-
 
 如需清理 Next.js 缓存后启动：
 
@@ -478,8 +480,6 @@ corepack pnpm create-admin
 ```bash
 DATABASE_URL=postgresql://photo_weather:photo_weather@postgres:5432/photo_weather_ai
 ```
-
-
 
 Seed data 包含未核验的中国风光摄影示例地点与机位：
 
@@ -574,8 +574,6 @@ GET   /admin/audit-logs
 - 审计日志：`audit.read`
 - `/admin` 状态：`code=admin` 或 `admin.manage`
 
-
-
 ## 后台控制台
 
 当前 Next.js 后台路由：
@@ -620,7 +618,6 @@ GET   /admin/audit-logs
 - 不调用真实存储、短信、支付或计费服务。
 
 本地和测试默认天气服务商为 `mock`。如需验证服务商 adapter，可显式设置 `WEATHER_PROVIDER=qweather|open_meteo` 且 `WEATHER_PROVIDER_MODE=fixture`；`WEATHER_PROVIDER_MODE=real` 在 `NODE_ENV=test` 下会 fail closed，不会悄悄发起网络请求。后台 QWeather / Open-Meteo / meteoblue 真实测试连接可用于人工本地开发或 staging 验证，必须由管理员显式启用服务商、启用真实调用并配置必要凭据。自动化测试仍强制模拟测试。
-
 
 ## Docker
 

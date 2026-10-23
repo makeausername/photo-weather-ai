@@ -25,7 +25,7 @@ export type ReverseGeocodeOptions = {
   readonly locale?: "zh-CN";
 };
 
-export type GeoPlaceSource = "mock" | "amap" | "manual";
+export type GeoPlaceSource = "mock" | "amap" | "manual" | "open_meteo";
 
 export type GeoPlaceResult = Place & {
   readonly province?: string;

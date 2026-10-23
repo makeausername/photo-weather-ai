@@ -10,6 +10,10 @@ coverage
 logs
 backups
 .runtime
+.pnpm-store
+.next-free
+.next-production-check
+deploy/certs
 deploy/Caddyfile
 deploy/generated
 apps/astro-service/.venv

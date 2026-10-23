@@ -1,10 +1,12 @@
-import { AdminSettingsClient } from "../components/admin-settings-client";
 import { AdminShell } from "../components/admin-shell";
+import { AdminSettingsClient } from "../components/admin-settings-client";
+import { AdminHostingNote } from "../components/admin-workspace-sections";
 
-export default function AdminSettingsPage() {
+export default function AdminPage() {
   return (
-    <AdminShell title="系统设置" description="查看并维护允许后台编辑的系统参数。">
+    <AdminShell title="网站设置" description="管理网站基本信息和显示偏好。">
       <AdminSettingsClient />
+      <AdminHostingNote />
     </AdminShell>
   );
 }

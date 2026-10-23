@@ -22,3 +22,4 @@ export * from "./types.js";
 export * from "./window-format.js";
 export * from "./weather-text.js";
 export * from "./product-copy.js";
+export { defaultPublicSiteConfig, validatePublicSiteSetting, type PublicSiteConfig } from "./public-site-config.js";

@@ -17,6 +17,13 @@ module.exports = {
   extends: ["eslint:recommended", "plugin:@typescript-eslint/recommended", "prettier"],
   ignorePatterns: [
     ".next",
+    ".next-free",
+    ".next-production-check",
+    ".runtime",
+    ".pnpm-store",
+    ".pytest_cache",
+    ".codex-*",
+    "next-env.d.ts",
     "coverage",
     "dist",
     "node_modules",

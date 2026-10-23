@@ -89,9 +89,9 @@ export type ApiFetchOptions = {
 
 export const loginExpiredMessage = "登录状态已过期，请重新登录。";
 export const loginRequiredMessage = "请先登录后再操作。";
-export const upgradeRequiredTitle = "需要开通套餐";
+export const upgradeRequiredTitle = "预报暂时不可用";
 export const upgradeRequiredDefaultMessage =
-  "当前账户只能查看未来 24 小时基础天气。开通月卡、季卡或年卡后可查看完整摄影判断。";
+  "暂时无法获取预报，请稍后重新查询。本站所有预报免费开放。";
 export const captchaRequiredMessage = "请先完成人机验证后再提交。";
 export const validationFailedMessage = "提交内容有误，请检查后重试。";
 export const retryableServiceMessage = "服务暂时不可用，请稍后重试。";
@@ -308,7 +308,9 @@ export async function normalizeApiResponseError(
   const message =
     status === 429
       ? rateLimitedMessage(retryAfterSeconds)
-      : publicMessageFromPayload(record, fallback);
+      : kind === "upgrade_required"
+        ? upgradeRequiredDefaultMessage
+        : publicMessageFromPayload(record, fallback);
   const retryable = isRetryableApiError(status, code, kind);
 
   if (kind === "auth") {

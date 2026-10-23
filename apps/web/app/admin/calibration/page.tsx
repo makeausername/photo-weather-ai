@@ -1,12 +1,9 @@
-import { AdminCalibrationClient } from "../components/admin-calibration-client";
 import { AdminShell } from "../components/admin-shell";
+import { AdminCalibrationClient } from "../components/admin-calibration-client";
 
-export default function AdminCalibrationPage() {
+export default function AdminPage() {
   return (
-    <AdminShell
-      title="历史校准"
-      description="回放历史天气样本、标注真实结果，并按地点与拍摄目标统计规则命中情况。"
-    >
+    <AdminShell title="预报校准" description="记录实际观测，对照预报结果。">
       <AdminCalibrationClient />
     </AdminShell>
   );

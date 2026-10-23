@@ -15,8 +15,8 @@ describe("admin calibration UI", () => {
   it("renders the calibration page shell", () => {
     const html = renderToStaticMarkup(React.createElement(AdminCalibrationPage));
 
-    expect(html).toContain("历史校准");
-    expect(html).toContain("回放历史天气样本");
+    expect(html).toContain("预报校准");
+    expect(html).toContain("记录实际观测，对照预报结果。");
   });
 
   it("renders replay table, outcome form, and stats sections without secret wording", () => {

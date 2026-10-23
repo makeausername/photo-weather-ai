@@ -3,7 +3,10 @@ import { buildApiServer } from "./server.js";
 
 const port = Number(process.env.PORT ?? 4000);
 const host = process.env.HOST ?? "0.0.0.0";
-const dbClient = (await getPrismaClient()) as unknown as DatabaseClient;
+const dbClient =
+  process.env.DATABASE_ENABLED === "false"
+    ? undefined
+    : ((await getPrismaClient()) as unknown as DatabaseClient);
 const app = buildApiServer({ dbClient });
 
 async function shutdown(signal: NodeJS.Signals): Promise<void> {

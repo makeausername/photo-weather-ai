@@ -9,11 +9,13 @@ COPY packages ./packages
 
 ARG NEXT_PUBLIC_API_BASE_URL
 ARG PUBLIC_SITE_URL
+ARG API_BASE_URL=http://api:4000
+ENV API_BASE_URL=${API_BASE_URL}
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 ENV PUBLIC_SITE_URL=${PUBLIC_SITE_URL}
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @photo-weather/web build
+RUN pnpm --filter @photo-weather/web... build
 
 FROM node:22-alpine AS runner
 

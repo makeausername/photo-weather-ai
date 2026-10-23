@@ -8,8 +8,10 @@ __pycache__/
 *.py[cod]
 .env
 .env.local
+.env.local.*
 .env.production
 .env.production.bak.*
+.env.production.*
 deploy/Caddyfile
 deploy/Caddyfile.bak.*
 deploy/generated/
@@ -79,3 +81,10 @@ packages/db/.env
 apps/astro-service/.venv/
 apps/astro-service/Dockerfile.bak
 astro-result.json
+.next-free/
+deploy/certs/
+apps/web/.next-production-check/
+.pytest_cache/
+.codex-live-audit/
+.codex-verify-*.mts
+apps/web/.codex-verify-*.mts
