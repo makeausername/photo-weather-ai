@@ -50,7 +50,7 @@ compose run --rm --no-deps api corepack pnpm db:seed:free
 VERIFY_ADMIN_PASSWORD=true bash scripts/verify-admin-bootstrap.sh
 compose up -d --wait --wait-timeout 180 api web caddy
 compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-compose exec -T api node --input-type=module <<'JS'
+compose exec -T -w /app/packages/db api node --input-type=module <<'JS'
 import assert from 'node:assert/strict';
 import {PrismaClient} from '@prisma/client';
 const db=new PrismaClient();

@@ -41,7 +41,9 @@ fi
 
 docker_cmd() {
   if [[ -n "${SUDO}" ]]; then
-    sudo docker "$@"
+    # compose run -e NAME reads the invoking process environment. Preserve only
+    # these credentials across sudo without putting their values in argv.
+    sudo --preserve-env=ADMIN_EMAIL,ADMIN_INITIAL_PASSWORD_B64 docker "$@"
   else
     docker "$@"
   fi
