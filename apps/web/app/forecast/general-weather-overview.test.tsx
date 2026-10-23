@@ -104,7 +104,7 @@ describe("weather overview presentation", () => {
       />,
     );
   }
-  it("focuses on weather and links all three specialist pages with the original place and horizon", () => {
+  it("focuses on weather and links all three specialist pages with the original place and horizon", async () => {
     const html = render();
     expect(html).toContain("天气风险");
     expect(html).toContain("逐日天气");
@@ -123,7 +123,7 @@ describe("weather overview presentation", () => {
     for (const link of links) {
       expect(link.searchParams.get("horizon")).toBe(fixture.query.horizon);
       expect(link.searchParams.get("name")).toBe(fixture.query.name);
-      const page = ForecastPage({ searchParams: Object.fromEntries(link.searchParams) });
+      const page = await ForecastPage({ searchParams: Promise.resolve(Object.fromEntries(link.searchParams)) });
       expect(page.props.query).toMatchObject({
         target: link.searchParams.get("target"),
         horizon: fixture.query.horizon,

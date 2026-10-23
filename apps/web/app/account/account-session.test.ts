@@ -35,7 +35,7 @@ import {
   publicAccountMenuLinks,
 } from "../../components/public-account-entry";
 import { publicHeaderActionLabels, publicHeaderNavLabels } from "../../components/public-header";
-import AccountPage, { metadata as accountMetadata } from "./page";
+import AccountPage, { metadata as accountMetadata } from "./legacy-page";
 import {
   accountCenterSectionLabels,
   AccountCenterClient,
@@ -47,9 +47,9 @@ import {
 } from "./account-center-client";
 import { getStoredAdminTokens, sessionHasAdminAccess, storeAdminSession } from "../admin/admin-api";
 import AdminLoginPage from "../admin/login/page";
-import LoginPage, { metadata as loginMetadata } from "../login/page";
+import LoginPage, { metadata as loginMetadata } from "../login/legacy-page";
 import { publicLoginFormLabels } from "../login/login-form";
-import RegisterPage, { metadata as registerMetadata } from "../register/page";
+import RegisterPage, { metadata as registerMetadata } from "../register/legacy-page";
 import {
   buildRegisteredLoginHref,
   canSubmitRegisterForm,
@@ -253,9 +253,9 @@ function createStoredSession(overrides: Partial<Parameters<typeof storeAdminSess
 }
 
 describe("public account navigation", () => {
-  it("uses a unified account entry instead of top-level login or admin actions", () => {
-    expect(publicHeaderNavLabels).toEqual(["首页", "云海", "朝霞晚霞", "星空银河"]);
-    expect(publicHeaderActionLabels).toEqual(["账户"]);
+  it("keeps public navigation free of account and payment actions", () => {
+    expect(publicHeaderNavLabels).toEqual(["朝霞晚霞", "星空", "云海地图", "天气"]);
+    expect(publicHeaderActionLabels).toEqual([]);
     expect(publicHeaderActionLabels).not.toContain("开始分析");
     expect([...publicHeaderNavLabels, ...publicHeaderActionLabels]).not.toContain("管理后台");
     expect([...publicHeaderNavLabels, ...publicHeaderActionLabels]).not.toContain("登录");

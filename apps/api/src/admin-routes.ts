@@ -1267,6 +1267,7 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
 
     try {
       validateSettingValue(existingSetting.valueType, parsedBody.data.valueJson);
+      validatePublicSiteSetting(existingSetting.key, parsedBody.data.valueJson);
     } catch (error) {
       return sendError(reply, 400, "invalid_setting_value", (error as Error).message);
     }
@@ -2523,3 +2524,4 @@ export function registerAdminRoutes(app: FastifyInstance, options: AdminRoutesOp
     };
   });
 }
+import { validatePublicSiteSetting } from "@photo-weather/shared";

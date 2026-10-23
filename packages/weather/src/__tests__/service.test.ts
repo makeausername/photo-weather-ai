@@ -9,6 +9,8 @@ import {
   InMemoryWeatherCache,
   MeteoblueClient,
   MeteoblueRealProvider,
+  QWeatherClient,
+  QWeatherRealProvider,
   WeatherProviderError,
   type AirQuality,
   type CurrentWeather,
@@ -25,6 +27,33 @@ const coordinates: Coordinates = {
 };
 
 describe("WeatherIntelligenceService", () => {
+  it("retains Open-Meteo real weather when QWeather credentials are rejected", async () => {
+    const fetcher = vi.fn(
+      async () => new Response(JSON.stringify({ code: "401" }), { status: 401 }),
+    );
+    const qweather = new QWeatherRealProvider({
+      client: new QWeatherClient({
+        apiKey: "rejected-test-secret",
+        apiHost: "example.qweatherapi.com",
+        timeoutMs: 1000,
+        retryCount: 0,
+        language: "zh",
+        unit: "metric",
+        fetcher,
+      }),
+    });
+    const result = await new WeatherIntelligenceService({
+      providers: [qweather, new StaticProvider("open_meteo", "Open-Meteo", "real", hour())],
+    }).getWeatherDataBundle(requestInput());
+    expect(result.hourly.length).toBeGreaterThan(0);
+    expect(
+      result.sourceSummaries?.find((source) => source.providerCode === "open_meteo")?.status,
+    ).toBe("available");
+    expect(
+      result.sourceSummaries?.find((source) => source.providerCode === "qweather")?.status,
+    ).not.toBe("available");
+    expect(JSON.stringify(result)).not.toContain("rejected-test-secret");
+  });
   it("keeps observations coherent and does not fill them with another forecast hour", async () => {
     const provider = new StaticProvider(
       "qweather",

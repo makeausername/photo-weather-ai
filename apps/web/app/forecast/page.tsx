@@ -6,7 +6,7 @@ const missingWgs84CoordinateErrorMessage =
   "当前地点缺少有效 WGS84 坐标，无法计算日出日落、月相和银河窗口。";
 
 type ForecastPageProps = {
-  readonly searchParams: Record<string, string | readonly string[] | undefined>;
+  readonly searchParams: Promise<Record<string, string | readonly string[] | undefined>>;
 };
 
 function firstParam(value: string | readonly string[] | undefined): string | undefined {
@@ -30,7 +30,8 @@ function parseOptionalNumberParam(value: string | undefined): number | undefined
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export default function ForecastPage({ searchParams }: ForecastPageProps) {
+export default async function ForecastPage({ searchParams: pendingParams }: ForecastPageProps) {
+  const searchParams = await pendingParams;
   const latitudeWgs84 = parseNumberParam(
     firstParam(searchParams.latWgs84) ?? firstParam(searchParams.latitudeWgs84),
   );

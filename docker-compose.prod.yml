@@ -2,13 +2,15 @@ name: ${COMPOSE_PROJECT_NAME:-photo-weather-ai}
 
 services:
   caddy:
-    image: caddy:2.8-alpine
+    image: caddy:2.11.7-alpine
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/cloudflare.caddy:/etc/caddy/cloudflare.caddy:ro
+      - ./deploy/certs:/etc/caddy/certs:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
@@ -22,7 +24,8 @@ services:
         max-size: "10m"
         max-file: "5"
     networks:
-      - app
+      app:
+        ipv4_address: ${CADDY_INTERNAL_IP:-172.30.80.2}
 
   web:
     build:
@@ -30,13 +33,17 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+        API_BASE_URL: http://api:4000
         PUBLIC_SITE_URL: ${PUBLIC_SITE_URL}
         APP_GIT_SHA: ${APP_GIT_SHA:-unknown}
     restart: unless-stopped
-    env_file:
-      - .env.production
     environment:
-      DATABASE_URL: ${DATABASE_URL}
+      NODE_ENV: production
+      API_BASE_URL: http://api:4000
+      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL}
+      NEXT_PUBLIC_API_BASE_URL: /api/service
+      LOCAL_ADMIN_PREVIEW: "false"
+      LOCAL_MAP_PREVIEW: "false"
     expose:
       - "3000"
     depends_on:
@@ -71,6 +78,11 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       HOST: 0.0.0.0
       PORT: 4000
+      NODE_ENV: production
+      DATABASE_ENABLED: "true"
+      ADMIN_AUTH_BYPASS: "false"
+      API_TRUST_PROXY: "false"
+      API_TRUSTED_PROXIES: ${CADDY_INTERNAL_IP:-172.30.80.2}/32
       ASTRO_SERVICE_URL: http://astro-service:4100
     expose:
       - "4000"
@@ -82,8 +94,6 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      astro-service:
         condition: service_healthy
     healthcheck:
       test:
@@ -104,6 +114,7 @@ services:
       - app
 
   worker:
+    profiles: [legacy-worker]
     build:
       context: .
       dockerfile: apps/worker/Dockerfile
@@ -129,6 +140,7 @@ services:
       - app
 
   astro-service:
+    profiles: [astro]
     build:
       context: .
       dockerfile: apps/astro-service/Dockerfile
@@ -234,3 +246,8 @@ volumes:
 networks:
   app:
     driver: bridge
+    ipam:
+      config:
+        - subnet: ${APP_NETWORK_SUBNET:-172.30.80.0/24}
+          # Keep automatic assignments away from the fixed, trusted Caddy IP.
+          ip_range: ${APP_NETWORK_IP_RANGE:-172.30.80.128/25}

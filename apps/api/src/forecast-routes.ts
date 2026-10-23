@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readPublicSiteConfig } from "./public-site-routes.js";
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   buildForecastDateRange,
@@ -27,11 +28,7 @@ import {
   glowSolarAltitudeGeometryConfig,
 } from "@photo-weather/shared";
 import {
-  checkForecastAccess,
   getRuntimeProviderConfig,
-  resolveUserForecastAccess,
-  upgradeRequiredResponse,
-  type AuthenticatedPrincipal,
   type DatabaseClient,
   type ForecastAccessStatus,
 } from "@photo-weather/db";
@@ -56,7 +53,7 @@ import {
   type WeatherProvider,
 } from "@photo-weather/weather";
 import { z, type ZodError } from "zod";
-import { authenticateRequest, type AuthConfig } from "./auth-routes.js";
+import { type AuthConfig } from "./auth-routes.js";
 import type { WeatherDataServiceLike } from "./weather-provider.js";
 import {
   AstroServiceClient,
@@ -275,7 +272,7 @@ async function createForecastCalculateRuntimeCacheSalt(options: {
 }): Promise<string> {
   if (options.dbClient) {
     const providers = await Promise.all(
-      (["qweather", "open_meteo", "meteoblue"] as const).map(async (providerCode) => {
+      (["qweather", "open_meteo"] as const).map(async (providerCode) => {
         const provider = await getRuntimeProviderConfig("weather", providerCode, {
           client: options.dbClient,
         });
@@ -304,8 +301,6 @@ async function createForecastCalculateRuntimeCacheSalt(options: {
     openMeteoCustomerEndpoint: options.env.OPEN_METEO_CUSTOMER_ENDPOINT ?? null,
     openMeteoModelList: options.env.OPEN_METEO_MODEL_LIST ?? null,
     openMeteoModelPreference: options.env.OPEN_METEO_MODEL_PREFERENCE ?? null,
-    meteoblueBaseUrl: options.env.METEOBLUE_BASE_URL ?? null,
-    meteobluePackages: options.env.METEOBLUE_PACKAGES ?? options.env.METEOBLUE_PACKAGE_NAME ?? null,
   });
 }
 
@@ -317,28 +312,6 @@ function readRawForecastTarget(value: unknown): string | null {
   return typeof target === "string" && target.trim().length > 0 ? target.trim() : null;
 }
 
-async function resolveOptionalForecastPrincipal(input: {
-  readonly request: FastifyRequest;
-  readonly client?: DatabaseClient;
-  readonly authConfig?: AuthConfig;
-}): Promise<AuthenticatedPrincipal | null> {
-  if (!input.authConfig) {
-    return null;
-  }
-  if (!input.authConfig.adminAuthBypass && !input.request.headers.authorization) {
-    return null;
-  }
-  try {
-    return (await authenticateRequest(input.request, input.client, input.authConfig)).principal;
-  } catch (error) {
-    const authError = error as { readonly statusCode?: number };
-    if (authError.statusCode === 401 || authError.statusCode === 403) {
-      return null;
-    }
-    throw error;
-  }
-}
-
 async function resolveForecastAccessForRequest(input: {
   readonly request: FastifyRequest;
   readonly client?: DatabaseClient;
@@ -347,34 +320,17 @@ async function resolveForecastAccessForRequest(input: {
   readonly body: ForecastCalculateRequest;
   readonly reply: FastifyReply;
 }): Promise<ForecastAccessStatus | null> {
-  const serverNow = new Date();
-  const forecastRange = buildForecastDateRange(input.body.horizon, {
-    timezone: input.body.timezone,
-    now: input.body.startDateTime ?? serverNow,
-  });
-  const principal = await resolveOptionalForecastPrincipal({
-    request: input.request,
-    client: input.client,
-    authConfig: input.authConfig,
-  });
-  const access = await resolveUserForecastAccess({
-    principal,
-    client: input.client,
-    env: input.env,
-    now: serverNow,
-  });
-  const decision = checkForecastAccess({
-    access,
-    target: input.body.target,
-    forecastStart: new Date(forecastRange.forecastStart),
-    forecastEnd: new Date(forecastRange.forecastEnd),
-    now: serverNow,
-  });
-  if (!decision.allowed) {
-    input.reply.status(decision.statusCode ?? 402).send(upgradeRequiredResponse(access));
-    return null;
-  }
-  return access;
+  // Keep validation and rate limits, but never require an account or subscription.
+  void input;
+  return {
+    userId: null,
+    tier: "guest",
+    reason: "guest",
+    hasFullAccess: true,
+    maxForecastHours: 168,
+    allowedTargets: ["general", "cloud_sea", "glow", "astro"],
+    canViewFullHistory: true,
+  };
 }
 
 type ForecastCalculationOptions = {
@@ -581,7 +537,8 @@ export function registerForecastRoutes(
       return sendZodError(reply, parsedBody.error);
     }
 
-    const { timezone, startDateTime, ...query } = parsedBody.data;
+    const { timezone: requestedTimezone, startDateTime, ...query } = parsedBody.data;
+    const timezone = requestedTimezone ?? (await readPublicSiteConfig(options.dbClient)).timezone;
     let access: ForecastAccessStatus | null;
     try {
       access = await resolveForecastAccessForRequest({
@@ -609,7 +566,7 @@ export function registerForecastRoutes(
       dbClient: options.dbClient,
       env,
     });
-    const cacheKey = createForecastCalculateCacheKey(parsedBody.data, {
+    const cacheKey = createForecastCalculateCacheKey({ ...parsedBody.data, timezone }, {
       runtimeCacheSalt,
       rawTarget: readRawForecastTarget(request.body),
       access,
@@ -1137,6 +1094,7 @@ async function attachCalibrationHint(
   query: ForecastQueryInput,
   dbClient: DatabaseClient | undefined,
 ): Promise<ForecastCalculationResult> {
+  if (!dbClient) return result;
   const locationKey = buildCalibrationLocationKey({
     spotId: query.photoSpotId,
     locationId: query.locationId,

@@ -1,12 +1,9 @@
-import { AdminProvidersClient } from "../../components/admin-providers-client";
 import { AdminShell } from "../../components/admin-shell";
+import { AdminProvidersClient } from "../../components/admin-providers-client";
 
-export default function AdminWeatherProvidersPage() {
+export default function AdminPage() {
   return (
-    <AdminShell
-      title="天气数据"
-      description="管理和风天气、Open-Meteo、meteoblue 等天气数据源、逐小时预报和云层分层配置。"
-    >
+    <AdminShell title="天气数据" description="配置和风天气与 Open-Meteo，查看连接状态。">
       <AdminProvidersClient providerType="weather" />
     </AdminShell>
   );

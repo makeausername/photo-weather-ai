@@ -3,3 +3,4 @@ export * from "./coordinates.js";
 export * from "./mock-provider.js";
 export * from "./place.js";
 export * from "./types.js";
+export { OpenMeteoGeoProvider } from "./open-meteo-provider.js";

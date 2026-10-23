@@ -61,7 +61,7 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background px-4 py-6 text-foreground sm:px-8 lg:px-12">
+    <main className="admin-workspace aw-login px-4 py-6 sm:px-8">
       <div className="mx-auto flex w-full max-w-[1180px] items-center justify-between gap-3">
         <a href="/" className="flex items-center gap-3">
           <img src="/brand-mark.svg" alt="" className="h-10 w-10 shrink-0" aria-hidden="true" />
@@ -72,24 +72,7 @@ export default function AdminLoginPage() {
         </a>
       </div>
 
-      <section className="mx-auto grid min-h-[calc(100vh-6rem)] w-full max-w-[1180px] gap-10 py-10 lg:grid-cols-[minmax(0,1fr)_440px] lg:items-center">
-        <div className="hidden min-w-0 lg:block">
-          <p className="text-xs font-bold tracking-[0.12em] text-primary">后台运营</p>
-          <h2 className="mt-4 max-w-2xl text-[42px] font-bold leading-tight tracking-[-0.03em] text-foreground">
-            管理服务商配置与历史校准
-          </h2>
-          <p className="mt-4 max-w-2xl text-base leading-8 text-muted-foreground">
-            控制台用于维护逐光天气的服务商配置、历史校准和审计记录。密钥保存后仅展示脱敏结果。
-          </p>
-          <div className="mt-6 grid max-w-2xl gap-3 md:grid-cols-3">
-            {["历史校准", "服务商配置", "审计日志"].map((item) => (
-              <div key={item} className="rounded-xl border border-border bg-card px-4 py-3 shadow-panel">
-                <p className="text-sm font-semibold text-card-foreground">{item}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
+      <section className="mx-auto grid w-full max-w-[440px] py-12">
         <Card className="w-full p-6 shadow-lift sm:p-8">
           <div className="mb-6">
             <div className="mb-4 inline-flex rounded-full border border-border bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
@@ -97,7 +80,7 @@ export default function AdminLoginPage() {
             </div>
             <h1 className="text-[28px] font-bold tracking-[-0.02em] text-foreground">后台登录</h1>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              请使用初始化脚本创建的超级管理员账号登录。
+              使用管理员账号登录。前台免费开放，管理操作仍需验证。
             </p>
           </div>
           <form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>

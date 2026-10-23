@@ -5,6 +5,9 @@
   "packageManager": "pnpm@10.33.2",
   "type": "module",
   "scripts": {
+    "setup:free-local": "node scripts/free-local-db.mjs setup",
+    "stop:free-db": "node scripts/free-local-db.mjs stop",
+    "dev:free": "node scripts/dev-free-local.mjs",
     "dev": "pnpm -r --parallel --if-present dev",
     "dev:astro": "python -m uvicorn app.main:app --host 127.0.0.1 --port 4100 --app-dir apps/astro-service",
     "dev:local": "powershell -ExecutionPolicy Bypass -File scripts/dev-local.ps1",
@@ -27,6 +30,7 @@
     "db:migrate": "pnpm --filter @photo-weather/db db:migrate",
     "db:push": "pnpm --filter @photo-weather/db db:push",
     "db:seed": "pnpm --filter @photo-weather/db db:seed",
+    "db:seed:free": "pnpm --filter @photo-weather/db db:seed:free",
     "db:studio": "pnpm --filter @photo-weather/db db:studio",
     "bootstrap:admin": "pnpm --filter @photo-weather/db bootstrap:admin",
     "create-admin": "pnpm --filter @photo-weather/db create-admin",
@@ -40,8 +44,8 @@
   "devDependencies": {
     "@eslint/js": "8.57.0",
     "@types/node": "20.12.12",
-    "@types/react": "18.2.79",
-    "@types/react-dom": "18.2.25",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "@typescript-eslint/eslint-plugin": "7.18.0",
     "@typescript-eslint/parser": "7.18.0",
     "eslint": "8.57.0",
@@ -50,5 +54,19 @@
     "tsx": "4.10.5",
     "typescript": "5.4.5",
     "vitest": "1.6.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "form-data@<2.5.6": "2.5.6",
+      "fast-xml-parser@<4.5.5": "4.5.5",
+      "postcss@<8.5.31": "8.5.31",
+      "nanoid@>=3 <3.3.18": "3.3.18",
+      "source-map-js@<1.2.2": "1.2.2",
+      "fast-uri@>=2 <2.4.7": "2.4.7",
+      "fast-uri@>=3 <3.1.8": "3.1.8",
+      "proxy-addr@<2.0.8": "2.0.8",
+      "ajv@>=8 <8.18.0": "8.18.0",
+      "qs@<6.16.0": "6.16.0"
+    }
   }
 }

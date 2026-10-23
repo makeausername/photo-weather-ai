@@ -831,73 +831,24 @@ describe("forecast query validation route", () => {
     });
   });
 
-  it("allows guest 24h general forecast but rejects full modules before provider work", async () => {
-    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
-
-    const allowed = await app.inject({
-      method: "POST",
-      url: "/forecast/calculate",
-      payload: {
-        ...validPayload,
-        target: "general",
-        horizon: "24h",
-      },
-    });
-
-    expect(allowed.statusCode).toBe(200);
-
-    await app.close();
-    const getCurrentWeather = vi.fn();
-    const getForecast = vi.fn();
-    const weatherProvider = {
-      getCurrentWeather,
-      getForecast,
-    } as unknown as WeatherProvider;
-    app = buildApiServer({ authConfig: testAuthConfig, weatherProvider, logger: false });
-
-    const rejected = await app.inject({
-      method: "POST",
-      url: "/forecast/calculate",
-      payload: validPayload,
-    });
-
-    expect(rejected.statusCode).toBe(402);
-    expect(rejected.json()).toMatchObject({
-      error: "upgrade_required",
-      required: {
-        feature: "full_forecast_access",
-        maxForecastHours: 168,
-      },
-    });
-    expect(getCurrentWeather).not.toHaveBeenCalled();
-    expect(getForecast).not.toHaveBeenCalled();
-  });
-
-  it("rejects guest 24h requests shifted into the future before provider work", async () => {
-    const getCurrentWeather = vi.fn();
-    const getForecast = vi.fn();
-    const weatherProvider = {
-      getCurrentWeather,
-      getForecast,
-    } as unknown as WeatherProvider;
-    app = buildApiServer({ authConfig: testAuthConfig, weatherProvider, logger: false });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/forecast/calculate",
-      payload: {
-        ...validPayload,
-        target: "general",
-        horizon: "24h",
-        startDateTime: "2099-01-01T00:00:00+08:00",
-      },
-    });
-
-    expect(response.statusCode).toBe(402);
-    expect(response.json()).toMatchObject({ error: "upgrade_required" });
-    expect(getCurrentWeather).not.toHaveBeenCalled();
-    expect(getForecast).not.toHaveBeenCalled();
-  });
+  it.each(["general", "cloud_sea", "glow", "astro"] as const)(
+    "opens 7-day %s forecasts without authentication",
+    async (target) => {
+      app = buildApiServer({
+        authConfig: testAuthConfig,
+        logger: false,
+        env: { ...process.env, ENABLE_ASTRO_SERVICE: "false" },
+      });
+      const response = await app.inject({
+        method: "POST",
+        url: "/forecast/calculate",
+        payload: { ...validPayload, target, horizon: "7d" },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ target, calendarBasis: { horizonHours: 168 } });
+      expect(response.json().professionalHourlyData).toHaveLength(168);
+    },
+  );
 
   it("returns 404 for the retired AI explanation endpoint before provider work", async () => {
     const getCurrentWeather = vi.fn();
@@ -1498,12 +1449,6 @@ describe("forecast query validation route", () => {
           success: true,
           status: "available",
         }),
-        expect.objectContaining({
-          providerCode: "meteoblue",
-          attempted: true,
-          success: true,
-          status: "available",
-        }),
       ]),
     );
     for (const summary of body.weatherSourceSummaries.filter(
@@ -1515,7 +1460,6 @@ describe("forecast query validation route", () => {
       expect(summary.latencyMs).toEqual(expect.any(Number));
     }
     expect(body.weatherFusionSummary).toMatchObject({
-      professionalSourceStatus: "专业增强：meteoblue 通过",
       confidenceLevel: expect.stringMatching(/^(medium|high)$/),
       confidenceByTarget: expect.objectContaining({
         general: expect.any(Number),
@@ -1540,35 +1484,19 @@ describe("forecast query validation route", () => {
     expect(body.weatherFusionSummary.aerosolDiagnostics.aerosolHoursAvailable).toBeGreaterThan(0);
     expect(body.weatherFusionSummary.aerosolDiagnostics.aerosolSuppressedHours).toBeGreaterThan(0);
     expect(body.weatherFusionSummary.aerosolConflictFlagsCount).toBeGreaterThan(0);
-    expect(body.weatherProviderRuntimeSnapshot).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          providerCode: "meteoblue",
-          enabled: true,
-          realCallEnabled: true,
-          apiKeyPresent: true,
-          baseUrl: "https://my.meteoblue.com",
-          packages: ["basic-1h", "clouds-1h"],
-          parserVersion: expect.stringContaining("meteoblue-data1h"),
-        }),
-      ]),
-    );
     expect(
-      body.weatherSourceSummaries.find(
-        (summary: { providerCode: string }) => summary.providerCode === "meteoblue",
+      body.weatherProviderRuntimeSnapshot.every((source: { providerCode: string }) =>
+        ["qweather", "open_meteo"].includes(source.providerCode),
       ),
-    ).toMatchObject({
-      providerCode: "meteoblue",
-      attempted: true,
-      success: true,
-      status: "available",
-      statusCode: 200,
-      topLevelKeys: expect.arrayContaining(["metadata", "data_1h", "data_day"]),
-      packages: ["basic-1h", "clouds-1h"],
-      extractedFields: expect.arrayContaining(["temperature", "humidity", "cloudTotal"]),
-      cacheHit: false,
-      latencyMs: expect.any(Number),
-    });
+    ).toBe(true);
+    expect(
+      body.weatherSourceSummaries.some(
+        (source: { providerCode: string }) => source.providerCode === "meteoblue",
+      ),
+    ).toBe(false);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("meteoblue.com"))).toBe(
+      false,
+    );
     expect(body.currentWeather).toMatchObject({
       dataKind: "observation",
       observedAt: "2026-05-20T00:00:00+08:00",
@@ -1898,19 +1826,11 @@ describe("forecast query validation route", () => {
       body.weatherSourceSummaries.find(
         (summary: { providerCode: string }) => summary.providerCode === "meteoblue",
       ),
-    ).toMatchObject({
-      attempted: true,
-      success: false,
-      errorCategory: "parse_error",
-      messageZh: "meteoblue 返回中未找到 data_1h。",
-      topLevelKeys: ["metadata"],
-      packages: ["basic-1h", "clouds-1h"],
-      extractedFields: [],
-    });
+    ).toBeUndefined();
     expect(JSON.stringify(body)).not.toContain("meteoblue-secret");
   });
 
-  it("does not keep a stale meteoblue source after provider runtime config changes", async () => {
+  it("never enables meteoblue even after legacy config is updated", async () => {
     const { client, state } = await createFakeDatabaseClient();
     configureRealWeatherProviders(state);
     const meteoblueProvider = state.providers.get("weather:meteoblue");
@@ -2003,11 +1923,7 @@ describe("forecast query validation route", () => {
       firstBody.weatherSourceSummaries.find(
         (summary: { providerCode: string }) => summary.providerCode === "meteoblue",
       ),
-    ).toMatchObject({
-      attempted: true,
-      success: false,
-      errorCategory: "invalid_key",
-    });
+    ).toBeUndefined();
 
     state.providers.set("weather:meteoblue", {
       ...meteoblueProvider,
@@ -2035,23 +1951,16 @@ describe("forecast query validation route", () => {
     const secondBody = secondResponse.json();
 
     expect(secondResponse.statusCode).toBe(200);
-    expect(meteoblueCalls).toBeGreaterThanOrEqual(2);
+    expect(meteoblueCalls).toBe(0);
     expect(
       fetchMock.mock.calls.some((call) => String(call[0]).includes("apikey=new-meteoblue-secret")),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       secondBody.weatherSourceSummaries.find(
         (summary: { providerCode: string }) => summary.providerCode === "meteoblue",
       ),
-    ).toMatchObject({
-      attempted: true,
-      success: true,
-      status: "available",
-      cacheHit: false,
-    });
-    expect(secondBody.weatherFusionSummary).toMatchObject({
-      professionalSourceStatus: "专业增强：meteoblue 通过",
-    });
+    ).toBeUndefined();
+    expect(secondBody.weatherFusionSummary).toMatchObject({});
     expect(JSON.stringify(secondBody)).not.toContain("new-meteoblue-secret");
     expect(JSON.stringify(secondBody)).not.toContain("old-meteoblue-secret");
   });

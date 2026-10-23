@@ -1,9 +1,9 @@
-import { AdminProvidersClient } from "../../components/admin-providers-client";
 import { AdminShell } from "../../components/admin-shell";
+import { AdminProvidersClient } from "../../components/admin-providers-client";
 
-export default function AdminGeoProvidersPage() {
+export default function AdminPage() {
   return (
-    <AdminShell title="地图服务" description="管理高德地图的地点搜索、地理编码和坐标转换配置。">
+    <AdminShell title="高德地图" description="配置地图底图、地点搜索和坐标服务。">
       <AdminProvidersClient providerType="geo" />
     </AdminShell>
   );

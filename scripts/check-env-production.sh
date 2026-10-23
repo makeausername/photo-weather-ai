@@ -44,4 +44,5 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
   printf '%s=%s\n' "${key}" "$(mask_value "${value}")"
 done < "${ENV_FILE}"
 
-exit "${status}"
+if [[ "${status}" -ne 0 ]]; then exit "${status}"; fi
+"${PYTHON_BIN:-python3}" "$(dirname -- "${BASH_SOURCE[0]}")/validate-production-env.py" "${ENV_FILE}"

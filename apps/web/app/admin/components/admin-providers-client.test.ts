@@ -2,7 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { getProviderModuleLayout } from "./admin-providers-client";
+import { configFieldValueToInput, getPresetFields, getProviderModuleLayout } from "./admin-providers-client";
+import { previewAdminRequest } from "../../admin-preview/preview-data";
+import type { SafeProviderConfig } from "../admin-api";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(resolve(__dirname, "admin-providers-client.tsx"), "utf8");
@@ -50,6 +52,19 @@ const providerDetailSource = sourceBetween(
 );
 
 describe("admin provider module source", () => {
+  it("exposes free Open-Meteo settings without customer credentials", async () => {
+    const { providers } = await previewAdminRequest<{ providers: SafeProviderConfig[] }>("/admin/providers");
+    const openMeteo = providers.find((p) => p.providerCode === "open_meteo")!;
+    const fields = getPresetFields(openMeteo, "configJson").map((f) => f.key);
+    expect(fields).toContain("modelList");
+    expect(fields).not.toContain("customerEndpoint");
+    expect(fields).not.toContain("mode");
+    expect(getPresetFields(openMeteo, "secretJson")).toEqual([]);
+    const modelList = getPresetFields(openMeteo, "configJson").find((field) => field.key === "modelList")!;
+    expect(configFieldValueToInput(modelList, ["best_match", "gfs_seamless"])).toBe("best_match,gfs_seamless");
+    const qweather = providers.find((p) => p.providerCode === "qweather")!;
+    expect(getPresetFields(qweather, "secretJson").length).toBeGreaterThan(0);
+  });
   it("classifies provider layouts by item count", () => {
     expect(getProviderModuleLayout(0)).toBe("empty");
     expect(getProviderModuleLayout(1)).toBe("single-detail");
@@ -58,40 +73,17 @@ describe("admin provider module source", () => {
     expect(getProviderModuleLayout(4)).toBe("side");
   });
 
-  it("promotes provider categories into the AdminShell sidebar", () => {
-    for (const snippet of [
-      '{ href: "/admin", label: "控制台" }',
-      '{ href: "/admin/users", label: "用户管理" }',
-      '{ href: "/admin/orders", label: "订单管理" }',
-      '{ href: "/admin/products", label: "套餐定价" }',
-      '{ href: "/admin/settings", label: "系统设置" }',
-      '{ href: "/admin/providers/geo", label: "地图服务" }',
-      '{ href: "/admin/providers/weather", label: "天气数据" }',
-      '{ href: "/admin/providers/billing", label: "支付收款" }',
-      '{ href: "/admin/providers/notification", label: "邮箱短信" }',
-      '{ href: "/admin/providers/captcha", label: "人机验证" }',
-      '{ href: "/admin/providers/storage", label: "对象存储" }',
-      '{ href: "/admin/providers/cdn", label: "CDN加速" }',
-      '{ href: "/admin/calibration", label: "历史校准" }',
-      '{ href: "/admin/audit", label: "审计日志" }',
-    ]) {
-      expect(adminShellSource).toContain(snippet);
-    }
-
-    expect(adminShellSource).toContain('label: "总览"');
-    expect(adminShellSource).toContain('label: "运营"');
-    expect(adminShellSource).toContain('label: "配置"');
-    expect(adminShellSource).toContain('label: "运维"');
-    expect(adminShellSource).not.toContain('{ href: "/admin/providers", label: "服务商配置" }');
-    expect(adminShellSource).not.toContain("/admin/providers/ai");
+  it("keeps six focused modules and retires unused provider routes", () => {
+    for (const label of ["运行总览", "天气数据", "高德地图", "网站设置", "预报校准", "操作日志"]) expect(adminShellSource).toContain(`label: "${label}"`);
+    for (const label of ["用户管理", "订单管理", "套餐定价", "支付收款"]) expect(adminShellSource).not.toContain(`label: "${label}"`);
+    for (const route of ["billing", "notification", "captcha", "storage", "cdn"]) expect(readProviderPage(route)).toContain('redirect("/admin")');
   });
 
-  it("keeps the AdminShell sidebar wide enough for first-class module labels", () => {
-    expect(adminShellSource).toContain("lg:grid-cols-[272px_minmax(0,1fr)]");
-    expect(adminShellSource).toContain("xl:grid-cols-[288px_minmax(0,1fr)]");
-    expect(adminShellSource).toContain("lg:w-full lg:min-w-0 lg:whitespace-normal");
-    expect(adminShellSource).not.toContain("lg:grid-cols-[228px_minmax(0,1fr)]");
-    expect(adminShellSource).not.toContain("truncate");
+  it("uses a compact sidebar and a complete mobile module grid", () => {
+    const css = readFileSync(resolve(__dirname, "../../admin-workspace.css"), "utf8");
+    expect(adminShellSource).toContain('aria-label="移动端后台导航"');
+    expect(css).toMatch(/grid-template-columns:\s*224px minmax\(0,\s*1fr\)/);
+    expect(css).toMatch(/grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   });
 
   it("redirects the retired provider mega page to the weather module", () => {
@@ -104,45 +96,15 @@ describe("admin provider module source", () => {
     const modulePages = [
       {
         route: "geo",
-        title: 'title="地图服务"',
-        description: "管理高德地图的地点搜索、地理编码和坐标转换配置。",
+        title: 'title="高德地图"',
+        description: "配置地图底图、地点搜索和坐标服务。",
         providerType: 'providerType="geo"',
       },
       {
         route: "weather",
         title: 'title="天气数据"',
-        description: "管理和风天气、Open-Meteo、meteoblue 等天气数据源、逐小时预报和云层分层配置。",
+        description: "配置和风天气与 Open-Meteo，查看连接状态。",
         providerType: 'providerType="weather"',
-      },
-      {
-        route: "billing",
-        title: 'title="支付收款"',
-        description: "管理微信支付、支付宝、订单回调、证书、密钥和验签配置。",
-        providerType: 'providerType="billing"',
-      },
-      {
-        route: "notification",
-        title: 'title="邮箱短信"',
-        description: "管理邮箱验证码和短信验证码服务配置。",
-        providerType: 'providerType="notification"',
-      },
-      {
-        route: "captcha",
-        title: 'title="人机验证"',
-        description: "管理腾讯云验证码，用于登录、注册发送验证码和账号绑定前的人机校验。",
-        providerType: 'providerType="captcha"',
-      },
-      {
-        route: "storage",
-        title: 'title="对象存储"',
-        description: "管理本地存储、阿里云 OSS、腾讯云 COS 等报告与文件存储配置。",
-        providerType: 'providerType="storage"',
-      },
-      {
-        route: "cdn",
-        title: 'title="CDN加速"',
-        description: "管理阿里云 CDN、腾讯云 CDN 的缓存刷新、预热、域名和密钥配置。",
-        providerType: 'providerType="cdn"',
       },
     ];
 

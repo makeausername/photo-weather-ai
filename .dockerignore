@@ -10,6 +10,13 @@ coverage
 logs
 backups
 .runtime
+.codex-live-audit
+**/.codex-verify-*.mts
+.pytest_cache
+.pnpm-store
+.next-free
+.next-production-check
+deploy/certs
 deploy/Caddyfile
 deploy/generated
 apps/astro-service/.venv

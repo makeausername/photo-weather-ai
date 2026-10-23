@@ -7,6 +7,8 @@ import {
 } from "./admin/admin-api";
 import {
   optionalAuthApiFetch,
+  normalizeApiResponseError,
+  upgradeRequiredDefaultMessage,
   requiredAuthApiFetch,
   retryAfterSecondsFromResponse,
 } from "../components/api-client";
@@ -233,5 +235,17 @@ describe("shared API client session refresh", () => {
       "http://localhost:4000/auth/refresh",
       "http://localhost:4000/forecast/calculate",
     ]);
+  });
+});
+
+// Old API responses must not restore the retired paid-entry UI.
+describe("free edition error messages", () => {
+  it("replaces legacy purchase prompts while retaining the diagnostic code", async () => {
+    const error = await normalizeApiResponseError(new Response(JSON.stringify({
+      error: "upgrade_required", messageZh: "开通会员后查看完整预报",
+    }), { status: 403 }));
+    expect(error.code).toBe("upgrade_required");
+    expect(error.publicMessage).toBe(upgradeRequiredDefaultMessage);
+    expect(error.message).not.toMatch(/会员|套餐|注册|付费/);
   });
 });

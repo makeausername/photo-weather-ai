@@ -4,7 +4,7 @@ import { validateCoordinates } from "@photo-weather/geo";
 import type { GeoPlaceResult, GeoProvider } from "@photo-weather/geo";
 import { z } from "zod";
 
-type PublicPlaceSearchSource = "amap" | "mock";
+type PublicPlaceSearchSource = "amap" | "mock" | "open_meteo";
 
 export const publicPlaceSearchUnavailableMessage =
   "地点搜索暂时不可用，请稍后重试，或直接输入地点名称与 WGS84 坐标。";
@@ -238,7 +238,8 @@ function providerToSearchResult(place: GeoPlaceResult): PublicPlaceSearchResult 
     province: place.province ?? null,
     city: place.city ?? null,
     district: place.district ?? null,
-    source: place.source === "mock" ? "mock" : "amap",
+    source:
+      place.source === "open_meteo" ? "open_meteo" : place.source === "mock" ? "mock" : "amap",
     locationType: place.locationType ?? "scenic_area",
     latitudeGcj02: place.latitudeGcj02,
     longitudeGcj02: place.longitudeGcj02,

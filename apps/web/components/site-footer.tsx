@@ -1,54 +1,32 @@
+"use client";
 import Link from "next/link";
+import { usePublicSiteSettings } from "./public-site-settings";
 import { siteConfig } from "../site-config";
-
-const footerLinks = [
-  { href: "/pricing", label: "定价" },
-  { href: "/help", label: "帮助" },
-  { href: "/privacy", label: "隐私" },
-  { href: "/terms", label: "条款" },
-  { href: "/disclaimer", label: "免责声明" },
-] as const;
-
 export function SiteFooter() {
-  const { footer, legal } = siteConfig;
-
+  const { config } = usePublicSiteSettings();
   return (
-    <footer
-      id="site-footer"
-      aria-label="逐光天气页脚"
-      className="border-t border-border bg-card/70 text-muted-foreground"
-    >
-      <div className="mx-auto flex w-full max-w-[1440px] min-w-0 flex-wrap items-center justify-center gap-x-3 gap-y-2 px-[clamp(16px,4vw,48px)] py-4 text-center text-xs leading-5 sm:py-5 sm:text-sm">
-        <span>{footer.copyright}</span>
-        <span aria-hidden="true" className="hidden text-muted-foreground/70 min-[420px]:inline">
-          •
-        </span>
-        <nav
-          aria-label="帮助与法律信息"
-          className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1"
-        >
-          {footerLinks.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="inline-flex min-h-11 items-center rounded-md px-2 font-medium transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        <span aria-hidden="true" className="hidden text-muted-foreground/70 min-[760px]:inline">
-          •
-        </span>
-        <a
-          href={legal.icpUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex max-w-full rounded-md px-1 py-0.5 font-medium transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-        >
-          {legal.icpNumber}
+    <footer id="site-footer" className="pw-footer" aria-label={`${config.name}页脚`}>
+      <span>{config.name} · 免费开放，无广告、无订阅</span>
+      <span>
+        天气数据：
+        <a href="https://www.qweather.com/" target="_blank" rel="noreferrer">
+          和风天气
+        </a>{" "}
+        /{" "}
+        <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">
+          Open-Meteo
+        </a>{" "}
+        · 地名：GeoNames
+      </span>
+      <nav aria-label="网站说明">
+        <Link href="/help">使用说明</Link>
+        <Link href="/privacy">隐私</Link>
+        <Link href="/terms">条款</Link>
+        <Link href="/disclaimer">预报说明</Link>
+        <a href={siteConfig.legal.icpUrl} target="_blank" rel="noreferrer">
+          {siteConfig.legal.icpNumber}
         </a>
-      </div>
+      </nav>
     </footer>
   );
 }

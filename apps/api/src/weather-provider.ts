@@ -44,7 +44,6 @@ import {
   type ForecastProviderRuntimeSnapshot,
 } from "@photo-weather/shared";
 
-const meteoblueParserVersion = "meteoblue-data1h-time-v3";
 export const openMeteoForecastCloudLayerDefaultModelList =
   "best_match,gfs_seamless,gfs_global,icon_global,cma_grapes_global,ecmwf_ifs025";
 const openMeteoForecastModelListDefaultLimit = 6;
@@ -159,7 +158,11 @@ export class RuntimeWeatherDataService implements WeatherDataServiceLike {
     }).getWeatherDataBundle(input);
 
     const resolvedBundle = appendRuntimeResolution(bundle, resolution);
-    logWeatherProviderParticipation(this.options.logger, resolvedBundle, resolution.runtimeSnapshot);
+    logWeatherProviderParticipation(
+      this.options.logger,
+      resolvedBundle,
+      resolution.runtimeSnapshot,
+    );
     return resolvedBundle;
   }
 }
@@ -293,7 +296,13 @@ function readWeatherRealCallEnabled(
   const { configJson } = readSecretAndConfig(provider);
   return (
     readBoolean(configJson.realCallEnabled) ??
-    (env.WEATHER_PROVIDER === providerCode && env.WEATHER_PROVIDER_MODE === "real")
+    (providerCode === "open_meteo"
+      ? env.OPEN_METEO_ENABLED !== "false"
+      : Boolean(
+          readQWeatherApiKey(provider, env) &&
+            (readConfiguredHost(configJson, ["apiHost", "baseUrl", "apiBaseUrl"]).value ??
+              readEnvQWeatherApiHost(env)),
+        ))
   );
 }
 
@@ -478,7 +487,7 @@ export function resolveQWeatherRuntimeConfig(
   const realCallEnabled = readWeatherRealCallEnabled(provider, env, "qweather");
 
   return {
-    enabled: provider?.enabled ?? false,
+    enabled: provider?.enabled ?? Boolean(readQWeatherApiKey(provider, env)),
     realCallEnabled,
     priority: provider?.priority ?? 0,
     configUpdatedAt: provider?.updatedAt.toISOString(),
@@ -538,7 +547,7 @@ export function resolveOpenMeteoRuntimeConfig(
   });
 
   return {
-    enabled: provider?.enabled ?? readEnvBoolean(env.OPEN_METEO_ENABLED) ?? false,
+    enabled: provider?.enabled ?? readEnvBoolean(env.OPEN_METEO_ENABLED) ?? env.NODE_ENV !== "test",
     realCallEnabled,
     priority: provider?.priority ?? 0,
     configUpdatedAt: provider?.updatedAt.toISOString(),
@@ -711,9 +720,11 @@ export async function readRuntimeQWeatherConfig(
   options: WeatherProviderRuntimeOptions = {},
 ): Promise<RuntimeQWeatherConfig> {
   const env = options.env ?? process.env;
-  const provider = await getRuntimeProviderConfig("weather", "qweather", {
-    client: options.dbClient,
-  });
+  const provider = options.dbClient
+    ? await getRuntimeProviderConfig("weather", "qweather", {
+        client: options.dbClient,
+      })
+    : null;
   const resolved = resolveQWeatherRuntimeConfig(provider, env);
 
   return {
@@ -728,9 +739,11 @@ export async function readRuntimeOpenMeteoConfig(
   options: WeatherProviderRuntimeOptions = {},
 ): Promise<RuntimeOpenMeteoConfig> {
   const env = options.env ?? process.env;
-  const provider = await getRuntimeProviderConfig("weather", "open_meteo", {
-    client: options.dbClient,
-  });
+  const provider = options.dbClient
+    ? await getRuntimeProviderConfig("weather", "open_meteo", {
+        client: options.dbClient,
+      })
+    : null;
   const resolved = resolveOpenMeteoRuntimeConfig(provider, env);
 
   return {
@@ -796,10 +809,9 @@ export type RuntimeWeatherProviderResolution = {
 export async function resolveRuntimeWeatherProviders(
   options: WeatherProviderRuntimeOptions,
 ): Promise<RuntimeWeatherProviderResolution> {
-  const [qweather, openMeteo, meteoblue] = await Promise.all([
+  const [qweather, openMeteo] = await Promise.all([
     readRuntimeQWeatherConfig(options),
     readRuntimeOpenMeteoConfig(options),
-    readRuntimeMeteoblueConfig(options),
   ]);
   const providers: WeatherProvider[] = [];
   const sourceSummaries: WeatherSourceSummary[] = [];
@@ -892,25 +904,7 @@ export async function resolveRuntimeWeatherProviders(
     }
   }
 
-  if (meteoblue.enabled) {
-    if (meteoblue.realCallEnabled && meteoblue.apiKey) {
-      providers.push(createMeteoblueRealProviderFromRuntimeConfig(meteoblue));
-    } else {
-      sourceSummaries.push(
-        skippedSourceSummary({
-          providerCode: "meteoblue",
-          providerLabelZh: "meteoblue",
-          realCallEnabled: meteoblue.realCallEnabled,
-          messageZh: meteoblue.realCallEnabled
-            ? "meteoblue 缺少 API Key，未发起真实请求。"
-            : "meteoblue 真实调用未启用，未参与融合。",
-          errorCategory: meteoblue.realCallEnabled ? "missing_config" : "skipped",
-        }),
-      );
-    }
-  }
-
-  const runtimeSnapshot = buildRuntimeSnapshot(qweather, openMeteo, meteoblue);
+  const runtimeSnapshot = buildRuntimeSnapshot(qweather, openMeteo);
   const testOnlyProviders =
     providers.length === 0 && (options.env?.NODE_ENV ?? process.env.NODE_ENV) === "test"
       ? [new MockWeatherProvider()]
@@ -926,7 +920,6 @@ export async function resolveRuntimeWeatherProviders(
 function buildRuntimeSnapshot(
   qweather: RuntimeQWeatherConfig,
   openMeteo: RuntimeOpenMeteoConfig,
-  meteoblue: RuntimeMeteoblueConfig,
 ): readonly ForecastProviderRuntimeSnapshot[] {
   return [
     {
@@ -955,28 +948,18 @@ function buildRuntimeSnapshot(
     ...openMeteo.modelList
       .filter((modelName) => modelName !== (openMeteo.modelPreference ?? openMeteo.iconModel))
       .map((modelName) => ({
-      providerCode: "open_meteo",
-      enabled: openMeteo.enabled,
-      realCallEnabled: openMeteo.realCallEnabled,
-      apiKeyPresent: openMeteo.apiKeyPresent,
-      endpoint: openMeteo.endpoint,
-      baseUrl: openMeteo.baseUrl,
-      parserVersion: openMeteoForecastCloudLayerParserVersion,
-      modelFamily: "open_meteo",
-      modelName,
-      modelListLimit: openMeteo.modelListLimit,
-      configUpdatedAt: openMeteo.configUpdatedAt,
+        providerCode: "open_meteo",
+        enabled: openMeteo.enabled,
+        realCallEnabled: openMeteo.realCallEnabled,
+        apiKeyPresent: openMeteo.apiKeyPresent,
+        endpoint: openMeteo.endpoint,
+        baseUrl: openMeteo.baseUrl,
+        parserVersion: openMeteoForecastCloudLayerParserVersion,
+        modelFamily: "open_meteo",
+        modelName,
+        modelListLimit: openMeteo.modelListLimit,
+        configUpdatedAt: openMeteo.configUpdatedAt,
       })),
-    {
-      providerCode: "meteoblue",
-      enabled: meteoblue.enabled,
-      realCallEnabled: meteoblue.realCallEnabled,
-      apiKeyPresent: meteoblue.apiKeyPresent,
-      baseUrl: meteoblue.baseUrl,
-      packages: meteoblue.packages,
-      parserVersion: meteoblueParserVersion,
-      configUpdatedAt: meteoblue.configUpdatedAt,
-    },
   ];
 }
 

@@ -1,190 +1,188 @@
-﻿"use client";
-
+"use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Badge, Card, EmptyState, Table, cn } from "../../../components/ui";
-import { adminApiFetch } from "../admin-api";
-import type {
-  AdminAuditLog,
-  AdminPaymentOrderListResponse,
-  AdminUserListResponse,
-  SafeProviderConfig,
-} from "../admin-api";
-import { getAdaptiveGridClassName, getAdaptiveGridItemClassName } from "./admin-adaptive-grid";
-
-type DashboardState = {
-  readonly settingsOk: boolean | null;
-  readonly providers: SafeProviderConfig[];
-  readonly auditLogs: AdminAuditLog[];
-  readonly userSummary: AdminUserListResponse["summary"] | null;
-  readonly orderSummary: AdminPaymentOrderListResponse["summary"] | null;
-  readonly error?: string;
-};
-
-const initialState: DashboardState = {
-  settingsOk: null,
-  providers: [],
-  auditLogs: [],
-  userSummary: null,
-  orderSummary: null,
-};
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString("zh-CN", {
-    timeZone: "Asia/Shanghai",
-  });
+import { Badge, Card, Table } from "../../../components/ui";
+import type { AdminAuditLog, SafeProviderConfig } from "../admin-api";
+import { useAdminHref, useAdminPreview, useAdminRequest } from "./admin-data-context";
+function formatDate(value: string) {
+  return new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
 }
-
 export function AdminDashboardClient() {
-  const [state, setState] = useState<DashboardState>(initialState);
-  const [loading, setLoading] = useState(true);
-
+  const request = useAdminRequest();
+  const preview = useAdminPreview();
+  const hrefFor = useAdminHref();
+  const [state, setState] = useState<{
+    loaded: boolean;
+    settingsOk: boolean;
+    providers: SafeProviderConfig[];
+    providersOk: boolean;
+    auditLogs: AdminAuditLog[];
+    auditOk: boolean;
+  }>({
+    loaded: false,
+    settingsOk: false,
+    providers: [],
+    providersOk: false,
+    auditLogs: [],
+    auditOk: false,
+  });
   useEffect(() => {
     let cancelled = false;
-
-    async function loadDashboard() {
-      const [settingsResult, providersResult, auditResult, usersResult, ordersResult] =
-        await Promise.allSettled([
-          adminApiFetch<{ readonly settings: unknown[] }>("/admin/settings"),
-          adminApiFetch<{ readonly providers: SafeProviderConfig[] }>("/admin/providers"),
-          adminApiFetch<{ readonly logs: AdminAuditLog[] }>("/admin/audit-logs?limit=5"),
-          adminApiFetch<AdminUserListResponse>("/admin/users?pageSize=1"),
-          adminApiFetch<AdminPaymentOrderListResponse>("/admin/orders?pageSize=1"),
-        ]);
-
-      if (cancelled) {
-        return;
-      }
-
-      setState({
-        settingsOk: settingsResult.status === "fulfilled",
-        providers: providersResult.status === "fulfilled" ? providersResult.value.providers : [],
-        auditLogs: auditResult.status === "fulfilled" ? auditResult.value.logs : [],
-        userSummary: usersResult.status === "fulfilled" ? usersResult.value.summary : null,
-        orderSummary: ordersResult.status === "fulfilled" ? ordersResult.value.summary : null,
-        error:
-          settingsResult.status === "rejected" &&
-          providersResult.status === "rejected" &&
-          auditResult.status === "rejected" &&
-          usersResult.status === "rejected" &&
-          ordersResult.status === "rejected"
-            ? "后台接口暂不可用，当前显示兜底状态。"
-            : undefined,
-      });
-      setLoading(false);
-    }
-
-    void loadDashboard();
-
+    void Promise.allSettled([
+      request<{ settings: unknown[] }>("/admin/settings"),
+      request<{ providers: SafeProviderConfig[] }>("/admin/providers"),
+      request<{ logs: AdminAuditLog[] }>("/admin/audit-logs?limit=5"),
+    ]).then(([settings, providers, audit]) => {
+      if (!cancelled)
+        setState({
+          loaded: true,
+          settingsOk: settings.status === "fulfilled",
+          providersOk: providers.status === "fulfilled",
+          providers: providers.status === "fulfilled" ? providers.value.providers : [],
+          auditOk: audit.status === "fulfilled",
+          auditLogs: audit.status === "fulfilled" ? audit.value.logs : [],
+        });
+    });
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  const enabledProviders = state.providers.filter((provider) => provider.enabled).length;
-  const summaryCards = [
+  }, [request]);
+  const weather = state.providers.filter(
+    (p) => p.providerType === "weather" && ["qweather", "open_meteo"].includes(p.providerCode),
+  );
+  const amap = state.providers.find((p) => p.providerType === "geo" && p.providerCode === "amap");
+  const metrics = [
     {
-      title: "系统状态",
-      value: state.settingsOk === null ? "检查中" : state.settingsOk ? "可访问" : "未连接",
-      description: state.settingsOk ? "后台接口与权限检查可用" : "无法读取系统设置时自动降级显示",
-      badge: state.settingsOk ? "正常" : "兜底",
+      title: "后台连接",
+      value: !state.loaded
+        ? "读取中"
+        : preview
+          ? "示例预览"
+          : state.settingsOk
+            ? "已连接"
+            : "读取失败",
+      note: preview ? "当前显示示例配置" : "配置接口与管理员权限",
     },
     {
-      title: "服务商配置",
-      value: `${enabledProviders} / ${state.providers.length || 0}`,
-      description: "仅统计配置开关，不触发真实连接或外部调用",
-      badge: "本地状态",
+      title: "天气数据源",
+      value: state.providersOk
+        ? `${weather.filter((p) => p.enabled).length} / ${weather.length}`
+        : "—",
+      note: "已启用 / 已读取的天气服务",
     },
     {
-      title: "用户运营",
-      value: state.userSummary
-        ? `${state.userSummary.activeUsers} / ${state.userSummary.totalUsers}`
-        : "--",
-      description: "活跃用户 / 用户总数",
-      badge: "运营",
+      title: "高德地图",
+      value: state.providersOk ? (amap ? (amap.enabled ? "已启用" : "未启用") : "未配置") : "—",
+      note: "仅配置开关，连接结果请单独测试",
     },
-    {
-      title: "订单收入",
-      value: state.orderSummary
-        ? `¥${(state.orderSummary.totalRevenueCents / 100).toFixed(2)}`
-        : "--",
-      description: state.orderSummary
-        ? `${state.orderSummary.paidOrders} 笔付费订单，今日 ¥${(state.orderSummary.todayRevenueCents / 100).toFixed(2)}`
-        : "等待订单统计",
-      badge: "订单",
-    },
-  ] as const;
-
+  ];
   return (
     <div className="grid gap-5">
-      {state.error ? (
-        <div className="rounded-lg border border-warning bg-card px-4 py-3 text-sm text-warning-strong">
-          {state.error}
+      {state.loaded && (!state.settingsOk || !state.providersOk || !state.auditOk) && (
+        <div role="status" className="aw-preview-notice">
+          部分数据读取失败，请检查服务连接与管理员权限。
         </div>
-      ) : null}
-
-      <div
-        className={getAdaptiveGridClassName(summaryCards.length, {
-          variant: "metric",
-          allowFourMetricColumns: true,
-          gapClassName: "gap-4",
-        })}
-      >
-        {summaryCards.map((card, index) => (
-          <Card
-            key={card.title}
-            className={cn(
-              getAdaptiveGridItemClassName(summaryCards.length, index, { variant: "metric" }),
-              "grid gap-3 p-5",
-            )}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <h2 className="text-sm font-semibold text-muted-foreground">{card.title}</h2>
-              <Badge variant={card.badge === "正常" ? "success" : "muted"}>{card.badge}</Badge>
-            </div>
-            <p className="text-[28px] font-bold leading-none tracking-normal text-foreground">
-              {loading ? "--" : card.value}
-            </p>
-            <p className="text-xs leading-5 text-muted-foreground">{card.description}</p>
+      )}
+      <div className="aw-overview-metrics">
+        {metrics.map((item) => (
+          <Card key={item.title} className="p-4">
+            <p className="text-xs text-muted-foreground">{item.title}</p>
+            <p className="my-2 text-xl font-semibold tracking-tight">{item.value}</p>
+            <p className="text-[11px] leading-5 text-muted-foreground">{item.note}</p>
           </Card>
         ))}
       </div>
-
-      <div className={getAdaptiveGridClassName(2, { breakpoint: "md", gapClassName: "gap-4" })}>
-        <Link
-          href="/admin/users"
-          className={cn(
-            getAdaptiveGridItemClassName(2, 0, { breakpoint: "md" }),
-            "rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-primary hover:bg-secondary",
-          )}
-        >
-          <p className="text-sm font-semibold text-muted-foreground">运营模块</p>
-          <h2 className="mt-2 text-xl font-bold text-foreground">用户管理</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            查看账号、角色、订单、积分、查询历史、会话和审计记录。
-          </p>
-        </Link>
-        <Link
-          href="/admin/orders"
-          className={cn(
-            getAdaptiveGridItemClassName(2, 1, { breakpoint: "md" }),
-            "rounded-lg border border-border bg-card p-5 shadow-sm transition hover:border-primary hover:bg-secondary",
-          )}
-        >
-          <p className="text-sm font-semibold text-muted-foreground">运营模块</p>
-          <h2 className="mt-2 text-xl font-bold text-foreground">订单管理</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            查看支付订单、通知、权益发放、积分流水和安全操作。
-          </p>
-        </Link>
+      <div className="aw-dashboard-services">
+        <Card className="p-4">
+          <div className="aw-section-title">
+            <div>
+              <h2>服务状态</h2>
+              <p>启用状态不代表连接成功，请在配置页测试。</p>
+            </div>
+            <Link className="aw-text-link" href={hrefFor("/admin/providers/weather")}>
+              天气配置 →
+            </Link>
+          </div>
+          {[
+            {
+              code: "qweather",
+              name: "和风天气",
+              note: "天气预报、实况与预警",
+              href: "/admin/providers/weather",
+            },
+            {
+              code: "open_meteo",
+              name: "Open-Meteo",
+              note: "多模型天气与海拔数据",
+              href: "/admin/providers/weather",
+            },
+            {
+              code: "amap",
+              name: "高德地图",
+              note: "地图底图、坐标与地点服务",
+              href: "/admin/providers/geo",
+            },
+          ].map((item) => {
+            const provider = state.providers.find((p) => p.providerCode === item.code);
+            return (
+              <div className="aw-service-row" key={item.code}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <p>{item.note}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Badge variant={provider?.enabled ? "success" : "muted"}>
+                    {!state.providersOk ? "未读取" : provider?.enabled ? "已启用" : "待配置"}
+                  </Badge>
+                  <Link className="aw-text-link" href={hrefFor(item.href)}>
+                    配置
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+        <Card className="p-4">
+          <div className="aw-section-title">
+            <div>
+              <h2>开始配置</h2>
+              <p>接入数据后，即可检查前台预报。</p>
+            </div>
+          </div>
+          <div className="aw-setup-list">
+            {[
+              [
+                "/admin/providers/weather",
+                "连接天气数据",
+                "配置和风天气与 Open-Meteo，保存后测试连接。",
+              ],
+              [
+                "/admin/providers/geo",
+                "配置高德地图",
+                "填写 Web 服务和地图 JS 凭据，核对域名白名单。",
+              ],
+              ["/", "检查前台效果", "核对霞光、星空、云海地图和天气页面。"],
+            ].map(([href, title, note]) => (
+              <Link key={href} href={hrefFor(href!)}>
+                <span>
+                  <strong>{title}</strong>
+                  <small>{note}</small>
+                </span>
+                <span aria-hidden="true">→</span>
+              </Link>
+            ))}
+          </div>
+        </Card>
       </div>
-
       <Card className="overflow-hidden">
-        <div className="border-b border-border px-5 py-4">
-          <h2 className="text-lg font-bold">最近操作</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            查看近期后台操作与必要的安全记录。
-          </p>
+        <div className="aw-section-title mb-0 border-b border-border px-5 py-4">
+          <div>
+            <h2>最近操作</h2>
+            <p>配置变更与后台任务记录。</p>
+          </div>
+          <Link className="aw-text-link" href={hrefFor("/admin/audit")}>
+            查看全部 →
+          </Link>
         </div>
         {state.auditLogs.length > 0 ? (
           <Table>
@@ -213,7 +211,15 @@ export function AdminDashboardClient() {
             </tbody>
           </Table>
         ) : (
-          <EmptyState title="暂无最近操作" description="有配置或校准操作后会显示在这里。" />
+          <div className="aw-empty">
+            {!state.loaded
+              ? "正在读取操作记录…"
+              : preview
+                ? "预览暂无操作记录"
+                : state.auditOk
+                  ? "暂无操作记录，保存配置后会显示在这里。"
+                  : "日志读取失败"}
+          </div>
         )}
       </Card>
     </div>

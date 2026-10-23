@@ -1,12 +1,9 @@
-import { AdminDashboardClient } from "./components/admin-dashboard-client";
 import { AdminShell } from "./components/admin-shell";
+import { AdminDashboardClient } from "./components/admin-dashboard-client";
 
 export default function AdminPage() {
   return (
-    <AdminShell
-      title="控制台"
-      description="查看逐光天气的系统状态、服务商配置概况、历史校准与最近后台操作。"
-    >
+    <AdminShell title="运行总览" description="查看数据服务状态，完成网站配置。">
       <AdminDashboardClient />
     </AdminShell>
   );

@@ -1,6 +1,7 @@
 import { Readable } from "node:stream";
 import { createConnection } from "node:net";
 import Fastify from "fastify";
+import { resolveTrustedProxy } from "./trusted-proxy.js";
 import { getPrismaClient, type DatabaseClient } from "@photo-weather/db";
 import { MockGeoProvider } from "@photo-weather/geo";
 import type { GeoProvider } from "@photo-weather/geo";
@@ -9,11 +10,7 @@ import type {
   TerrainElevationService,
   TerrainProvider,
 } from "@photo-weather/terrain";
-import {
-  createWeatherProvider,
-  WeatherIntelligenceService,
-  type WeatherProvider,
-} from "@photo-weather/weather";
+import { createWeatherProvider, type WeatherProvider } from "@photo-weather/weather";
 import { registerAdminRoutes } from "./admin-routes.js";
 import { registerAdminOrderRoutes } from "./admin-orders-routes.js";
 import { registerAdminProductRoutes } from "./admin-products-routes.js";
@@ -31,8 +28,11 @@ import { registerForecastRoutes } from "./forecast-routes.js";
 import { resolveGeoProvider, resolveReverseGeocodeProvider } from "./geo-provider.js";
 import { registerPaymentRoutes } from "./payment-routes.js";
 import { registerSearchRoutes } from "./search-routes.js";
+import { registerMapRoutes } from "./map-routes.js";
+import { registerPublicSiteRoutes } from "./public-site-routes.js";
 import type { SmtpTransportFactory, VerificationSender } from "./verification-senders.js";
 import { createRuntimeWeatherDataService } from "./weather-provider.js";
+import { isRetiredProviderRoute, isRetiredPublicRoute } from "./public-edition.js";
 
 export type ApiServerOptions = {
   readonly dbClient?: DatabaseClient;
@@ -112,6 +112,7 @@ const publicRateLimitedRoutes = new Set([
 
 function isPublicRateLimitedRoute(method: string, url: string): boolean {
   const path = requestPath(url);
+  if (method.toUpperCase() === "GET" && path.startsWith("/maps/")) return true;
   const routeKey = `${method.toUpperCase()} ${path}`;
   if (publicRateLimitedRoutes.has(routeKey)) {
     return true;
@@ -423,7 +424,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
         max: 5 * 60 * 1000,
       },
     ),
-    trustProxy: readBooleanEnv(env, "API_TRUST_PROXY", true),
+    trustProxy: resolveTrustedProxy(env),
   });
 
   const startedAt = Date.now();
@@ -448,9 +449,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     (env.NODE_ENV === "test" ? createWeatherProvider({ nodeEnv: "test" }) : undefined);
   const weatherDataService = weatherProvider
     ? undefined
-    : options.dbClient
-      ? createRuntimeWeatherDataService({ dbClient: options.dbClient, env, logger: app.log })
-      : new WeatherIntelligenceService({ providers: [] });
+    : createRuntimeWeatherDataService({ dbClient: options.dbClient, env, logger: app.log });
   const geoProvider = options.geoProvider ?? new MockGeoProvider();
   const authConfig = options.authConfig ?? loadAuthConfig();
   const resolveRuntimeGeoProvider = () =>
@@ -467,6 +466,7 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     });
 
   app.addHook("onRequest", async (_request, reply) => {
+    reply.header("Cache-Control", "no-store");
     reply.header("Access-Control-Allow-Origin", "*");
     reply.header("Access-Control-Allow-Methods", "GET,PATCH,POST,DELETE,OPTIONS");
     reply.header("Access-Control-Allow-Headers", "Content-Type,Authorization,Prefer");
@@ -538,6 +538,14 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     };
   });
 
+  app.addHook("onRequest", async (request, reply) => {
+    const path = request.url.split("?")[0]!;
+    if (isRetiredPublicRoute(path) || isRetiredProviderRoute(path)) {
+      return reply
+        .code(410)
+        .send({ error: "feature_retired", message: "本站免费开放，无需注册或购买套餐。" });
+    }
+  });
   registerCaptchaRoutes(app, { dbClient: options.dbClient, env });
   registerAuthRoutes(app, {
     dbClient: options.dbClient,
@@ -569,6 +577,8 @@ export function buildApiServer(options: ApiServerOptions = {}) {
     astroServiceClient: options.astroServiceClient,
     env,
   });
+  registerMapRoutes(app, { dbClient: options.dbClient, env });
+  registerPublicSiteRoutes(app, options.dbClient);
   registerSearchRoutes(app, {
     dbClient: options.dbClient,
     resolveGeoProvider: resolveRuntimeGeoProvider,

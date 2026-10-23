@@ -11,11 +11,15 @@ import {
   type BrowserGeolocationReverseResult,
   type SelectedLocation,
 } from "./selected-location";
-import { getAccountAccess } from "./account-session";
 import { LocationSearchInput } from "./location-search-input";
 import { Badge, Button, Card, cn } from "./ui";
 
-export type PlaceResultSource = "local_location" | "local_photo_spot" | "amap" | "mock";
+export type PlaceResultSource =
+  | "local_location"
+  | "local_photo_spot"
+  | "amap"
+  | "mock"
+  | "open_meteo";
 
 export type PlaceSearchResult = {
   readonly id: string;
@@ -153,6 +157,7 @@ const sourceLabels: Record<PlaceResultSource, string> = {
   local_location: "本地地点",
   local_photo_spot: "本地地点",
   amap: "高德地图",
+  open_meteo: "Open-Meteo",
   mock: "备用地点",
 };
 
@@ -467,8 +472,6 @@ export function PlaceSearchCard({
   showForecastSectionDivider = true,
   enableCurrentLocation = false,
   currentLocationPrivacyHint = "浏览器定位仅用于本次天气判断，不会公开显示。",
-  requiresFullAccess = false,
-  lockExtendedHorizonsForFree = false,
   selectedLocation,
   onSelectedLocationChange,
   onForecastOptionsChange,
@@ -493,7 +496,6 @@ export function PlaceSearchCard({
   const [target, setTarget] = useState<ForecastTarget>(fixedTarget ?? defaultTarget);
   const [currentLocationStatus, setCurrentLocationStatus] = useState<CurrentLocationStatus>("idle");
   const [currentLocationError, setCurrentLocationError] = useState("");
-  const [hasFullAccess, setHasFullAccess] = useState<boolean | null>(null);
 
   const trimmedQuery = query.trim();
   const activeTarget = fixedTarget ?? (showTargetSelector ? target : defaultTarget);
@@ -517,49 +519,9 @@ export function PlaceSearchCard({
   const showQuickLocationSection =
     shouldRenderQuickLocations && (!activeSelectedLocation || isActivelySearching);
   const isCurrentLocationLoading = currentLocationStatus === "loading";
-  const shouldResolveAccess = requiresFullAccess || lockExtendedHorizonsForFree;
-  const hasLimitedAccess = shouldResolveAccess && hasFullAccess === false;
-  const disabledHorizonOptions = useMemo(
-    () =>
-      lockExtendedHorizonsForFree && hasLimitedAccess
-        ? new Set<ForecastHorizon>(["48h", "72h", "7d"])
-        : undefined,
-    [hasLimitedAccess, lockExtendedHorizonsForFree],
-  );
-  const fullAccessCtaLocked = requiresFullAccess && hasLimitedAccess;
-
   useEffect(() => {
     onForecastOptionsChange?.({ horizon, target: activeTarget });
   }, [activeTarget, horizon, onForecastOptionsChange]);
-
-  useEffect(() => {
-    if (!shouldResolveAccess) {
-      return;
-    }
-
-    let isMounted = true;
-    void getAccountAccess()
-      .then((access) => {
-        if (isMounted) {
-          setHasFullAccess(access.hasFullAccess);
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setHasFullAccess(false);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [shouldResolveAccess]);
-
-  useEffect(() => {
-    if (disabledHorizonOptions?.has(horizon)) {
-      setHorizon("24h");
-    }
-  }, [disabledHorizonOptions, horizon]);
 
   const selectedCoordinateText = useMemo(() => {
     if (!selectedPlace) {
@@ -990,7 +952,6 @@ export function PlaceSearchCard({
               setHorizon(value);
               rememberForecastHorizon(value);
             }}
-            disabledOptions={disabledHorizonOptions}
           />
         </div>
 
@@ -1022,26 +983,13 @@ export function PlaceSearchCard({
           </p>
         ) : null}
 
-        {hasLimitedAccess ? (
-          <div className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-xs leading-5 text-muted-foreground">
-            当前账户只能查看未来 24 小时基础天气。开通月卡、季卡或年卡后可查看完整摄影判断。
-            <a className="ml-2 font-semibold text-primary hover:underline" href="/pricing">
-              开通会员
-            </a>
-          </div>
-        ) : null}
-
         <Button
           type="button"
           className="w-full"
-          disabled={!activeSelectedLocation || fullAccessCtaLocked}
+          disabled={!activeSelectedLocation}
           onClick={handleRunForecast}
         >
-          {!activeSelectedLocation
-            ? ctaDisabledLabel ?? ctaLabel
-            : fullAccessCtaLocked
-              ? "开通会员后查看完整判断"
-              : ctaLabel}
+          {!activeSelectedLocation ? ctaDisabledLabel ?? ctaLabel : ctaLabel}
         </Button>
       </div>
     </Card>

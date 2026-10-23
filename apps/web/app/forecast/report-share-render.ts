@@ -133,7 +133,7 @@ export async function renderShareImages(
       context.fillRect(24, top - 24, 552, 746 - top);
       context.fillStyle = "#14736b";
       context.font = `600 14px ${FONT}`;
-      context.fillText(`逐光天气  /  ${document.topic}`, 44, 38);
+      context.fillText(`${document.siteName || "逐光天气"}  /  ${document.topic}`, 44, 38, 510);
       context.fillStyle = "#172e30";
       context.font = `700 26px ${FONT}`;
       headerLines.forEach((line, i) => context.fillText(line, 44, 77 + i * 32));

@@ -1,3 +1,4 @@
+import { MockGeoProvider } from "@photo-weather/geo";
 import { generateKeyPairSync } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -2132,7 +2133,12 @@ describe("admin config routes", () => {
 
   it("returns deterministic local geo search results without external services", async () => {
     const { client } = await createFakeDatabaseClient();
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      geoProvider: new MockGeoProvider(),
+    });
 
     const response = await app.inject({
       method: "GET",
@@ -2170,7 +2176,12 @@ describe("admin config routes", () => {
 
   it("uses provider results instead of fixed local locations in public search", async () => {
     const { client } = await createFakeDatabaseClient();
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
+    app = buildApiServer({
+      dbClient: client,
+      authConfig: testAuthConfig,
+      logger: false,
+      geoProvider: new MockGeoProvider(),
+    });
 
     const response = await app.inject({
       method: "GET",
@@ -2191,143 +2202,56 @@ describe("admin config routes", () => {
     );
   });
 
-  it("keeps public search mock-safe when Amap is enabled but real flag is false", async () => {
-    const fetchMock = vi.fn(() => {
-      throw new Error("real network calls are disabled in search tests");
-    });
-    vi.stubGlobal("fetch", fetchMock);
+  it.each([false, true])("uses Open-Meteo regardless of legacy Amap flag %s", async (enabled) => {
     const { client, state } = await createFakeDatabaseClient();
-    const amapProvider = state.providers.get("geo:amap");
+    const legacy = state.providers.get("geo:amap");
     state.providers.set("geo:amap", {
-      ...amapProvider,
+      ...legacy,
       enabled: true,
-      configJson: {
-        ...(amapProvider.configJson ?? {}),
-        realCallEnabled: false,
-      },
-      secretJson: {},
-      maskedSecretJson: {},
+      configJson: { realCallEnabled: enabled },
+      secretJson: { apiKey: "legacy-secret" },
     });
-    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/search/places?q=%E9%BB%84%E5%B1%B1",
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json().results[0]).toMatchObject({
-      name: "黄山光明顶",
-      source: "mock",
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("uses real Amap results when explicitly enabled", async () => {
-    const { client, state } = await createFakeDatabaseClient();
-    const amapProvider = state.providers.get("geo:amap");
-    state.providers.set("geo:amap", {
-      ...amapProvider,
-      enabled: true,
-      configJson: {
-        ...(amapProvider.configJson ?? {}),
-        realCallEnabled: true,
-      },
-      secretJson: {
-        apiKey: "amap-real-secret",
-      },
-      maskedSecretJson: {
-        apiKey: "amap****cret",
-      },
-    });
-    const fetchMock = vi.fn(
-      async () =>
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
         new Response(
           JSON.stringify({
-            status: "1",
-            info: "OK",
-            infocode: "10000",
-            count: "1",
-            pois: [
-              {
-                id: "B0AMAPTEST",
-                name: "黄山迎客松",
-                pname: "安徽省",
-                cityname: "黄山市",
-                adname: "黄山区",
-                address: "黄山风景区",
-                location: "118.1812,30.1304",
-              },
+            results: [
+              { id: 123, name: "黄山市", latitude: 29.71, longitude: 118.31, country_code: "CN" },
             ],
           }),
-          {
-            status: 200,
-            headers: {
-              "Content-Type": "application/json",
-            },
-          },
         ),
-    );
+      );
     vi.stubGlobal("fetch", fetchMock);
-    app = buildApiServer({
-      dbClient: client,
-      authConfig: testAuthConfig,
-      env: {
-        ...process.env,
-        NODE_ENV: "development",
-      },
-      logger: false,
-    });
-
+    app = buildApiServer({ dbClient: client, authConfig: testAuthConfig, logger: false });
     const response = await app.inject({
       method: "GET",
       url: "/search/places?q=%E9%BB%84%E5%B1%B1",
     });
-    const body = response.json();
-
     expect(response.statusCode).toBe(200);
-    expect(body.results[0]).toMatchObject({
-      name: "黄山迎客松",
-      source: "amap",
-    });
-    expect(body.results.some((result: any) => result.source === "amap")).toBe(true);
+    expect(response.json().results[0]).toMatchObject({ name: "黄山市", source: "open_meteo" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(response.body).not.toContain("amap-real-secret");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("geocoding-api.open-meteo.com");
+    expect(response.body).not.toContain("legacy-secret");
   });
-
-  it("returns a clear public search error when real Amap is enabled without a key", async () => {
-    const { client, state } = await createFakeDatabaseClient();
-    const amapProvider = state.providers.get("geo:amap");
-    state.providers.set("geo:amap", {
-      ...amapProvider,
-      enabled: true,
-      configJson: {
-        ...(amapProvider.configJson ?? {}),
-        realCallEnabled: true,
-      },
-      secretJson: {},
-      maskedSecretJson: {},
-    });
-    app = buildApiServer({
-      dbClient: client,
-      authConfig: testAuthConfig,
-      env: {
-        ...process.env,
-        NODE_ENV: "development",
-      },
-      logger: false,
-    });
-
+  it("reports a public search failure without falling back to a retired vendor", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("unavailable", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    app = buildApiServer({ authConfig: testAuthConfig, logger: false });
     const response = await app.inject({
       method: "GET",
       url: "/search/places?q=%E9%BB%84%E5%B1%B1",
     });
-
     expect(response.statusCode).toBe(503);
-    expect(response.json()).toMatchObject({
-      error: "place_search_unavailable",
-      message: "高德地图服务未配置 API Key，请先在后台服务商配置中填写高德 Web 服务 Key。",
-    });
-    expect(response.body).not.toContain("secretJson");
+    expect(response.json().error).toBe("place_search_unavailable");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("geocoding-api.open-meteo.com");
   });
 });
+
+// Retained modules are tested in isolation from the free edition's retirement gate.
+// public-edition.test.ts verifies that the shipping server rejects these public routes.
+vi.mock("../public-edition.js", () => ({
+  isRetiredPublicRoute: () => false,
+  isRetiredProviderRoute: () => false,
+}));

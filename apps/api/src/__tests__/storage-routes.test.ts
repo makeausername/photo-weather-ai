@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApiServer } from "../server.js";
 import { adminAuthorizationHeader, createFakeDatabaseClient, testAuthConfig } from "./fake-db.js";
 
@@ -20,7 +20,9 @@ describe("admin storage routes", () => {
       await app.close();
       app = undefined;
     }
-    await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+    await Promise.all(
+      tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+    );
   });
 
   it("returns storage provider config-check mode when real calls are disabled", async () => {
@@ -88,7 +90,8 @@ describe("admin storage routes", () => {
       mode: "config_check",
       attempted: false,
       requiredMissingFields: ["Bucket", "Region 或 Endpoint", "AccessKey Secret"],
-      message: "阿里云 OSS 真实调用已开启，请补充：Bucket、Region 或 Endpoint、AccessKey Secret。本次未请求对象存储服务。",
+      message:
+        "阿里云 OSS 真实调用已开启，请补充：Bucket、Region 或 Endpoint、AccessKey Secret。本次未请求对象存储服务。",
     });
     expect(response.body).not.toContain("aliyun-route-secret-id");
     expect(response.body).not.toContain("secretJson");
@@ -208,3 +211,10 @@ describe("admin storage routes", () => {
     expect(missingDownload.body).not.toContain(rootPath);
   });
 });
+
+// Retained modules are tested in isolation from the free edition's retirement gate.
+// public-edition.test.ts verifies that the shipping server rejects these public routes.
+vi.mock("../public-edition.js", () => ({
+  isRetiredPublicRoute: () => false,
+  isRetiredProviderRoute: () => false,
+}));

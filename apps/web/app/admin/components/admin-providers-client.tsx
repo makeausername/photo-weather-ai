@@ -1,4 +1,5 @@
 "use client";
+import { useAdminRequest } from "./admin-data-context";
 
 import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
@@ -19,7 +20,6 @@ import type {
   SafeProviderConfig,
 } from "../admin-api";
 import {
-  adminApiFetch,
   createProviderConnectionTestRequestInit,
   prefetchCdnUrls,
   refreshCdnCache,
@@ -158,7 +158,7 @@ const providerModules = [
   {
     key: "weather",
     title: "天气数据",
-    description: "管理和风天气、Open-Meteo、meteoblue 等天气数据源、逐小时预报和云层分层配置。",
+    description: "管理和风天气与 Open-Meteo 的逐小时预报和云层分层配置。",
     apiProviderTypes: ["weather"],
   },
   {
@@ -203,8 +203,8 @@ const providerMeta: Record<ProviderKey, ProviderMeta> = {
     key: "geo:amap",
     group: "geo",
     displayName: "高德地图",
-    purpose: "用于地点搜索、地理编码和坐标转换。",
-    capabilities: ["地点搜索", "地理编码", "坐标转换"],
+    purpose: "用于云海地图底图、地点搜索和坐标转换。",
+    capabilities: ["地图底图", "地点搜索", "地理编码", "坐标转换"],
     requiredConfigKeys: [],
   },
   "weather:qweather": {
@@ -221,7 +221,7 @@ const providerMeta: Record<ProviderKey, ProviderMeta> = {
     displayName: "Open-Meteo",
     purpose: "用于云层分层、露点、能见度和多模型交叉验证。",
     capabilities: ["逐小时预报", "云层分层", "能见度", "露点", "多模型交叉验证"],
-    requiredConfigKeys: ["mode", "customerEndpoint"],
+    requiredConfigKeys: [],
   },
   "weather:meteoblue": {
     key: "weather:meteoblue",
@@ -493,11 +493,11 @@ function fieldDefaultToInput(field: ProviderFieldDefinition): string {
   return fieldValueToInput(field.defaultValue as JsonValue | undefined);
 }
 
-function configFieldValueToInput(
+export function configFieldValueToInput(
   field: ProviderFieldDefinition,
   value: JsonValue | undefined,
 ): string {
-  if ((field.key === "packages" || field.key === "domains") && Array.isArray(value)) {
+  if (["packages", "domains", "modelList"].includes(field.key) && Array.isArray(value)) {
     return value.filter((item): item is string => typeof item === "string").join(",");
   }
 
@@ -580,13 +580,13 @@ function providerTypeLabel(providerType: string): string {
   return labels[providerType] ?? "服务商配置";
 }
 
-function getPresetFields(
+export function getPresetFields(
   provider: SafeProviderConfig,
   target: "configJson" | "secretJson",
 ): readonly ProviderFieldDefinition[] {
   return (
     getProviderFieldPreset(provider.providerCode)?.fields.filter(
-      (field) => field.target === target,
+      (field) => field.target === target && !(isOpenMeteoProvider(provider) && ["mode", "customerEndpoint", "apiKey"].includes(field.key)),
     ) ?? []
   );
 }
@@ -792,7 +792,7 @@ function testStatusVariant(
 
 function modeStatusLabel(provider: SafeProviderConfig, realEnabled: boolean): string {
   if (isOpenMeteoProvider(provider)) {
-    return openMeteoMode(provider) === "customer" ? "商业模式" : "免费开发模式";
+    return openMeteoMode(provider) === "customer" ? "待切换免费接口" : "免费接口";
   }
 
   return realEnabled ? "真实服务" : "模拟测试";
@@ -1166,7 +1166,7 @@ function AdvancedConfigContent({
         {advancedOpen ? "收起高级配置" : "展开高级配置"}
       </summary>
       <div className="mt-3 grid gap-3">
-        <FormField label="priority">
+        <FormField label="优先级">
           <Input
             type="number"
             value={priority}
@@ -1594,6 +1594,8 @@ function CdnOperationsPanel({
 }
 
 export function AdminProvidersClient({ providerType }: AdminProvidersClientProps) {
+  const adminApiFetch = useAdminRequest();
+  const compact = providerType === "weather" || providerType === "geo";
   const moduleDefinition = useMemo(
     () => providerModules.find((module) => module.key === providerType) ?? defaultProviderModule,
     [providerType],
@@ -1644,7 +1646,8 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       );
       const managedProviders = sortManagedProviders(
         responses.flatMap((response) => response.providers),
-      ).filter((provider) => getMeta(provider)?.group === moduleDefinition.key);
+      ).filter((provider) => getMeta(provider)?.group === moduleDefinition.key)
+        .filter((provider) => providerType !== "weather" || ["qweather", "open_meteo"].includes(provider.providerCode));
       const realDevFlags =
         responses.find((response) => response.realDevCallFlags)?.realDevCallFlags ??
         defaultRealDevCallFlags;
@@ -1668,7 +1671,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         message: error instanceof Error ? error.message : `无法加载${moduleDefinition.title}配置。`,
       });
     }
-  }, [moduleDefinition]);
+  }, [moduleDefinition, adminApiFetch, providerType]);
 
   useEffect(() => {
     void loadProviders();
@@ -1851,7 +1854,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     const pendingSecretChanges =
       hasPendingSecretFieldDrafts(secretFieldDrafts[provider.id]) ||
       hasPendingClearSecretDrafts(clearSecretDrafts[provider.id]);
-    if (!dirtyProviders[provider.id] && !pendingSecretChanges) {
+    if (!dirtyProviders[provider.id] && !pendingSecretChanges && !(isOpenMeteoProvider(provider) && openMeteoMode(provider) !== "free")) {
       const message = "当前配置已是最新。";
       setSaveStateByProvider((current) => ({
         ...current,
@@ -1887,6 +1890,8 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           configJson[field.key] = parsedValue;
         }
       }
+
+      if (isOpenMeteoProvider(provider)) configJson.mode = "free";
 
       const secretJson: Record<string, JsonValue> = {};
       for (const field of getPresetFields(provider, "secretJson")) {
@@ -1968,6 +1973,10 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   }
 
   async function testProvider(provider: SafeProviderConfig) {
+    if (isOpenMeteoProvider(provider) && openMeteoMode(provider) !== "free") {
+      showActionToast({ variant: "error", title: "测试连接", message: "请先保存配置，切换为免费接口后再测试。" });
+      return;
+    }
     if (
       testingProviderIds.current.has(provider.id) ||
       testStateByProvider[provider.id]?.status === "testing"
@@ -2272,8 +2281,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
   function renderProviderDetail(provider: SafeProviderConfig) {
     const meta = getMeta(provider);
     const realCallField = getFieldByKey(provider, "realCallEnabled");
-    const requiredConfigFields = getRequiredConfigFields(provider);
-    const advancedConfigFields = getAdvancedConfigFields(provider);
+    const allRequiredFields = getRequiredConfigFields(provider);
+    const requiredConfigFields = compact ? allRequiredFields.filter(field => !field.advanced && field.key !== "customerEndpoint") : allRequiredFields;
+    const advancedConfigFields = [...getAdvancedConfigFields(provider), ...allRequiredFields.filter(field => !requiredConfigFields.includes(field))];
     const secretFields = getPresetFields(provider, "secretJson");
     const saveState = saveStateByProvider[provider.id];
     const testState = testStateByProvider[provider.id];
@@ -2315,7 +2325,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         data-provider-detail={providerIdentityKey(provider)}
         className="grid min-w-0 gap-4 rounded-lg border border-primary/50 bg-card p-4 shadow-sm"
       >
-        <p className="text-xs font-semibold text-primary">顶部概览</p>
+        {!compact && <p className="text-xs font-semibold text-primary">顶部概览</p>}
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -2333,9 +2343,9 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
           </Badge>
         </div>
 
-        <StatusFacts provider={provider} flags={realDevCallFlags} testState={testState} />
+        {compact ? <details className="aw-help aw-provider-status"><summary>服务状态与最近测试</summary><StatusFacts provider={provider} flags={realDevCallFlags} testState={testState} /></details> : <StatusFacts provider={provider} flags={realDevCallFlags} testState={testState} />}
 
-        {meta?.capabilities.length ? (
+        {!compact && meta?.capabilities.length ? (
           <div className="flex flex-wrap gap-2">
             {meta.capabilities.map((capability) => (
               <Badge key={capability} variant="info" className="rounded-md px-2 py-0.5">
@@ -2370,12 +2380,12 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
             </div>
           </section>
 
-          <section className="grid gap-3">
+          {requiredConfigFields.length > 0 && <section className="grid gap-3">
             <SectionTitle
               title="常用配置"
               description={
                 requiredConfigFields.length > 0
-                  ? "常用参数直接编辑，正常管理员不需要处理原始 JSON。"
+                  ? "填写服务所需的连接参数。"
                   : "该服务商没有额外常用参数；如需密钥请在下方维护。"
               }
             />
@@ -2401,12 +2411,14 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                 保存密钥或开关后即可测试连接。
               </p>
             )}
-          </section>
+          </section>}
 
           <section className="grid gap-3">
             <SectionTitle
-              title="密钥配置"
-              description="密钥只保存到服务端；留空会保留已保存密钥，保存后仅显示脱敏状态。"
+              title={isOpenMeteoProvider(provider) ? "免费接口" : "密钥配置"}
+              description={provider.providerType === "geo"
+                ? "留空保留原密钥。服务端密钥仅显示脱敏结果；地图 JS Key 的使用方式见下方说明。"
+                : isOpenMeteoProvider(provider) ? "本站使用 Open-Meteo 免费接口，无需 API Key。" : "留空保留原密钥，保存后仅显示脱敏结果。"}
             />
             {secretFields.length > 0 ? (
               <div className="grid gap-3">
@@ -2459,7 +2471,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
               </div>
             ) : (
               <p className="rounded-md border border-border bg-background/45 px-3 py-2 text-sm text-muted-foreground">
-                该服务商无需密钥。
+                {isOpenMeteoProvider(provider) ? (openMeteoMode(provider) === "free" ? "模型、请求超时等参数可在高级配置中调整。" : "当前保存的配置使用客户接口，请保存配置后切换为免费接口。") : "该服务商无需密钥。"}
               </p>
             )}
           </section>
@@ -2536,6 +2548,17 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
     );
   }
 
+  if (compact) {
+    return <div className="aw-provider-console" data-provider-console data-provider-module={moduleDefinition.key}>
+      <AdminActionToast feedback={actionToast} onDismiss={() => setActionToast(null)} />
+      <div className="aw-provider-toolbar">
+        <div className="aw-provider-tabs" role="group" aria-label="选择服务商">{visibleProviders.map(provider => <button type="button" key={provider.id} aria-pressed={detailProvider?.id === provider.id} onClick={() => selectProvider(provider)}>{providerName(provider)}{dirtyProviders[provider.id] && <span aria-label="尚未保存"> ·</span>}</button>)}</div>
+        <Button size="sm" variant="secondary" disabled={loadState.status === "saving"} onClick={() => void loadProviders()}>{loadState.status === "saving" ? "刷新中..." : "刷新状态"}</Button>
+      </div>
+      {detailProvider ? renderProviderDetail(detailProvider) : <p className="aw-empty">{loadState.status === "saving" ? "正在读取服务配置…" : "未读取到服务配置"}</p>}
+    </div>;
+  }
+
   return (
     <div
         className="grid w-full max-w-full min-w-0 gap-5"
@@ -2546,7 +2569,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       <header className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-sm xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <h2 className="text-xl font-bold tracking-normal text-foreground">
-            {moduleDefinition.title}服务商
+            {moduleDefinition.key === "geo" ? "高德地图配置" : `${moduleDefinition.title}服务商`}
           </h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
             {moduleDefinition.description}
@@ -2571,6 +2594,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
       ) : null}
 
       <section
+        data-admin-provider-metrics
         aria-label={`${moduleDefinition.title}模块概览`}
         className={getAdaptiveGridClassName(overviewItems.length, {
           variant: "metric",
@@ -2612,7 +2636,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
         ) : (
           <>
             <section
-              aria-label={`${moduleDefinition.title}服务商列表`}
+              aria-label={`${moduleDefinition.key === "geo" ? "高德地图配置" : `${moduleDefinition.title}服务商`}列表`}
               data-provider-list
               data-provider-list-layout={useSideProviderList ? "side" : "top"}
               className="min-w-0 overflow-hidden rounded-lg border border-border bg-card shadow-sm"
@@ -2653,7 +2677,7 @@ export function AdminProvidersClient({ providerType }: AdminProvidersClientProps
                 </ul>
               ) : (
                 <EmptyState
-                  title={`当前没有可管理的${moduleDefinition.title}服务商`}
+                  title={`当前没有可管理的${moduleDefinition.key === "geo" ? "高德地图配置" : `${moduleDefinition.title}服务商`}`}
                   description="请确认后台 API 已返回该模块的安全服务商配置。"
                 />
               )}

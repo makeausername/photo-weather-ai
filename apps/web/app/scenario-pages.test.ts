@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { forecastHorizonLabels, type ForecastCalculationResult } from "@photo-weather/shared";
 import { describe, expect, it, vi } from "vitest";
 import {
+  ScenarioModulePage,
   AstroDecisionPanel,
   CloudSeaDecisionPanel,
   GlowDecisionPanel,
@@ -23,9 +24,10 @@ import {
   selectedLocationFromBrowserGeolocation,
 } from "../components/selected-location";
 import { SubjectControlPanel } from "../components/subject-control-panel";
-import AstroPage, { metadata as astroMetadata } from "./astro/page";
-import CloudSeaPage, { metadata as cloudSeaMetadata } from "./cloud-sea/page";
-import GlowPage, { metadata as glowMetadata } from "./glow/page";
+import LiveAstroPage, { generateMetadata as astroMetadata } from "./astro/page";
+import LiveCloudSeaPage, { generateMetadata as cloudSeaMetadata } from "./cloud-sea/page";
+import LiveGlowPage, { generateMetadata as glowMetadata } from "./glow/page";
+vi.mock("../lib/public-site-config", () => ({ readPublicSiteConfig: async () => ({ name: "逐光天气", baseUrl: "https://example.test", language: "zh-CN", timezone: "Asia/Shanghai" }) }));
 import {
   astroScenarioConfig,
   cloudSeaScenarioConfig,
@@ -34,6 +36,20 @@ import {
 } from "./scenario-configs";
 import { cloudSeaRegressionFixture } from "./forecast/__tests__/fixtures/cloudSeaRegressionFixtures";
 import { buildAstroForecastViewModel } from "./forecast/forecast-result-view-model";
+
+// Retained detailed-report components keep their regression coverage; free entries are tested below.
+const AstroPage = async (props: React.ComponentProps<typeof LiveAstroPage>) =>
+  props.searchParams
+    ? await LiveAstroPage(props)
+    : React.createElement(ScenarioModulePage, { config: astroScenarioConfig });
+const GlowPage = async (props: React.ComponentProps<typeof LiveGlowPage>) =>
+  props.searchParams
+    ? await LiveGlowPage(props)
+    : React.createElement(ScenarioModulePage, { config: glowScenarioConfig });
+const CloudSeaPage = async (props: React.ComponentProps<typeof LiveCloudSeaPage>) =>
+  props.searchParams
+    ? await LiveCloudSeaPage(props)
+    : React.createElement(ScenarioModulePage, { config: cloudSeaScenarioConfig });
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/cloud-sea",
@@ -497,16 +513,16 @@ function subjectDeepLinkParams(
 }
 
 describe("scenario module pages", () => {
-  it("keeps cloud-sea, glow, and astro pages importable with metadata", () => {
-    expect(CloudSeaPage({})).toBeTruthy();
-    expect(GlowPage({})).toBeTruthy();
-    expect(AstroPage({})).toBeTruthy();
-    expect(cloudSeaMetadata.title).toBe("云海判断 - 逐光天气");
-    expect(glowMetadata.title).toBe("朝霞晚霞 - 逐光天气");
-    expect(astroMetadata.title).toBe("星空银河 - 逐光天气");
+  it("keeps cloud-sea, glow, and astro pages importable with metadata", async () => {
+    expect(await CloudSeaPage({})).toBeTruthy();
+    expect(await GlowPage({})).toBeTruthy();
+    expect(await AstroPage({})).toBeTruthy();
+    await expect(cloudSeaMetadata()).resolves.toMatchObject({ title: "云海判断 - 逐光天气" });
+    await expect(glowMetadata()).resolves.toMatchObject({ title: "朝霞晚霞 - 逐光天气" });
+    await expect(astroMetadata()).resolves.toMatchObject({ title: "星空银河 - 逐光天气" });
   });
 
-  it("uses the correct target presets and default horizons", () => {
+  it("uses the correct target presets and default horizons", async () => {
     expect(cloudSeaScenarioConfig).toMatchObject({
       title: "云海判断",
       target: "cloud_sea",
@@ -527,8 +543,8 @@ describe("scenario module pages", () => {
     });
   });
 
-  it("renders the cloud-sea entry page as a search-first decision entry", () => {
-    const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
+  it("renders the cloud-sea entry page as a search-first decision entry", async () => {
+    const html = renderToStaticMarkup(await CloudSeaPage({}));
     expect(html).toContain("选择拍摄地点");
     expect(html).toContain("预报范围");
     expect(html).toContain("查看报告");
@@ -538,8 +554,8 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("data-forecast-entry-help");
     expect(html).not.toContain("data-quick-location-section");
   });
-  it("keeps the cloud sea query form responsive without mobile overflow classes", () => {
-    const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
+  it("keeps the cloud sea query form responsive without mobile overflow classes", async () => {
+    const html = renderToStaticMarkup(await CloudSeaPage({}));
     expect(html).toContain("选择拍摄地点");
     expect(html).toContain("预报范围");
     expect(html).toContain("查看报告");
@@ -549,11 +565,11 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("data-forecast-entry-help");
     expect(html).not.toContain("data-quick-location-section");
   });
-  it("reuses the shared current-location input on homepage, cloud sea, glow, and astro", () => {
+  it("reuses the shared current-location input on homepage, cloud sea, glow, and astro", async () => {
     const homepageHtml = renderToStaticMarkup(React.createElement(HomepageSearchPanel));
-    const cloudSeaHtml = renderToStaticMarkup(React.createElement(CloudSeaPage));
-    const glowHtml = renderToStaticMarkup(React.createElement(GlowPage));
-    const astroHtml = renderToStaticMarkup(React.createElement(AstroPage));
+    const cloudSeaHtml = renderToStaticMarkup(await CloudSeaPage({}));
+    const glowHtml = renderToStaticMarkup(await GlowPage({}));
+    const astroHtml = renderToStaticMarkup(await AstroPage({}));
     const sharedInputHtml = renderToStaticMarkup(
       React.createElement(LocationSearchInput, {
         value: "",
@@ -578,8 +594,8 @@ describe("scenario module pages", () => {
     }
   });
 
-  it("renders the cloud sea locator icon inside the input without a visible text button", () => {
-    const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
+  it("renders the cloud sea locator icon inside the input without a visible text button", async () => {
+    const html = renderToStaticMarkup(await CloudSeaPage({}));
     const wrapperIndex = html.indexOf('data-current-location-input-wrapper="true"');
     const inputIndex = html.indexOf('aria-label="目的地"', wrapperIndex);
     const buttonIndex = html.indexOf('data-current-location-button="true"', wrapperIndex);
@@ -593,8 +609,8 @@ describe("scenario module pages", () => {
     expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
   });
 
-  it("renders the glow locator icon inside the input without development copy", () => {
-    const html = renderToStaticMarkup(React.createElement(GlowPage));
+  it("renders the glow locator icon inside the input without development copy", async () => {
+    const html = renderToStaticMarkup(await GlowPage({}));
     const wrapperIndex = html.indexOf('data-current-location-input-wrapper="true"');
     const inputIndex = html.indexOf('aria-label="目的地"', wrapperIndex);
     const buttonIndex = html.indexOf('data-current-location-button="true"', wrapperIndex);
@@ -616,8 +632,8 @@ describe("scenario module pages", () => {
     expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
   });
 
-  it("renders the astro locator icon inside the input without development copy", () => {
-    const html = renderToStaticMarkup(React.createElement(AstroPage));
+  it("renders the astro locator icon inside the input without development copy", async () => {
+    const html = renderToStaticMarkup(await AstroPage({}));
     const wrapperIndex = html.indexOf('data-current-location-input-wrapper="true"');
     const inputIndex = html.indexOf('aria-label="目的地"', wrapperIndex);
     const buttonIndex = html.indexOf('data-current-location-button="true"', wrapperIndex);
@@ -640,8 +656,8 @@ describe("scenario module pages", () => {
     expect(html).not.toMatch(/api[_-]?key|secret|AMAP_|key=/i);
   });
 
-  it("removes cloud sea quick spots while keeping search controls available", () => {
-    const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
+  it("removes cloud sea quick spots while keeping search controls available", async () => {
+    const html = renderToStaticMarkup(await CloudSeaPage({}));
     const searchCardHtml = extractPlaceSearchCardHtml(html);
 
     expect(html).toContain('data-subject-control-panel="true"');
@@ -667,10 +683,10 @@ describe("scenario module pages", () => {
     }
   });
 
-  it("uses the shared subject control panel for cloud sea, glow, and astro", () => {
-    const cloudSeaHtml = renderToStaticMarkup(React.createElement(CloudSeaPage));
-    const glowHtml = renderToStaticMarkup(React.createElement(GlowPage));
-    const astroHtml = renderToStaticMarkup(React.createElement(AstroPage));
+  it("uses the shared subject control panel for cloud sea, glow, and astro", async () => {
+    const cloudSeaHtml = renderToStaticMarkup(await CloudSeaPage({}));
+    const glowHtml = renderToStaticMarkup(await GlowPage({}));
+    const astroHtml = renderToStaticMarkup(await AstroPage({}));
     const sharedGlowPanelHtml = renderToStaticMarkup(
       React.createElement(SubjectControlPanel, {
         config: {
@@ -732,15 +748,15 @@ describe("scenario module pages", () => {
     expect(subjectControlSource).toContain("enableCurrentLocation");
     expect(subjectControlSource).toContain("badgeLabel={null}");
     expect(scenarioSource).toContain("SubjectControlPanel");
-    expect(glowPageSource).toContain("ScenarioModulePage");
+    expect(glowPageSource).toContain("FreeWeatherWorkbench");
     expect(glowPageSource).not.toContain("SubjectControlPanel");
     expect(glowPageSource).not.toContain("PlaceSearchCard");
-    expect(astroPageSource).toContain("ScenarioModulePage");
+    expect(astroPageSource).toContain("FreeWeatherWorkbench");
     expect(astroPageSource).not.toContain("SubjectControlPanel");
     expect(astroPageSource).not.toContain("PlaceSearchCard");
   });
 
-  it("renders the subject guide horizon badge from the selected horizon", () => {
+  it("renders the subject guide horizon badge from the selected horizon", async () => {
     for (const config of [cloudSeaScenarioConfig, glowScenarioConfig, astroScenarioConfig]) {
       for (const selectedHorizon of selectableForecastHorizons) {
         const html = renderToStaticMarkup(
@@ -759,7 +775,7 @@ describe("scenario module pages", () => {
     }
   });
 
-  it("keeps range selection in the query form without a second guide state", () => {
+  it("keeps range selection in the query form without a second guide state", async () => {
     const source = readFileSync(
       fileURLToPath(new URL("../components/scenario-module-page.tsx", import.meta.url)),
       "utf8",
@@ -768,7 +784,7 @@ describe("scenario module pages", () => {
     expect(source).not.toContain("requestForecastCalculation");
     expect(source).toContain("onSelectedLocationChange={handleSelectedLocationChange}");
   });
-  it("does not calculate forecasts on any entry page before submitting", () => {
+  it("does not calculate forecasts on any entry page before submitting", async () => {
     for (const path of [
       "../components/homepage-workbench.tsx",
       "../components/scenario-module-page.tsx",
@@ -787,7 +803,7 @@ describe("scenario module pages", () => {
     );
     expect(source).toContain("onClick={handleRunForecast}");
   });
-  it("renders generated cloud sea decision cards without homepage or provider copy", () => {
+  it("renders generated cloud sea decision cards without homepage or provider copy", async () => {
     const { result } = cloudSeaRegressionFixture("genericHighMountainGoodCloudSeaCase");
     const location = selectedLocationFromBrowserGeolocation({
       latitudeWgs84: 30.1328,
@@ -835,7 +851,7 @@ describe("scenario module pages", () => {
     );
   });
 
-  it("renders cloud sea-specific loading and fallback panels after location selection", () => {
+  it("renders cloud sea-specific loading and fallback panels after location selection", async () => {
     const location = selectedLocationFromBrowserGeolocation({
       latitudeWgs84: 30.1328,
       longitudeWgs84: 118.171,
@@ -877,7 +893,7 @@ describe("scenario module pages", () => {
     expect(fallbackHtml).not.toContain("综合出行判断");
   });
 
-  it("renders generated glow decision cards without homepage, cloud sea, or provider copy", () => {
+  it("renders generated glow decision cards without homepage, cloud sea, or provider copy", async () => {
     const result = glowInlineForecastResult();
     const location = selectedLocationFromBrowserGeolocation({
       latitudeWgs84: 30.1328,
@@ -929,7 +945,7 @@ describe("scenario module pages", () => {
     );
   });
 
-  it("renders glow-specific loading and fallback panels after location selection", () => {
+  it("renders glow-specific loading and fallback panels after location selection", async () => {
     const location = selectedLocationFromBrowserGeolocation({
       latitudeWgs84: 30.1328,
       longitudeWgs84: 118.171,
@@ -971,7 +987,7 @@ describe("scenario module pages", () => {
     expect(fallbackHtml).not.toContain("综合出行判断");
   });
 
-  it("renders generated astro decision cards without homepage, cloud sea, glow, or provider copy", () => {
+  it("renders generated astro decision cards without homepage, cloud sea, glow, or provider copy", async () => {
     const result = astroInlineForecastResult();
     const location = selectedLocationFromBrowserGeolocation({
       latitudeWgs84: 30.1328,
@@ -1036,7 +1052,7 @@ describe("scenario module pages", () => {
     );
   });
 
-  it("renders astro-specific loading and fallback panels after location selection", () => {
+  it("renders astro-specific loading and fallback panels after location selection", async () => {
     const location = selectedLocationFromBrowserGeolocation({
       latitudeWgs84: 30.1328,
       longitudeWgs84: 118.171,
@@ -1079,8 +1095,8 @@ describe("scenario module pages", () => {
     expect(fallbackHtml).not.toContain("综合出行判断");
   });
 
-  it("renders the cloud sea pre-result location search panel without result dashboard chrome", () => {
-    const html = renderToStaticMarkup(React.createElement(CloudSeaPage));
+  it("renders the cloud sea pre-result location search panel without result dashboard chrome", async () => {
+    const html = renderToStaticMarkup(await CloudSeaPage({}));
 
     expect(html).toContain("选择拍摄地点");
     expect(html).toContain("预报范围");
@@ -1093,7 +1109,7 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("专业小时数据");
   });
 
-  it("shows browser current location as a compact cloud sea selection that enables the CTA", () => {
+  it("shows browser current location as a compact cloud sea selection that enables the CTA", async () => {
     const currentLocation = selectedLocationFromBrowserGeolocation({
       latitudeWgs84: 31.2304,
       longitudeWgs84: 121.4737,
@@ -1126,7 +1142,7 @@ describe("scenario module pages", () => {
     expect(html).not.toContain('disabled="">查看报告 →</button>');
   });
 
-  it("builds cloud sea current-location requests with WGS84 coordinates and no spot id", () => {
+  it("builds cloud sea current-location requests with WGS84 coordinates and no spot id", async () => {
     const currentLocation = selectedLocationFromBrowserGeolocation({
       latitudeWgs84: 31.2304,
       longitudeWgs84: 121.4737,
@@ -1160,7 +1176,7 @@ describe("scenario module pages", () => {
     expect(url.searchParams.get("photoSpotId")).toBeNull();
   });
 
-  it("keeps locator button styling and geolocation logic out of scenario page files", () => {
+  it("keeps locator button styling and geolocation logic out of scenario page files", async () => {
     const scenarioSource = readFileSync(
       fileURLToPath(new URL("../components/scenario-module-page.tsx", import.meta.url)),
       "utf8",
@@ -1186,18 +1202,18 @@ describe("scenario module pages", () => {
       expect(source).not.toContain("requestBrowserCurrentCoordinates");
       expect(source).not.toContain("selectedLocationFromBrowserGeolocation");
     }
-    expect(glowPageSource).toContain("ScenarioModulePage");
+    expect(glowPageSource).toContain("FreeWeatherWorkbench");
     expect(glowPageSource).not.toContain("SubjectControlPanel");
     expect(glowPageSource).not.toContain("PlaceSearchCard");
-    expect(astroPageSource).toContain("ScenarioModulePage");
+    expect(astroPageSource).toContain("FreeWeatherWorkbench");
     expect(astroPageSource).not.toContain("SubjectControlPanel");
     expect(astroPageSource).not.toContain("PlaceSearchCard");
   });
 
-  it("cloud sea page reads General deep-link query params and preselects context", () => {
+  it("cloud sea page reads General deep-link query params and preselects context", async () => {
     const html = renderToStaticMarkup(
-      React.createElement(CloudSeaPage, {
-        searchParams: subjectDeepLinkParams("cloud_sea"),
+      await CloudSeaPage({
+        searchParams: Promise.resolve(subjectDeepLinkParams("cloud_sea")),
       }),
     );
 
@@ -1227,8 +1243,8 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("118.171");
   });
 
-  it("renders the glow entry page without the popular spot placeholder", () => {
-    const html = renderToStaticMarkup(React.createElement(GlowPage));
+  it("renders the glow entry page without the popular spot placeholder", async () => {
+    const html = renderToStaticMarkup(await GlowPage({}));
     expect(html).toContain("选择拍摄地点");
     expect(html).toContain("预报范围");
     expect(html).toContain("查看报告");
@@ -1238,8 +1254,8 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("data-forecast-entry-help");
     expect(html).not.toContain("data-quick-location-section");
   });
-  it("keeps the glow entry layout responsive without fixed wide columns", () => {
-    const html = renderToStaticMarkup(React.createElement(GlowPage));
+  it("keeps the glow entry layout responsive without fixed wide columns", async () => {
+    const html = renderToStaticMarkup(await GlowPage({}));
 
     expect(html).toContain("mx-auto max-w-[760px]");
     expect(html).not.toMatch(/<details[^>]*data-forecast-entry-help="true"[^>]*>/);
@@ -1249,8 +1265,8 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("sm:grid-cols-2 xl:grid-cols-3");
   });
 
-  it("keeps the astro entry layout responsive without fixed wide columns", () => {
-    const html = renderToStaticMarkup(React.createElement(AstroPage));
+  it("keeps the astro entry layout responsive without fixed wide columns", async () => {
+    const html = renderToStaticMarkup(await AstroPage({}));
     const subjectSectionStart = html.indexOf('data-subject-scenario-target="astro"');
     const footerStart = html.indexOf("<footer", subjectSectionStart);
     const subjectSectionHtml = html.slice(
@@ -1268,7 +1284,7 @@ describe("scenario module pages", () => {
     expect(subjectSectionHtml).not.toMatch(/w-\[(?:[1-9]\d{3,})px\]|min-w-\[(?:[1-9]\d{3,})px\]/);
   });
 
-  it("builds glow current-location requests with WGS84 coordinates and no spot id", () => {
+  it("builds glow current-location requests with WGS84 coordinates and no spot id", async () => {
     const currentLocation = selectedLocationFromBrowserGeolocation({
       latitudeWgs84: 31.2304,
       longitudeWgs84: 121.4737,
@@ -1302,7 +1318,7 @@ describe("scenario module pages", () => {
     expect(url.searchParams.get("photoSpotId")).toBeNull();
   });
 
-  it("builds astro current-location requests with WGS84 coordinates and no spot id", () => {
+  it("builds astro current-location requests with WGS84 coordinates and no spot id", async () => {
     const currentLocation = selectedLocationFromBrowserGeolocation({
       latitudeWgs84: 31.2304,
       longitudeWgs84: 121.4737,
@@ -1336,10 +1352,10 @@ describe("scenario module pages", () => {
     expect(url.searchParams.get("photoSpotId")).toBeNull();
   });
 
-  it("glow page reads General deep-link query params and preselects context", () => {
+  it("glow page reads General deep-link query params and preselects context", async () => {
     const html = renderToStaticMarkup(
-      React.createElement(GlowPage, {
-        searchParams: subjectDeepLinkParams("glow"),
+      await GlowPage({
+        searchParams: Promise.resolve(subjectDeepLinkParams("glow")),
       }),
     );
 
@@ -1351,7 +1367,7 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("朝霞晚霞判断需要看什么");
   });
 
-  it("builds complete forecast query URLs for each scenario CTA", () => {
+  it("builds complete forecast query URLs for each scenario CTA", async () => {
     for (const config of scenarioPageConfigs) {
       const url = new URL(
         buildForecastUrl(samplePlace, config.defaultHorizon, config.target),
@@ -1372,7 +1388,7 @@ describe("scenario module pages", () => {
     }
   });
 
-  it("replaces placeholder copy with Simplified Chinese scenario content", () => {
+  it("replaces placeholder copy with Simplified Chinese scenario content", async () => {
     const serialized = JSON.stringify(scenarioPageConfigs);
     const searchPanelHtml = renderToStaticMarkup(
       React.createElement(ScenarioSearchPanel, { config: cloudSeaScenarioConfig }),
@@ -1416,8 +1432,8 @@ describe("scenario module pages", () => {
     expect(serialized).not.toMatch(/\bAI\b/);
   });
 
-  it("renders the astro entry page with the shared public search and judgment layout", () => {
-    const html = renderToStaticMarkup(React.createElement(AstroPage));
+  it("renders the astro entry page with the shared public search and judgment layout", async () => {
+    const html = renderToStaticMarkup(await AstroPage({}));
     expect(html).toContain("选择拍摄地点");
     expect(html).toContain("预报范围");
     expect(html).toContain("查看报告");
@@ -1427,10 +1443,10 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("data-forecast-entry-help");
     expect(html).not.toContain("data-quick-location-section");
   });
-  it("astro page reads General deep-link query params and preselects context", () => {
+  it("astro page reads General deep-link query params and preselects context", async () => {
     const html = renderToStaticMarkup(
-      React.createElement(AstroPage, {
-        searchParams: subjectDeepLinkParams("astro"),
+      await AstroPage({
+        searchParams: Promise.resolve(subjectDeepLinkParams("astro")),
       }),
     );
 
@@ -1442,14 +1458,14 @@ describe("scenario module pages", () => {
     expect(html).not.toContain("星空银河判断需要看什么");
   });
 
-  it("shows a friendly fallback for incomplete subject deep-link params", () => {
+  it("shows a friendly fallback for incomplete subject deep-link params", async () => {
     const html = renderToStaticMarkup(
-      React.createElement(CloudSeaPage, {
-        searchParams: {
+      await CloudSeaPage({
+        searchParams: Promise.resolve({
           source: "general",
           target: "cloud_sea",
           date: "2026-05-20",
-        },
+        }),
       }),
     );
 
@@ -1458,15 +1474,15 @@ describe("scenario module pages", () => {
     expect(html).toContain("重新选择地点");
   });
 
-  it("does not call external APIs while loading static scenario modules", () => {
+  it("does not call external APIs while loading static scenario modules", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("scenario pages should not call network during static load");
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    CloudSeaPage({});
-    GlowPage({});
-    AstroPage({});
+    await CloudSeaPage({});
+    await GlowPage({});
+    await AstroPage({});
     for (const config of scenarioPageConfigs) {
       buildForecastUrl(samplePlace, config.defaultHorizon, config.target);
     }
@@ -1474,4 +1490,21 @@ describe("scenario module pages", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
+});
+
+describe("free scenario entries", () => {
+  it.each([LiveAstroPage, LiveCloudSeaPage, LiveGlowPage])(
+    "opens the free workbench with all ranges enabled",
+    async (Page) => {
+      const html = renderToStaticMarkup(await Page({}));
+      expect(html).toContain("pw-workbench");
+      expect(html).toContain('value="7d"');
+      expect(html).toContain("搜索城市或地点");
+      expect(html).not.toContain('href="/login"');
+      expect(html).not.toContain('href="/pricing"');
+      const horizonSelect = html.match(/<select[^>]*aria-label="预报范围"[^>]*>[\s\S]*?<\/select>/)?.[0];
+      expect(horizonSelect).toBeDefined();
+      expect(horizonSelect).not.toContain('disabled=""');
+    },
+  );
 });

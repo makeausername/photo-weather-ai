@@ -31,6 +31,8 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   exit 1
 fi
 
+bash "${SCRIPT_DIR}/check-env-production.sh"
+umask 077
 set -a
 # shellcheck disable=SC1090
 . "${ENV_FILE}"
@@ -42,10 +44,25 @@ mkdir -p "${backup_dir}"
 chmod 700 "${PROJECT_ROOT}/backups" "${backup_dir}"
 
 echo "Backing up PostgreSQL database to backups/${timestamp}/postgres.dump..."
-compose exec -T postgres pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -Fc -f - > "${backup_dir}/postgres.dump"
+# Omit -f to stream the archive to stdout; pg_dump treats -f - as a filename.
+compose exec -T postgres pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -Fc > "${backup_dir}/postgres.dump"
+if [[ ! -s "${backup_dir}/postgres.dump" ]]; then
+  echo "Database backup is empty; stopping before any update." >&2
+  exit 1
+fi
+compose exec -T postgres pg_restore --list < "${backup_dir}/postgres.dump" > /dev/null
 
 cp "${ENV_FILE}" "${backup_dir}/env.production.backup"
 chmod 600 "${backup_dir}/env.production.backup"
+
+# Provider credentials live in PostgreSQL; the dump and the source configuration are sensitive.
+backup_paths=(deploy/Caddyfile deploy/cloudflare.caddy deploy/certs deploy/calibration)
+existing_paths=()
+for item in "${backup_paths[@]}"; do [[ ! -e "${item}" ]] || existing_paths+=("${item}"); done
+if [[ "${#existing_paths[@]}" -gt 0 ]]; then
+  tar -czf "${backup_dir}/deployment.tar.gz" "${existing_paths[@]}"
+fi
+compose images --format json > "${backup_dir}/images.json"
 
 echo "Backup complete: backups/${timestamp}"
 echo "The .env.production backup was saved with mode 600. Do not share it or commit it; it contains secrets."

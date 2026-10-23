@@ -195,7 +195,9 @@ docker_cmd() {
 }
 
 compose() {
-  docker_cmd compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+  local profiles=()
+  if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then profiles=(--profile astro); fi
+  docker_cmd compose "${profiles[@]}" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
 require_env_file() {
@@ -528,7 +530,7 @@ require_postgres_identifier() {
 
 validate_db_password_for_env() {
   local value="$1"
-  [[ "${value}" =~ ^[A-Za-z0-9._@%+=-]{8,128}$ ]]
+  [[ "${value}" =~ ^[A-Za-z0-9._@%+=-]{16,128}$ ]]
 }
 
 set_database_config() {
@@ -646,7 +648,7 @@ render_env_file() {
         APP_ENV) write_env_var "${key}" "production" >> "${tmp_file}" ;;
         DOMAIN) write_env_var "${key}" "${DOMAIN}" >> "${tmp_file}" ;;
         SITE_URL|PUBLIC_SITE_URL) write_env_var "${key}" "https://${DOMAIN}" >> "${tmp_file}" ;;
-        NEXT_PUBLIC_API_BASE_URL) write_env_var "${key}" "https://${DOMAIN}/api" >> "${tmp_file}" ;;
+        NEXT_PUBLIC_API_BASE_URL) write_env_var "${key}" "/api/service" >> "${tmp_file}" ;;
         POSTGRES_DB) write_env_var "${key}" "${POSTGRES_DB}" >> "${tmp_file}" ;;
         POSTGRES_USER) write_env_var "${key}" "${POSTGRES_USER}" >> "${tmp_file}" ;;
         POSTGRES_PASSWORD) write_env_var "${key}" "${POSTGRES_PASSWORD}" >> "${tmp_file}" ;;
@@ -1540,7 +1542,7 @@ collect_configuration() {
     if validate_db_password_for_env "${DB_PASSWORD}"; then
       break
     fi
-    warn "数据库密码包含暂不支持的特殊字符，请使用字母、数字和 . _ @ % + = -，或留空自动生成。"
+    warn "数据库密码需为 16–128 位，只使用字母、数字和 . _ @ % + = -，或留空自动生成。"
   done
   set_database_config "${DB_NAME}" "${DB_USER}" "${DB_PASSWORD}"
 
@@ -1632,7 +1634,9 @@ compose_service_exists() {
 
 build_production_images() {
   local service
-  for service in astro-service api web worker; do
+  local services=(api web)
+  if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then services=(astro-service "${services[@]}"); fi
+  for service in "${services[@]}"; do
     if compose_service_exists "${service}"; then
       run_logged "构建 ${service} 镜像" compose build "${service}"
     fi
@@ -1667,21 +1671,12 @@ ensure_light_pollution_directories() {
   echo "Terrain DEM raster storage is ready at deploy/terrain-dem; no DEM is downloaded automatically."
 }
 
-compose_run_bootstrap_admin() {
-  export ADMIN_EMAIL ADMIN_INITIAL_PASSWORD_B64 ADMIN_DISPLAY_NAME
-  compose run --rm \
-    -e ADMIN_EMAIL \
-    -e ADMIN_INITIAL_PASSWORD_B64 \
-    -e ADMIN_DISPLAY_NAME \
-    api pnpm bootstrap:admin
-}
-
 create_admin_account() {
-  run_logged "创建或更新管理员账号" compose_run_bootstrap_admin
+  run_logged "初始化免费版并保留已有管理员" compose run --rm --no-deps api corepack pnpm db:seed:free
 }
 
 verify_admin_account() {
-  if run_logged_allow_fail "验证管理员角色与权限" bash "${SCRIPT_DIR}/verify-admin-bootstrap.sh"; then
+  if run_logged_allow_fail "验证管理员角色与权限" env VERIFY_ADMIN_PASSWORD=false bash "${SCRIPT_DIR}/verify-admin-bootstrap.sh"; then
     ok "管理员账号验证通过。"
     return
   fi
@@ -1693,29 +1688,33 @@ verify_admin_account() {
 }
 
 bootstrap_stack() {
-  local production_services=(postgres redis astro-service api web caddy worker)
+  local production_services=(postgres redis api web caddy)
+  bash "${SCRIPT_DIR}/check-cloudflare.sh"
 
   section 8 "构建并启动服务"
   build_production_images
 
-  run_logged "启动数据库、Redis 和星历服务" compose up -d postgres redis astro-service
+  run_logged "启动数据库和 Redis" compose up -d postgres redis
 
   section 9 "天文星历文件检查"
-  download_required_ephemeris
+  if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then
+    compose up -d astro-service
+    download_required_ephemeris
+    production_services+=(astro-service)
+  fi
 
   section 10 "数据库连接预检"
   preflight_database_connection
 
   section 11 "数据库迁移"
   run_migrations
-  run_logged "写入数据库种子数据" compose run --rm api corepack pnpm db:seed
 
   section 12 "管理员创建与验证"
   create_admin_account
   verify_admin_account
 
   run_logged "启动完整生产服务" compose up -d --remove-orphans "${production_services[@]}"
-  run_logged "重启应用服务" compose restart api web worker caddy
+  run_logged "重启应用服务" compose restart api web caddy
   echo "生产服务状态："
   compose ps
 }
@@ -1776,22 +1775,10 @@ main() {
         if [[ -n "${ADMIN_INITIAL_PASSWORD_B64:-}" ]] && ! resolve_admin_password_from_env >/dev/null 2>&1; then
           fail_install "ADMIN_INITIAL_PASSWORD_B64 不是有效的 base64 编码。"
         fi
-        if resolve_admin_password_from_env >/dev/null 2>&1; then
-          if ask_yes_no "是否重置管理员账号凭据" "n"; then
-            ADMIN_PASSWORD=""
-            ADMIN_INITIAL_PASSWORD=""
-            ADMIN_INITIAL_PASSWORD_B64=""
-            collect_admin_configuration "${ADMIN_EMAIL:-}" "${ADMIN_DISPLAY_NAME:-Super Admin}"
-            update_env_admin_lines
-          else
-            prepare_admin_password_b64_from_env
-            ok "复用现有管理员凭据。"
-          fi
-        else
-          warn ".env.production 缺少可用于管理员创建与验证的密码配置，需要重新设置管理员凭据。"
-          collect_admin_configuration "${ADMIN_EMAIL:-}" "${ADMIN_DISPLAY_NAME:-Super Admin}"
-          update_env_admin_lines
+        if ! resolve_admin_password_from_env >/dev/null 2>&1; then
+          warn "未设置初始密码：可复用已有管理员；若连接空库，请先配置 ADMIN_INITIAL_PASSWORD_B64。"
         fi
+        ok "免费版初始化保留已有管理员密码；重置密码请单独使用 scripts/reset-admin.sh。"
         check_env_file
         load_env_file
         load_existing_database_config

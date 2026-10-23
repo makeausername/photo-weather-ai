@@ -1,15 +1,31 @@
+import /etc/caddy/cloudflare.caddy
+
 DOMAIN_PLACEHOLDER {
+  tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
   encode zstd gzip
-
-  @billing_api path /billing/*
-
   route {
-    reverse_proxy @billing_api api:4000
+    import cloudflare_only
 
-    handle_path /api/* {
-      reverse_proxy api:4000
+    @private path /api/* /admin /admin/* /admin-preview /admin-preview/*
+    header @private >Cache-Control "no-store"
+
+    @retired path /billing /billing/*
+    respond @retired 410
+
+    handle_path /api/service/* {
+      reverse_proxy api:4000 {
+        header_up X-Forwarded-For {client_ip}
+      }
     }
 
-    reverse_proxy web:3000
+    handle_path /api/* {
+      reverse_proxy api:4000 {
+        header_up X-Forwarded-For {client_ip}
+      }
+    }
+
+    reverse_proxy web:3000 {
+      header_up X-Forwarded-For {client_ip}
+    }
   }
 }
