@@ -29,7 +29,7 @@ import_origin_certificate() (
   # Stage and validate before replacing existing files; interrupted input leaves them intact.
   umask 077
   local staging choice cert_path key_path
-  staging="$(mktemp -d "${PROJECT_ROOT}/deploy/.certificate.XXXXXX")"
+  staging="$(mktemp -d "${PROJECT_ROOT}/deploy/.certificate.XXXXXX")" || return 1
   trap 'rm -rf -- "${staging}"' EXIT
   ui_note "在 Cloudflare → SSL/TLS → 源服务器 → 创建证书，选择 PEM 格式。"
   ui_note "证书须覆盖 ${DOMAIN}；已有有效证书也可直接导入。"
@@ -53,10 +53,10 @@ import_origin_certificate() (
     warn '证书校验失败：需匹配域名、剩余有效期至少 7 天，且使用配对的无密码私钥。原证书未改动。'
     return 1
   fi
-  mkdir -p deploy/certs
-  chmod 700 deploy/certs
-  mv -- "${staging}/origin.pem" deploy/certs/origin.pem
-  mv -- "${staging}/origin.key" deploy/certs/origin.key
+  mkdir -p deploy/certs || return 1
+  chmod 700 deploy/certs || return 1
+  mv -- "${staging}/origin.pem" deploy/certs/origin.pem || return 1
+  mv -- "${staging}/origin.key" deploy/certs/origin.key || return 1
   chmod 600 deploy/certs/origin.key deploy/certs/origin.pem
 )
 

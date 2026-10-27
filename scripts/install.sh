@@ -1483,8 +1483,6 @@ provider_enabled_label() {
 }
 
 print_deployment_summary() {
-  echo
-  line
   printf '  网站域名    %s\n' "${DOMAIN}"
   printf '  管理员邮箱  %s\n' "${ADMIN_EMAIL}"
   printf '  管理后台    https://%s/admin/login\n' "${DOMAIN}"
@@ -1494,7 +1492,7 @@ print_deployment_summary() {
     print_database_config_summary
     printf '  安装区域：%s / Docker 安装方式：%s\n' "${INSTALL_REGION}" "${DOCKER_INSTALL_METHOD}"
   fi
-  echo "密码与 API Key 均已隐藏。"
+  ui_note "密码与 API Key 均已隐藏。"
 }
 
 confirm_deployment() {

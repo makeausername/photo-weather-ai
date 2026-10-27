@@ -511,12 +511,10 @@ When the installer detects an existing PostgreSQL volume, it shows:
 检测到已有 PostgreSQL 数据卷。
 PostgreSQL 首次初始化后的用户名和密码不会因为修改 .env.production 自动改变。
 
-请选择处理方式：
-1. 保留现有数据并停止安装
-2. 删除测试数据库卷并重新初始化
+继续安装并保留现有数据（迁移前自动备份） (Y/n) [y]:
 ```
 
-For staging/test only:
+Choose the default to continue with existing credentials and data, or `n` to stop without deleting the database. Destructive reset is a separate command, for staging/test only:
 
 ```bash
 bash scripts/reset-prod-db.sh
@@ -576,7 +574,7 @@ bash scripts/test-real-weather.sh
 - Docker build fails on a small server: enable the offered 4 GB swap file or move the build to a larger machine.
 - Caddy certificate failure: confirm DNS and ports `80`/`443`, then run `bash scripts/status.sh`.
 - Billing or mobile Alipay URLs return a Next.js 404: run `bash scripts/update.sh` to regenerate `deploy/Caddyfile`, restart Caddy, and confirm `https://your-domain/billing/products` returns JSON instead of the web catch-all.
-- Web cannot call API: confirm `.env.production` has `NEXT_PUBLIC_API_BASE_URL=https://your-domain/api`, rebuild with `bash scripts/update.sh`, and check `https://your-domain/api/health`.
+- Web cannot call API: confirm `.env.production` has `NEXT_PUBLIC_API_BASE_URL=/api/service` and `API_BASE_URL=http://api:4000`, rebuild with `bash scripts/update.sh`, and check `https://your-domain/api/service/health`.
 
 ## Security
 
