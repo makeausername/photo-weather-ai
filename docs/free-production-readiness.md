@@ -196,7 +196,9 @@ Cloudflare 免费全球网络不包含中国大陆专用网络；国内访问仍
 9. **经上线授权后再切正式域名。** 更新后台正式网站地址及构建时站点地址，重新构建受影响镜像，核对高德正式域名白名单和证书。切流后重复关键验收，观察错误率、请求耗时、用量及磁盘。
 10. **保留回退路径。** 保存上一套镜像和配置。代码回滚先确认数据库结构兼容；需要回退数据库时恢复上线前备份，不盲目倒跑迁移。首次发布没有旧免费版镜像时，回退到维护页并停止公开查询，保留数据库用于排查。不得用 `down -v` 删除持久卷。
 
-后续可使用 `bash scripts/install.sh`（准备好源站证书后），或按以下顺序手动验收。命令仅供说明，本轮没有执行生产操作：
+运行 `bash scripts/install.sh` 可进入 8 步安装向导：填写域名、管理员账号，粘贴源站证书和私钥（或导入文件），确认摘要后自动安装。内部数据库密码、Redis 密码和 JWT 密钥默认自动生成，不需要手工修改配置。终端使用暖色步骤标题、隐藏密码输入和构建进度提示；窄窗口自动简化步骤布局。
+
+Cloudflare 的 DNS 橙云、Full (strict) 和缓存绕过仍需在账号中设置。向导校验证书后才开始构建；公网首页和 `/api/service/health` 都通过才显示完成。失败会停止并提示用 `bash scripts/resume-install.sh` 继续，保留数据；恢复和更新会在迁移前备份。也可按以下顺序手动验收：
 
 ```bash
 # 从生产模板安全生成 .env.production，替换全部占位符，准备 deploy/certs 下的证书
@@ -245,3 +247,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 - 本机 Docker 引擎管道不可用，新增 `.github/workflows/free-edition-ci.yml` 在隔离 Ubuntu 环境补验 Node 22/PostgreSQL 16：镜像构建、全部迁移、免费初始化及重复执行、管理员登录、配置保存及重启保留、前台页面、Caddy 配置和数据库备份。结果以 [PR #40 的 Checks](https://github.com/makeausername/photo-weather-ai/pull/40/checks) 中最新提交为准；CI 不发布镜像、不部署服务器。
 - 正式和风、高德、Origin CA、DNS、Cloudflare 边缘缓存、运营商网络、备份恢复仍待外部环境验收。CI 只用临时测试凭据、自签证书和独立数据库，不使用正式配置。
 - 免费版源文件已提交并推送；未创建正式生产环境文件，未操作 Cloudflare/服务商账号，未部署。正式部署应使用新空库。
+
+### 安装入口回归覆盖
+
+GitHub Actions 在一次性 Linux 环境中通过 PTY 驱动实际 `scripts/install.sh`，覆盖域名/账号输入、证书文件导入、生成配置、镜像构建、Prisma 连接预检、免费初始化、登录、配置保存及前台四页，再执行恢复安装和无 Git 源码归档更新，验证数据保留。HTTPS 测试使用临时证书和独立 Docker 网络模拟可信 Cloudflare 回源，保持生产 Caddy 访问限制；它不能代替正式域名的 Cloudflare 边缘验收。独立功能测试覆盖证书粘贴、错误域名/过期/不配对证书、中断输入和公网检查失败。CI 不发布镜像、不部署服务器。

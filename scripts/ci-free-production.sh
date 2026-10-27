@@ -7,48 +7,27 @@ cd "$(dirname -- "${BASH_SOURCE[0]}")/.."
 export COMPOSE_PROJECT_NAME="free-ci-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
 [[ "${COMPOSE_PROJECT_NAME}" =~ ^free-ci-[0-9]+-[0-9]+$ ]] || exit 1
 umask 077
-python3 - <<'PY'
-from pathlib import Path
-import base64, os, secrets
-values = {
-    'DOMAIN': 'weather.example.test', 'POSTGRES_DB': 'free_ci', 'POSTGRES_USER': 'free_ci',
-    'POSTGRES_PASSWORD': secrets.token_hex(24), 'REDIS_PASSWORD': secrets.token_hex(24),
-    'JWT_SECRET': secrets.token_hex(48), 'ADMIN_EMAIL': 'ci@example.test',
-    'ADMIN_INITIAL_PASSWORD_B64': base64.b64encode(('Ci!'+secrets.token_hex(24)).encode()).decode(),
-    'ADMIN_DISPLAY_NAME': 'CI',
-}
-text = Path('deploy/env.production.template').read_text()
-for key, value in values.items():
-    text = text.replace(key+'_PLACEHOLDER', value)
-# Nested maintenance scripts may use sudo, which drops exported shell variables.
-# Store the isolated Compose project identity in the explicit environment file too.
-Path('.env.production').write_text(text+'\nCOMPOSE_PROJECT_NAME='+os.environ['COMPOSE_PROJECT_NAME']+'\n')
-Path('deploy/Caddyfile').write_text(Path('deploy/Caddyfile.template').read_text().replace('DOMAIN_PLACEHOLDER', values['DOMAIN']))
-PY
-bash scripts/check-env-production.sh >/dev/null
-set -a
-. ./.env.production
-set +a
-mkdir -p deploy/certs deploy/calibration
-openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj '/CN=weather.example.test' -addext 'subjectAltName=DNS:weather.example.test' -keyout deploy/certs/origin.key -out deploy/certs/origin.pem 2>/dev/null
-bash scripts/check-cloudflare.sh
+mkdir -p .runtime/ci-cert .runtime/ci-bin
+openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj '/CN=weather.example.test' -addext 'subjectAltName=DNS:weather.example.test' -keyout .runtime/ci-cert/origin.key -out .runtime/ci-cert/origin.pem 2>/dev/null
 compose() { docker compose --env-file .env.production -f docker-compose.prod.yml "$@"; }
 cleanup() {
   local status=$?
-  if [[ "${status}" -ne 0 ]]; then compose ps; compose logs --tail=60 api web caddy; fi
-  # The guard above makes this a unique, disposable CI project, never production volumes.
+  if [[ "${status}" -ne 0 && -f .env.production ]]; then compose ps; compose logs --tail=60 api web caddy; fi
+  # Only this unique disposable CI project is removed, never production volumes.
   compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+  docker network rm "${COMPOSE_PROJECT_NAME}-edge" >/dev/null 2>&1 || true
   exit "${status}"
 }
 trap cleanup EXIT
-compose config --quiet
-compose build --pull api web
-compose up -d --wait --wait-timeout 120 postgres redis
-compose run --rm --no-deps api corepack pnpm db:migrate
-compose run --rm --no-deps api corepack pnpm db:seed:free
-compose run --rm --no-deps api corepack pnpm db:seed:free
+docker network create --subnet 173.245.48.0/24 "${COMPOSE_PROJECT_NAME}-edge" >/dev/null
+cp scripts/ci-cloudflare-curl.sh .runtime/ci-bin/curl
+chmod +x .runtime/ci-bin/curl
+export PATH="${PWD}/.runtime/ci-bin:${PATH}"
+python3 scripts/ci-installer-wizard.py
+set -a
+. ./.env.production
+set +a
 VERIFY_ADMIN_PASSWORD=true bash scripts/verify-admin-bootstrap.sh
-compose up -d --wait --wait-timeout 180 api web caddy
 compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 compose exec -T -w /app/packages/db api node --input-type=module <<'JS'
 import assert from 'node:assert/strict';
@@ -78,7 +57,23 @@ JS
 bash scripts/backup.sh
 dump="$(find backups -name postgres.dump -type f -print -quit)"
 [[ -s "${dump}" ]] || { echo "Database backup missing" >&2; exit 1; }
-compose restart api web
-compose up -d --wait --wait-timeout 180 api web
+# Resume after initial-password removal must preserve the existing administrator and settings.
+python3 - <<'PY'
+from pathlib import Path
+import re
+p=Path('.env.production')
+p.write_text(re.sub(r'^ADMIN_INITIAL_PASSWORD_B64=.*$', 'ADMIN_INITIAL_PASSWORD_B64=', p.read_text(), flags=re.M))
+PY
+unset ADMIN_INITIAL_PASSWORD_B64
+bash scripts/resume-install.sh
+# Test update's no-Git archive path, retaining the same isolated Compose volumes.
+mkdir -p .runtime/update-checkout
+git archive HEAD | tar -x -C .runtime/update-checkout
+cp .env.production .runtime/update-checkout/
+mkdir -p .runtime/update-checkout/deploy/certs
+cp deploy/certs/origin.* .runtime/update-checkout/deploy/certs/
+mkdir -p .runtime/update-checkout/.runtime/ci-cert
+cp .runtime/ci-cert/origin.pem .runtime/update-checkout/.runtime/ci-cert/
+(cd .runtime/update-checkout && bash scripts/update.sh)
 compose exec -T api node -e 'fetch("http://web:3000/api/service/site/config").then(r=>r.json()).then(v=>{if(v.name!=="CI Free Weather")process.exit(1)}).catch(()=>process.exit(1))'
 echo "Linux production stack checks passed; no image published and no server deployed."

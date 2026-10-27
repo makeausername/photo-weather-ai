@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
@@ -15,6 +16,7 @@ cd "${PROJECT_ROOT}"
 
 # shellcheck source=scripts/lib/installer-input.sh
 . "${INSTALLER_INPUT_LIB}"
+. "${SCRIPT_DIR}/lib/deployment-runtime.sh"
 
 if [[ "$(id -u)" -eq 0 ]]; then
   SUDO=""
@@ -24,7 +26,7 @@ fi
 
 docker_cmd() {
   if [[ -n "${SUDO}" ]]; then
-    sudo docker "$@"
+    sudo --preserve-env=APP_GIT_SHA,COMPOSE_PROJECT_NAME docker "$@"
   else
     docker "$@"
   fi
@@ -219,7 +221,7 @@ preflight_database_connection() {
   run_postgres_select_one || return 1
 
   echo "Checking database connectivity from the API image..."
-  if compose run --rm api node -e 'async function main() { let prisma; try { const { PrismaClient } = require("@prisma/client"); prisma = new PrismaClient(); await prisma.$queryRawUnsafe("SELECT 1"); } catch { console.error("数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"); process.exitCode = 1; } finally { if (prisma) { await prisma.$disconnect().catch(() => {}); } } } main();'; then
+  if compose run --rm --no-deps -w /app/packages/db api node -e 'async function main() { let prisma; try { const { PrismaClient } = require("@prisma/client"); prisma = new PrismaClient(); await prisma.$queryRawUnsafe("SELECT 1"); } catch (error) { console.error(error.code === "MODULE_NOT_FOUND" ? "数据库客户端依赖缺失，请重新构建 API 镜像。" : "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"); process.exitCode = 1; } finally { if (prisma) { await prisma.$disconnect().catch(() => {}); } } } main();'; then
     return
   fi
 
@@ -283,6 +285,7 @@ if [[ ! -f "${COMPOSE_FILE}" ]]; then
   exit 1
 fi
 
+ensure_host_dependencies
 bash "${SCRIPT_DIR}/check-env-production.sh"
 set -a
 # shellcheck disable=SC1090
@@ -295,6 +298,7 @@ compose config >/dev/null
 update_checkout
 
 render_caddyfile
+bash "${SCRIPT_DIR}/check-cloudflare.sh"
 
 echo "Rebuilding production images..."
 build_production_images
@@ -305,7 +309,6 @@ if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then
   compose up -d astro-service
   bash "${SCRIPT_DIR}/download-ephemeris.sh"
 fi
-bash "${SCRIPT_DIR}/check-cloudflare.sh"
 preflight_database_connection
 # Snapshot before applying migrations; a failed migration never switches application containers.
 bash "${SCRIPT_DIR}/backup.sh"
@@ -313,12 +316,13 @@ run_migrations
 create_and_verify_admin
 
 echo "Restarting verified free-edition services..."
-compose up -d --remove-orphans --force-recreate api web caddy
+compose up -d --wait --wait-timeout 180 --remove-orphans --force-recreate api web caddy
 verify_web_revision
+verify_public_https
 
 echo "Update complete."
 compose ps
 if [[ -n "${DOMAIN:-}" ]]; then
   echo "Public URL: https://${DOMAIN}"
-  echo "API health: https://${DOMAIN}/api/health"
+  echo "API health: https://${DOMAIN}/api/service/health"
 fi
