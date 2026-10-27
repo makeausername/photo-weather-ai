@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
@@ -47,50 +48,9 @@ mkdir -p "${PROJECT_ROOT}/deploy"
 : > "${INSTALL_LOG}"
 chmod 600 "${INSTALL_LOG}" 2>/dev/null || true
 
-if [[ -t 1 ]] && command -v tput >/dev/null 2>&1 && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
-  COLOR_GREEN="$(tput setaf 2)"
-  COLOR_YELLOW="$(tput setaf 3)"
-  COLOR_RED="$(tput setaf 1)"
-  COLOR_CYAN="$(tput setaf 6)"
-  COLOR_RESET="$(tput sgr0)"
-else
-  COLOR_GREEN=""
-  COLOR_YELLOW=""
-  COLOR_RED=""
-  COLOR_CYAN=""
-  COLOR_RESET=""
-fi
-
-line() {
-  printf '%s\n' "=================================================="
-}
-
-title() {
-  line
-  printf '%s\n' "逐光天气 一键部署安装程序"
-  line
-}
-
-section() {
-  local number="$1"
-  local label="$2"
-  echo
-  line
-  printf '%s%s. %s%s\n' "${COLOR_CYAN}" "${number}" "${label}" "${COLOR_RESET}"
-  line
-}
-
-ok() {
-  printf '%sOK%s %s\n' "${COLOR_GREEN}" "${COLOR_RESET}" "$1"
-}
-
-warn() {
-  printf '%sWARNING%s %s\n' "${COLOR_YELLOW}" "${COLOR_RESET}" "$1"
-}
-
-error_message() {
-  printf '%sERROR%s %s\n' "${COLOR_RED}" "${COLOR_RESET}" "$1"
-}
+. "${SCRIPT_DIR}/lib/installer-ui.sh"
+. "${SCRIPT_DIR}/lib/deployment-runtime.sh"
+. "${SCRIPT_DIR}/lib/installer-certificate.sh"
 
 # shellcheck source=scripts/lib/installer-input.sh
 . "${INSTALLER_INPUT_LIB}"
@@ -188,7 +148,7 @@ run_sudo() {
 
 docker_cmd() {
   if [[ -n "${SUDO}" ]]; then
-    sudo docker "$@"
+    sudo --preserve-env=APP_GIT_SHA,COMPOSE_PROJECT_NAME docker "$@"
   else
     docker "$@"
   fi
@@ -312,59 +272,22 @@ log_install_settings() {
 }
 
 prompt_required() {
-  local label="$1"
-  local default_value="${2:-}"
-  local value=""
-
+  local label="$1" default_value="${2:-}" value=""
   while true; do
-    if [[ -n "${default_value}" ]]; then
-      read -r -p "${label} [${default_value}]: " value
-      value="${value:-${default_value}}"
-    else
-      read -r -p "${label}: " value
-    fi
-
+    value="$(ui_input "${label}" "${default_value}")" || return 1
     value="$(trim "${value}")"
-    if [[ -n "${value}" ]]; then
-      printf '%s' "${value}"
-      return
-    fi
+    if [[ -n "${value}" ]]; then printf '%s' "${value}"; return 0; fi
     warn "此项不能为空。"
   done
 }
 
-prompt_optional() {
-  local label="$1"
-  local default_value="${2:-}"
-  local value=""
-
-  if [[ -n "${default_value}" ]]; then
-    read -r -p "${label} [${default_value}]: " value
-    value="${value:-${default_value}}"
-  else
-    read -r -p "${label}: " value
-  fi
-
-  trim "${value}"
-}
+prompt_optional() { ui_input "$1" "${2:-}"; }
 
 ask_yes_no() {
-  local label="$1"
-  local default_value="${2:-y}"
-  local suffix="[Y/n]"
-  local answer=""
-
-  if [[ "${default_value}" == "n" ]]; then
-    suffix="[y/N]"
-  fi
-
-  read -r -p "${label} ${suffix}: " answer
-  answer="$(trim "${answer}")"
-  answer="${answer:-${default_value}}"
-  case "${answer,,}" in
-    y|yes) return 0 ;;
-    *) return 1 ;;
-  esac
+  local label="$1" default_value="${2:-y}" answer="" suffix="Y/n"
+  [[ "${default_value}" != n ]] || suffix="y/N"
+  answer="$(ui_input "${label} (${suffix})" "${default_value}")" || return 1
+  case "${answer,,}" in y|yes) return 0 ;; *) return 1 ;; esac
 }
 
 confirm_continue() {
@@ -375,7 +298,7 @@ confirm_continue() {
   while true; do
     echo
     echo "${prompt}"
-    read -r -p "${hint} " answer
+    IFS= read -r -p "${hint} " answer || return 1
     answer="$(trim "${answer}")"
     case "${answer,,}" in
       ""|y|yes) return 0 ;;
@@ -390,7 +313,7 @@ confirm_dangerous_delete() {
   local prompt="${2:-输入 DELETE_DB_DATA 确认删除测试数据库卷:}"
   local confirmation=""
 
-  read -r -p "${prompt} " confirmation
+  IFS= read -r -p "${prompt} " confirmation || return 1
   if [[ "${confirmation}" == "${expected}" ]]; then
     return 0
   fi
@@ -624,8 +547,8 @@ normalize_domain() {
   value="${value%%/*}"
   value="$(trim "${value}")"
 
-  if [[ ! "${value}" =~ ^[A-Za-z0-9.-]+$ ]] || [[ "${value}" != *.* ]]; then
-    echo "域名格式应类似 example.com 或 app.example.com。"
+  if [[ ${#value} -gt 253 || ! "${value}" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]]; then
+    warn "域名格式应类似 example.com 或 app.example.com。"
     exit 1
   fi
 
@@ -644,6 +567,7 @@ render_env_file() {
     if [[ "${line}" =~ ^([A-Z0-9_]+)= ]]; then
       key="${BASH_REMATCH[1]}"
       case "${key}" in
+        COMPOSE_PROJECT_NAME) write_env_var "${key}" "${COMPOSE_PROJECT_NAME:-${COMPOSE_PROJECT_NAME_DEFAULT}}" >> "${tmp_file}" ;;
         NODE_ENV) write_env_var "${key}" "production" >> "${tmp_file}" ;;
         APP_ENV) write_env_var "${key}" "production" >> "${tmp_file}" ;;
         DOMAIN) write_env_var "${key}" "${DOMAIN}" >> "${tmp_file}" ;;
@@ -1314,8 +1238,8 @@ port_in_use() {
 check_ports() {
   for port in 80 443; do
     if port_in_use "${port}"; then
-      echo "Port ${port} appears to be in use."
-      if ! ask_yes_no "Continue anyway" "n"; then
+      warn "端口 ${port} 已被占用，请确认是否由本站 Caddy 使用。"
+      if ! ask_yes_no "确认继续使用现有端口" "n"; then
         exit 1
       fi
     fi
@@ -1328,15 +1252,14 @@ check_dns() {
   domain_ips="$(getent ahostsv4 "${DOMAIN}" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ' || true)"
 
   if [[ -z "${server_ip}" || -z "${domain_ips}" ]]; then
-    echo "DNS check was inconclusive. Continue if the domain A record points to this server."
+    ui_note "暂时无法确认 DNS，请核对 Cloudflare A 记录；稍后将检查实际 HTTPS 链路。"
     return
   fi
 
   if [[ " ${domain_ips} " == *" ${server_ip} "* ]]; then
     echo "DNS check passed: ${DOMAIN} resolves to ${server_ip}."
   else
-    echo "DNS warning: ${DOMAIN} resolves to ${domain_ips}, but this server appears to be ${server_ip}."
-    echo "Caddy certificate issuance may fail until DNS points to this server."
+    ui_note "域名返回代理地址；开启 Cloudflare 橙云时属于正常情况，最终会检查实际 HTTPS 链路。"
   fi
 }
 
@@ -1351,53 +1274,16 @@ handle_existing_postgres_volume() {
   echo
   warn "检测到已有 PostgreSQL 数据卷。"
   echo "PostgreSQL 首次初始化后的用户名和密码不会因为修改 .env.production 自动改变。"
-  echo
-  echo "请选择处理方式："
-  echo "1. 保留现有数据并停止安装"
-  echo "2. 删除测试数据库卷并重新初始化"
-  echo
-
-  local choice=""
-  read -r -p "请输入选项 [1/2]: " choice
-  case "${choice}" in
-    1)
-      warn "已停止安装，保留现有 PostgreSQL 数据卷。"
-      exit 1
-      ;;
-    2)
-      if ! confirm_dangerous_delete "DELETE_DB_DATA" "输入 DELETE_DB_DATA 确认删除测试数据库卷:"; then
-        warn "未确认删除，已停止安装。"
-        exit 1
-      fi
-      run_logged_allow_fail "停止现有生产服务" compose down --remove-orphans || true
-      run_logged "删除 PostgreSQL 数据卷 ${volume_name}" docker_cmd volume rm "${volume_name}"
-      ;;
-    *)
-      warn "未选择有效选项，已停止安装。"
-      exit 1
-      ;;
-  esac
+  if ask_yes_no "继续安装并保留现有数据（迁移前自动备份）" "y"; then
+    EXISTING_DATABASE=1
+    return
+  fi
+  warn "已停止安装，现有数据库未删除。需要清空时请单独使用 scripts/reset-prod-db.sh。"
+  exit 1
 }
 
 backup_existing_database() {
-  local timestamp backup_dir
-  timestamp="$(date +%Y%m%d-%H%M%S)"
-  backup_dir="${PROJECT_ROOT}/backups/${timestamp}"
-  mkdir -p "${backup_dir}"
-  chmod 700 "${PROJECT_ROOT}/backups" "${backup_dir}"
-
-  run_logged "启动 PostgreSQL 以执行备份" compose up -d postgres
-  wait_for_postgres
-
-  echo "正在备份 PostgreSQL 数据库到 backups/${timestamp}/postgres.dump..."
-  if ! compose exec -T postgres pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -Fc -f - > "${backup_dir}/postgres.dump"; then
-    print_database_diagnostics
-    fail_install "数据库备份失败，请确认 .env.production 中的数据库凭据与现有数据卷一致。"
-  fi
-
-  cp "${ENV_FILE}" "${backup_dir}/env.production.backup"
-  chmod 600 "${backup_dir}/env.production.backup"
-  ok "数据库备份完成：backups/${timestamp}"
+  run_logged "备份已有数据库与配置" bash "${SCRIPT_DIR}/backup.sh"
 }
 
 wait_for_postgres() {
@@ -1468,7 +1354,7 @@ preflight_database_connection() {
   wait_for_postgres
   run_postgres_select_one
 
-  if run_logged_allow_fail "检查 API 容器内数据库连接" compose run --rm api node -e 'async function main() { let prisma; try { const { PrismaClient } = require("@prisma/client"); prisma = new PrismaClient(); await prisma.$queryRawUnsafe("SELECT 1"); } catch { console.error("数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"); process.exitCode = 1; } finally { if (prisma) { await prisma.$disconnect().catch(() => {}); } } } main();'; then
+  if run_logged_allow_fail "检查 API 容器内数据库连接" compose run --rm --no-deps -w /app/packages/db api node -e 'async function main() { let prisma; try { const { PrismaClient } = require("@prisma/client"); prisma = new PrismaClient(); await prisma.$queryRawUnsafe("SELECT 1"); } catch (error) { console.error(error.code === "MODULE_NOT_FOUND" ? "数据库客户端依赖缺失，请重新构建 API 镜像。" : "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"); process.exitCode = 1; } finally { if (prisma) { await prisma.$disconnect().catch(() => {}); } } } main();'; then
     ok "数据库连接检查通过。"
     return
   fi
@@ -1495,8 +1381,12 @@ collect_admin_configuration() {
   local default_display_name="${2:-${ADMIN_DISPLAY_NAME:-Super Admin}}"
   local env_password=""
 
-  section 4 "管理员账号"
-  ADMIN_EMAIL="$(prompt_required "请输入管理员邮箱" "${default_email}")"
+  section 3 "管理员账号"
+  while true; do
+    ADMIN_EMAIL="$(prompt_required "请输入管理员邮箱" "${default_email}")" || return 1
+    [[ "${ADMIN_EMAIL}" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] && break
+    warn "请输入有效的管理员邮箱。"
+  done
 
   if env_password="$(resolve_admin_password_from_env 2>/dev/null)"; then
     if [[ -n "${ADMIN_PASSWORD:-}" || -n "${ADMIN_INITIAL_PASSWORD:-}" ]]; then
@@ -1518,14 +1408,19 @@ collect_admin_configuration() {
   ADMIN_INITIAL_PASSWORD_B64="$(admin_password_to_b64 "${ADMIN_PASSWORD}")"
   export ADMIN_INITIAL_PASSWORD_B64
 
-  ADMIN_DISPLAY_NAME="$(prompt_required "请输入管理员显示名称" "${default_display_name}")"
+  ADMIN_DISPLAY_NAME="$(prompt_required "请输入管理员显示名称" "${default_display_name}")" || return 1
 }
 
 collect_configuration() {
   section 2 "域名配置"
-  DOMAIN="$(normalize_domain "$(prompt_required "请输入域名" "example.com")")"
+  ui_note "填写网站使用的完整域名，例如 weather.example.com。"
+  while true; do
+    local entered_domain
+    entered_domain="$(prompt_required '请输入域名')" || return 1
+    if DOMAIN="$(normalize_domain "${entered_domain}")"; then break; fi
+  done
 
-  section 3 "数据库配置"
+  if ask_yes_no "自定义数据库和内部密钥（通常无需修改）" "n"; then
   DB_NAME="$(prompt_required "请输入数据库名称" "photo_weather_ai")"
   DB_USER="$(prompt_required "请输入数据库用户" "photo_weather_ai")"
   require_postgres_identifier "DB_NAME" "${DB_NAME}"
@@ -1558,9 +1453,16 @@ collect_configuration() {
     ok "已自动生成 JWT 密钥。"
   fi
 
-  collect_admin_configuration "${ADMIN_EMAIL:-}" "Super Admin"
+  else
+    set_database_config photo_weather_ai photo_weather_ai "$(generate_secret)"
+    REDIS_PASSWORD="$(generate_secret)"
+    JWT_SECRET="$(generate_secret)"
+    ok "数据库、Redis 与登录签名密钥已自动生成。"
+  fi
 
-  section 5 "第三方服务配置"
+  collect_admin_configuration "${ADMIN_EMAIL:-}" "管理员"
+
+  ui_note "天气和地图配置可在安装完成后进入后台填写。"
   AMAP_API_KEY=""
   AMAP_WEB_SERVICE_KEY=""
   QWEATHER_API_KEY=""
@@ -1581,27 +1483,16 @@ provider_enabled_label() {
 }
 
 print_deployment_summary() {
-  echo
-  line
-  echo "部署摘要"
-  line
-  printf '域名：%s\n' "${DOMAIN}"
-  printf '数据库名称：%s\n' "${POSTGRES_DB}"
-  printf '数据库用户：%s\n' "${POSTGRES_USER}"
-  printf '管理员邮箱：%s\n' "${ADMIN_EMAIL}"
-  printf '第三方服务：Amap=%s / QWeather=%s / Open-Meteo=%s\n' \
-    "$(provider_enabled_label "${AMAP_API_KEY:-}")" \
-    "$(provider_enabled_label "${QWEATHER_API_KEY:-}")" \
-    "$(provider_enabled_label "${OPEN_METEO_API_KEY:-}")"
-  printf '需要安装 Docker：%s\n' "$(docker_install_needed_label)"
-  printf 'Install region: %s\n' "${INSTALL_REGION}"
-  printf 'Requested Docker install method: %s\n' "${DOCKER_INSTALL_METHOD}"
-  printf 'APT mirror: %s\n' "${APT_MIRROR:-none}"
-  printf 'Container Debian APT mirror: %s\n' "${DEBIAN_APT_MIRROR:-upstream}"
-  printf 'Container Debian security mirror: %s\n' "${DEBIAN_SECURITY_MIRROR:-upstream}"
-  printf 'PIP index URL: %s\n' "${PIP_INDEX_URL:-none}"
-  printf 'Docker registry mirrors: %s\n' "${DOCKER_REGISTRY_MIRRORS:-none}"
-  echo "密码与 API Key 均已隐藏。"
+  printf '  网站域名    %s\n' "${DOMAIN}"
+  printf '  管理员邮箱  %s\n' "${ADMIN_EMAIL}"
+  printf '  管理后台    https://%s/admin/login\n' "${DOMAIN}"
+  printf '  需要安装 Docker：%s\n' "$(docker_install_needed_label)"
+  ui_note "Open-Meteo 免费模式已启用；和风、高德稍后在后台配置。"
+  if [[ "${VERBOSE}" == 1 ]]; then
+    print_database_config_summary
+    printf '  安装区域：%s / Docker 安装方式：%s\n' "${INSTALL_REGION}" "${DOCKER_INSTALL_METHOD}"
+  fi
+  ui_note "密码与 API Key 均已隐藏。"
 }
 
 confirm_deployment() {
@@ -1638,7 +1529,9 @@ build_production_images() {
   if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then services=(astro-service "${services[@]}"); fi
   for service in "${services[@]}"; do
     if compose_service_exists "${service}"; then
-      run_logged "构建 ${service} 镜像" compose build "${service}"
+      if ! run_logged_with_heartbeat "构建 ${service} 镜像" "  构建仍在进行，日志保存在 deploy/install.log…" compose build "${service}"; then
+        fail_install "构建 ${service} 镜像失败。"
+      fi
     fi
   done
 }
@@ -1691,47 +1584,34 @@ bootstrap_stack() {
   local production_services=(postgres redis api web caddy)
   bash "${SCRIPT_DIR}/check-cloudflare.sh"
 
-  section 8 "构建并启动服务"
+  section 6 "构建与启动"
   build_production_images
 
   run_logged "启动数据库和 Redis" compose up -d postgres redis
 
-  section 9 "天文星历文件检查"
   if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then
     compose up -d astro-service
     download_required_ephemeris
     production_services+=(astro-service)
   fi
 
-  section 10 "数据库连接预检"
+  section 7 "数据库与管理员"
   preflight_database_connection
 
-  section 11 "数据库迁移"
+  if [[ "${EXISTING_DATABASE:-0}" == 1 ]]; then backup_existing_database; fi
   run_migrations
 
-  section 12 "管理员创建与验证"
   create_admin_account
   verify_admin_account
 
-  run_logged "启动完整生产服务" compose up -d --remove-orphans "${production_services[@]}"
-  run_logged "重启应用服务" compose restart api web caddy
+  run_logged "启动完整生产服务" compose up -d --wait --wait-timeout 180 --remove-orphans "${production_services[@]}"
   echo "生产服务状态："
   compose ps
 }
 
 check_https_after_start() {
-  section 13 "HTTPS 与健康检查"
-  if curl -fsS --max-time 15 "https://${DOMAIN}" >/dev/null 2>&1; then
-    ok "HTTPS 首页可访问：https://${DOMAIN}"
-  else
-    warn "暂时无法访问 https://${DOMAIN}。请确认 DNS、80/443 端口和 Caddy 证书签发状态。"
-  fi
-
-  if curl -fsS --max-time 15 "https://${DOMAIN}/api/health" >/dev/null 2>&1; then
-    ok "API 健康检查可访问：https://${DOMAIN}/api/health"
-  else
-    warn "暂时无法访问 API 健康检查：https://${DOMAIN}/api/health"
-  fi
+  section 8 "HTTPS 与健康检查"
+  verify_public_https || return 1
 }
 
 main() {
@@ -1739,6 +1619,7 @@ main() {
   log_install_settings
   title
   section 1 "环境检查"
+  ensure_host_dependencies || fail_install "系统依赖安装失败。"
   local should_render_env=0
   if [[ ! -f "${COMPOSE_FILE}" || ! -f "${ENV_TEMPLATE}" || ! -f "${CADDY_TEMPLATE}" ]]; then
     fail_install "缺少部署模板，请在项目 checkout 根目录运行。"
@@ -1782,8 +1663,9 @@ main() {
         check_env_file
         load_env_file
         load_existing_database_config
-        ok "已更新 .env.production 中的数据库连接与管理员账号。"
+        ok "已加载现有配置；数据库和管理员保持不变。"
       else
+        cp -- "${ENV_FILE}" "${ENV_FILE}.backup-$(date +%Y%m%d-%H%M%S)"
         collect_configuration
         should_render_env=1
       fi
@@ -1793,7 +1675,7 @@ main() {
     should_render_env=1
   fi
 
-  section 6 "生成配置文件"
+  ui_note "正在生成站点配置，密码不会显示在摘要中。"
   if [[ "${should_render_env}" == "1" ]]; then
     render_env_file
     ok "已生成 .env.production。"
@@ -1804,15 +1686,16 @@ main() {
   check_env_file
   load_env_file
   load_existing_database_config
-  if ! prepare_admin_password_b64_from_env; then
-    fail_install ".env.production 缺少有效的管理员初始密码配置。"
+  if resolve_admin_password_from_env >/dev/null 2>&1; then
+    prepare_admin_password_b64_from_env || fail_install "管理员初始密码格式不正确。"
   fi
-  print_database_config_summary
   ensure_caddyfile
+  prepare_origin_certificate || fail_install "证书准备尚未完成。"
+  section 5 "部署确认"
   print_deployment_summary
   confirm_deployment
 
-  section 7 "Docker 与系统资源检查"
+  ui_note "准备 Docker 与系统资源。"
   ensure_docker
   ok "Docker 与 Docker Compose 检查通过。"
   ensure_swap_capacity
@@ -1823,15 +1706,16 @@ main() {
   check_dns
   handle_existing_postgres_volume
   bootstrap_stack
-  check_https_after_start
+  check_https_after_start || exit 1
 
-  section 14 "完成"
+  printf '\n'
+  line
   echo
   ok "部署完成。"
-  echo "Website: https://${DOMAIN}"
-  echo "Admin login: https://${DOMAIN}/admin/login"
-  echo "Admin email: ${ADMIN_EMAIL}"
-  echo "Password: hidden"
+  echo "  网站地址    https://${DOMAIN}"
+  echo "  管理后台    https://${DOMAIN}/admin/login"
+  echo "  管理员邮箱  ${ADMIN_EMAIL}"
+  ui_note "密码已隐藏，请妥善保存；天气与地图密钥可在后台填写。"
   echo "Reset admin: bash scripts/reset-admin.sh"
   echo "Status: bash scripts/status.sh"
   echo "Update: bash scripts/update.sh"

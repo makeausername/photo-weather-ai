@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
@@ -14,6 +15,7 @@ mkdir -p "${PROJECT_ROOT}/deploy"
 
 # shellcheck source=scripts/lib/installer-input.sh
 . "${INSTALLER_INPUT_LIB}"
+. "${SCRIPT_DIR}/lib/deployment-runtime.sh"
 
 if [[ "$(id -u)" -eq 0 ]]; then
   SUDO=""
@@ -23,7 +25,7 @@ fi
 
 docker_cmd() {
   if [[ -n "${SUDO}" ]]; then
-    sudo docker "$@"
+    sudo --preserve-env=APP_GIT_SHA,COMPOSE_PROJECT_NAME docker "$@"
   else
     docker "$@"
   fi
@@ -162,7 +164,7 @@ preflight_database_connection() {
   wait_for_postgres
   run_postgres_select_one
 
-  if run_logged_allow_fail "检查 API 容器内数据库连接" compose run --rm api node -e 'async function main() { let prisma; try { const { PrismaClient } = require("@prisma/client"); prisma = new PrismaClient(); await prisma.$queryRawUnsafe("SELECT 1"); } catch { console.error("数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"); process.exitCode = 1; } finally { if (prisma) { await prisma.$disconnect().catch(() => {}); } } } main();'; then
+  if run_logged_allow_fail "检查 API 容器内数据库连接" compose run --rm --no-deps -w /app/packages/db api node -e 'async function main() { let prisma; try { const { PrismaClient } = require("@prisma/client"); prisma = new PrismaClient(); await prisma.$queryRawUnsafe("SELECT 1"); } catch (error) { console.error(error.code === "MODULE_NOT_FOUND" ? "数据库客户端依赖缺失，请重新构建 API 镜像。" : "数据库连接失败，请检查 DATABASE_URL、POSTGRES_USER、POSTGRES_PASSWORD 是否一致。"); process.exitCode = 1; } finally { if (prisma) { await prisma.$disconnect().catch(() => {}); } } } main();'; then
     echo "OK 数据库连接检查通过。"
     return
   fi
@@ -238,6 +240,7 @@ if [[ ! -f "${COMPOSE_FILE}" ]]; then
   exit 1
 fi
 
+ensure_host_dependencies
 if ! bash "${CHECK_ENV_SCRIPT}"; then
   echo "生产环境配置文件格式错误，请检查 .env.production。"
   exit 1
@@ -262,11 +265,12 @@ if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then
 fi
 
 preflight_database_connection
+bash "${SCRIPT_DIR}/backup.sh"
 run_migrations
 create_and_verify_admin
 
-run_logged "启动免费版生产服务" compose up -d --remove-orphans postgres redis api web caddy
-run_logged "重启应用服务" compose restart api web caddy
+run_logged "启动免费版生产服务" compose up -d --wait --wait-timeout 180 --remove-orphans postgres redis api web caddy
+verify_public_https
 
 echo "部署恢复完成。"
 echo "Website: https://${DOMAIN:-}"

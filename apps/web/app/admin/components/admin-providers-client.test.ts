@@ -7,7 +7,7 @@ import { previewAdminRequest } from "../../admin-preview/preview-data";
 import type { SafeProviderConfig } from "../admin-api";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(resolve(__dirname, "admin-providers-client.tsx"), "utf8");
+const source = readFileSync(resolve(__dirname, "admin-providers-client.tsx"), "utf8").replace(/\r\n/g, "\n");
 const adminShellSource = readFileSync(resolve(__dirname, "admin-shell.tsx"), "utf8");
 const providerFieldsSource = readFileSync(
   resolve(__dirname, "../../../../../packages/shared/src/provider-fields.ts"),

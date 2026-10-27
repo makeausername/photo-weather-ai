@@ -503,7 +503,7 @@ describe("production deployment assets", () => {
     );
     expect(installer).not.toContain("validate_admin_password_for_env");
     expect(installer).not.toMatch(/A-Za-z0-9\._@#%[+]?[=]?-/);
-    expect(installer).toContain("第三方服务 Key 建议部署完成后在后台管理中配置");
+    expect(installer).toContain("天气和地图配置可在安装完成后进入后台填写。");
     expect(installer).not.toContain("write_env_line");
     expect(installer).not.toContain("dotenv_quote");
     expect(renderEnv).not.toMatch(
@@ -582,29 +582,22 @@ describe("production deployment assets", () => {
   it("keeps installer safeguards for old PostgreSQL volumes and polished interaction", () => {
     const installer = readRepoFile("scripts/install.sh");
     for (const expected of [
-      "逐光天气 一键部署安装程序",
       'section 1 "环境检查"',
       'section 2 "域名配置"',
-      'section 3 "数据库配置"',
-      'section 4 "管理员账号"',
-      'section 5 "第三方服务配置"',
-      'section 6 "生成配置文件"',
-      'section 7 "Docker 与系统资源检查"',
-      'section 8 "构建并启动服务"',
-      'section 9 "天文星历文件检查"',
-      'section 10 "数据库连接预检"',
-      'section 11 "数据库迁移"',
-      'section 12 "管理员创建与验证"',
-      'section 13 "HTTPS 与健康检查"',
-      'section 14 "完成"',
+      'section 3 "管理员账号"',
+      'section 5 "部署确认"',
+      'section 6 "构建与启动"',
+      'section 7 "数据库与管理员"',
+      'section 8 "HTTPS 与健康检查"',
+      'prepare_origin_certificate',
+      'ensure_host_dependencies',
+      'verify_public_https || return 1',
       "需要准备本地天文星历文件 de421.bsp",
       'bash "${SCRIPT_DIR}/download-ephemeris.sh"',
       "未安装 de421.bsp，无法完成生产部署",
       "检测到已有 PostgreSQL 数据卷",
       "PostgreSQL 首次初始化后的用户名和密码不会因为修改 .env.production 自动改变",
-      "1. 保留现有数据并停止安装",
-      "2. 删除测试数据库卷并重新初始化",
-      'read -r -p "请输入选项 [1/2]: " choice',
+      "继续安装并保留现有数据（迁移前自动备份）",
       "DELETE_DB_DATA",
       "confirm_continue()",
       "confirm_dangerous_delete()",
@@ -643,7 +636,11 @@ describe("production deployment assets", () => {
       expect(installer).toContain(expected);
     }
 
-    expect(installer).not.toContain("备份数据库后继续");
+    expect(installer).not.toContain("docker_cmd volume rm");
+    const ui = readRepoFile("scripts/lib/installer-ui.sh");
+    expect(ui).toContain("NO_COLOR");
+    expect(ui).toContain("[%02d/08]");
+    expect(ui).toContain("逐光天气");
     expect(installer).not.toContain("确认开始部署？输入 YES 继续");
   });
 
@@ -716,9 +713,8 @@ describe("production deployment assets", () => {
     }
 
     const bootstrap = installer.slice(installer.indexOf("bootstrap_stack()"));
-    expect(bootstrap.indexOf('section 10 "数据库连接预检"')).toBeLessThan(
-      bootstrap.indexOf('section 11 "数据库迁移"'),
-    );
+    expect(bootstrap).toContain('section 7 "数据库与管理员"');
+    expect(installer).toContain("--no-deps -w /app/packages/db api node");
     expect(bootstrap.indexOf("preflight_database_connection")).toBeLessThan(
       bootstrap.indexOf("run_migrations"),
     );
@@ -829,7 +825,7 @@ describe("production deployment assets", () => {
     expect(acquisitionFlow.indexOf("try_existing_host_ephemeris")).toBeLessThan(
       acquisitionFlow.indexOf("download_ephemeris_from_urls"),
     );
-    expect(installer).toContain('section 9 "天文星历文件检查"');
+    expect(installer).toContain('if [[ "${ENABLE_ASTRO_SERVICE:-false}" == "true" ]]; then');
     expect(installer).toContain("download_required_ephemeris");
     expect(installer).toContain("download-ephemeris.sh");
     expect(installer).toContain("输入 n 取消安装");

@@ -21,7 +21,7 @@
 
 ## Production/Staging Deployment
 
-For the free edition on Ubuntu/Debian, first prepare Cloudflare DNS, Full (strict), and the Origin CA certificate/key under `deploy/certs/origin.pem` and `deploy/certs/origin.key`. Follow the [free-edition deployment guide](docs/free-production-readiness.md); only run the following after deployment is authorized:
+For the free edition on Ubuntu/Debian, prepare Cloudflare DNS, Full (strict), and an Origin CA certificate/key. The eight-step terminal wizard accepts pasted PEM contents or existing file paths and saves them securely; database credentials are generated automatically. Follow the [free-edition deployment guide](docs/free-production-readiness.md); only run the following after deployment is authorized:
 
 ```bash
 bash scripts/install.sh

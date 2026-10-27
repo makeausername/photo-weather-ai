@@ -81,8 +81,8 @@ prompt_password_twice() {
   local confirm_password=""
 
   while true; do
-    password="$(read_secret "${password_label}: ")"
-    confirm_password="$(read_secret "${confirm_label}: ")"
+    password="$(read_secret "${password_label}: ")" || return 1
+    confirm_password="$(read_secret "${confirm_label}: ")" || return 1
 
     if [[ "${password}" != "${confirm_password}" ]]; then
       installer_warn "${ADMIN_PASSWORD_MISMATCH_MESSAGE}"

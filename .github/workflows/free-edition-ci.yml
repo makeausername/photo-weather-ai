@@ -39,14 +39,15 @@ jobs:
       - run: pnpm test
       - run: node --test scripts/free-local-db.test.mjs
       - run: python3 scripts/test-production-env.py
+      - run: python3 scripts/test-installer-runtime.py
       - run: pnpm audit --prod
 
   production-containers:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Build and exercise the free production stack
+      - name: Exercise install wizard, resume and update with production containers
         run: bash scripts/ci-free-production.sh

@@ -109,11 +109,11 @@ const jsonSchema: z.ZodType<JsonValue> = z.lazy(() =>
     z.boolean(),
     z.null(),
     z.array(jsonSchema),
-    z.record(jsonSchema),
+    z.record(z.string(), jsonSchema),
   ]),
 );
 
-const jsonObjectSchema = z.record(jsonSchema);
+const jsonObjectSchema = z.record(z.string(), jsonSchema);
 
 const settingPatchSchema = z.object({
   valueJson: jsonSchema,
@@ -162,19 +162,19 @@ const auditLogsQuerySchema = z.object({
 });
 
 const latitudeSchema = z
-  .number({ invalid_type_error: "纬度必须是数字。" })
+  .number({ error: "纬度必须是数字。" })
   .finite("纬度必须是有效数字。")
   .min(-90, "纬度不能小于 -90。")
   .max(90, "纬度不能大于 90。");
 
 const longitudeSchema = z
-  .number({ invalid_type_error: "经度必须是数字。" })
+  .number({ error: "经度必须是数字。" })
   .finite("经度必须是有效数字。")
   .min(-180, "经度不能小于 -180。")
   .max(180, "经度不能大于 180。");
 
 const elevationSchema = z
-  .number({ invalid_type_error: "海拔必须是数字。" })
+  .number({ error: "海拔必须是数字。" })
   .finite("海拔必须是有效数字。")
   .min(-500, "海拔不能小于 -500 米。")
   .max(9000, "海拔不能大于 9000 米。")
