@@ -251,3 +251,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 ### 安装入口回归覆盖
 
 GitHub Actions 在一次性 Linux 环境中通过 PTY 驱动实际 `scripts/install.sh`，覆盖域名/账号输入、证书文件导入、生成配置、镜像构建、Prisma 连接预检、免费初始化、登录、配置保存及前台四页，再执行恢复安装和无 Git 源码归档更新，验证数据保留。HTTPS 测试使用临时证书和独立 Docker 网络模拟可信 Cloudflare 回源，保持生产 Caddy 访问限制；它不能代替正式域名的 Cloudflare 边缘验收。独立功能测试覆盖证书粘贴、错误域名/过期/不配对证书、中断输入和公网检查失败。CI 不发布镜像、不部署服务器。
+
+### 2026-10-27 依赖安全复核
+
+安装入口回归期间的生产依赖扫描检出了 Zod 和 fast-uri 告警，现将 API、共享校验与配置包统一升级到 Zod 4.6.6，fast-uri 3.x 更新到 3.1.9（2.x 修复约束同步到 2.4.8；已有 4.2.3 保留），并适配字典键声明和中文数字校验错误参数。升级依据：[Zod 公告](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)、[fast-uri 公告](https://github.com/advisories/GHSA-w74x-v6f9-j3xg)、[Zod 迁移说明](https://zod.dev/v4/changelog)。本地 `pnpm audit --prod` 已无已知告警，最终合并仍以相同提交的 CI 完整结果为准。

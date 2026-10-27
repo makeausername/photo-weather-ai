@@ -155,6 +155,7 @@ const precipitationRiskSchema = z.object({
 });
 const weatherFieldMetadataSchema = z
   .record(
+    z.string(),
     z.object({
       value: z.union([z.string(), z.number().finite(), z.boolean(), z.null()]).optional(),
       providerCode: z.string().trim().min(1),

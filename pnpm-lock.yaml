@@ -10,8 +10,8 @@ overrides:
   postcss@<8.5.31: 8.5.31
   nanoid@>=3 <3.3.18: 3.3.18
   source-map-js@<1.2.2: 1.2.2
-  fast-uri@>=2 <2.4.7: 2.4.7
-  fast-uri@>=3 <3.1.8: 3.1.8
+  fast-uri@>=2 <2.4.8: 2.4.8
+  fast-uri@>=3 <3.1.9: 3.1.9
   proxy-addr@<2.0.8: 2.0.8
   ajv@>=8 <8.18.0: 8.18.0
   qs@<6.16.0: 6.16.0
@@ -102,8 +102,8 @@ importers:
         specifier: 10.2.1
         version: 10.2.1
       zod:
-        specifier: 3.23.8
-        version: 3.23.8
+        specifier: 4.6.6
+        version: 4.6.6
 
   apps/web:
     dependencies:
@@ -235,8 +235,8 @@ importers:
         specifier: workspace:*
         version: link:../shared
       zod:
-        specifier: 3.23.8
-        version: 3.23.8
+        specifier: 4.6.6
+        version: 4.6.6
 
   packages/db:
     dependencies:
@@ -281,8 +281,8 @@ importers:
   packages/shared:
     dependencies:
       zod:
-        specifier: 3.23.8
-        version: 3.23.8
+        specifier: 4.6.6
+        version: 4.6.6
 
   packages/storage: {}
 
@@ -1972,8 +1972,8 @@ packages:
   fast-querystring@1.1.2:
     resolution: {integrity: sha512-g6KuKWmFXc0fID8WWH0jit4g0AGBoJhCkJMb1RmbsSEUNvQ+ZC8D6CUZ+GtF8nMzSPXnhiePyyqqipzNNEnHjg==}
 
-  fast-uri@3.1.8:
-    resolution: {integrity: sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg==}
+  fast-uri@3.1.9:
+    resolution: {integrity: sha512-hS/0Wt3Ya043oKXs0sIxrMpKQITXhMLIrVAKKXi4gozGC9v7YRWVnXIZzjNPTO02M9BdxLCWqK1yRXgNziVyJQ==}
 
   fast-uri@4.2.3:
     resolution: {integrity: sha512-I1PXwP5eAhlNlcdpjt9CgB59op2ZvZfxw+BkqGFVIUOgNpCVTcTqp3HhTX7brxj5vsip+nSY4nTvff+eIA76hg==}
@@ -3207,8 +3207,8 @@ packages:
     resolution: {integrity: sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ==}
     engines: {node: '>=12.20'}
 
-  zod@3.23.8:
-    resolution: {integrity: sha512-XBx9AXhXktjUqnepgTiE5flcKIYWi/rme0Eaj+5Y0lftuGBq+jyRu/md4WnuxqgP1ubdpNCsYEYPxrzVHD8d6g==}
+  zod@4.6.6:
+    resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
 
 snapshots:
 
@@ -4127,7 +4127,7 @@ snapshots:
   ajv@8.18.0:
     dependencies:
       fast-deep-equal: 3.1.3
-      fast-uri: 3.1.8
+      fast-uri: 3.1.9
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
@@ -4691,7 +4691,7 @@ snapshots:
     dependencies:
       fast-decode-uri-component: 1.0.1
 
-  fast-uri@3.1.8: {}
+  fast-uri@3.1.9: {}
 
   fast-uri@4.2.3: {}
 
@@ -5927,4 +5927,4 @@ snapshots:
 
   yocto-queue@1.2.2: {}
 
-  zod@3.23.8: {}
+  zod@4.6.6: {}
